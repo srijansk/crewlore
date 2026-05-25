@@ -38,7 +38,7 @@ class DemoExtractor:
          "migrations", "Run `make migrate` before deploy; do not hand-edit migration files."),
     ]
 
-    def extract(self, events, session_id):
+    def extract(self, events, session_id, known_topics=None):
         out = []
         for ev in events:
             low = ev.content.lower()

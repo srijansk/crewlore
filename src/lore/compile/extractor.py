@@ -30,7 +30,14 @@ Return ONLY a JSON array. Each item:
    "anchors": [{"source_kind":"transcript","ref":str,"quote":str (VERBATIM excerpt)}]}
 Rules: quotes must be copied verbatim from the transcript. Only emit claims that
 would change a future session. If nothing is worth keeping, return [].
+"""
 
+_TOPIC_REUSE = """When a claim concerns the same question as an existing topic below, REUSE that
+exact topic key (so disagreements about the same question can be detected). Existing topics:
+{topics}
+"""
+
+_TRANSCRIPT = """
 TRANSCRIPT:
 """
 
@@ -47,9 +54,18 @@ class LLMExtractor:
         self._author = author
         self._harness = harness
 
-    def extract(self, events: list[NSFEvent], session_id: str) -> list[Claim]:
+    def extract(
+        self,
+        events: list[NSFEvent],
+        session_id: str,
+        known_topics: list[str] | None = None,
+    ) -> list[Claim]:
         transcript = self._render_transcript(events)
-        raw = self._complete(_PROMPT_HEADER + transcript)
+        prompt = _PROMPT_HEADER
+        if known_topics:
+            prompt += _TOPIC_REUSE.format(topics=", ".join(known_topics))
+        prompt += _TRANSCRIPT + transcript
+        raw = self._complete(prompt)
         items = _safe_json_array(raw)
         if not items:
             return []
@@ -103,8 +119,20 @@ class LLMExtractor:
 
 
 def _safe_json_array(raw: str) -> list:
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    if not isinstance(raw, str):
         return []
+    data = _try_load(raw)
+    if data is None:
+        # Models often wrap the array in ```json ... ``` fences or surrounding
+        # prose; fall back to the outermost [ ... ] span.
+        start, end = raw.find("["), raw.rfind("]")
+        if start != -1 and end > start:
+            data = _try_load(raw[start : end + 1])
     return data if isinstance(data, list) else []
+
+
+def _try_load(text: str):
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None

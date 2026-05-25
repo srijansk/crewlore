@@ -19,3 +19,13 @@ First working vertical slice — capture → compile → serve → actuate → m
 ### Provider support
 
 - BYO-key Anthropic and OpenAI; loud `CredentialsError` when no key is configured. Nothing routes through any lore-operated infrastructure.
+
+### Live validation (Anthropic Haiku)
+
+Ran the real extraction path end-to-end and fixed what it surfaced:
+
+- Tolerate ```` ```json ```` fences and prose around the JSON array (models wrap output).
+- Conflicts require matching `kind` (a gotcha and its fix-decision shared a topic and were falsely flagged).
+- Feed existing topic vocabulary back to the extractor so it reuses keys across sessions.
+
+Confirmed working live: extraction returns well-formed claims, the verbatim-anchor fidelity gate holds at 100%, trivial sessions are gated out, and retrieval returns relevant claims. See README "Known limitations" for the residual conflict-coordinate-consistency gap.

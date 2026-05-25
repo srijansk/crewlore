@@ -47,6 +47,12 @@ lore serve                       # MCP server for query-time retrieval
 git add .lore/knowledge .lore/claims && git commit
 ```
 
+## Known limitations (v0.1)
+
+- **Conflict detection is bottlenecked by coordinate consistency, not the rule.** Conflicts are found among claims sharing `(scope, kind, topic)`. The detection rule is correct and unit-tested, but real models assign *inconsistent* scope/topic coordinates to the same question across independently-compiled sessions (observed live: one ledger decision landed at scope `ledger service` / topic `ledger_storage`, the contradicting one at scope `ledger storage` / topic `database_selection`), so genuine disagreements can fail to group. v0.1 mitigates this by feeding the existing topic vocabulary back to the extractor for reuse; fully closing it is an entity-/coordinate-resolution problem (deterministic scope from touched file paths + a semantic reconciliation pass) and is deliberately deferred.
+- **Live extraction validated on Anthropic Haiku;** the deterministic stages are fully tested, extraction is exercised through an injected `complete()` seam plus a live smoke test. Quality of extracted claims tracks the model used.
+- **No human review gate before claims are written** yet (see the design review's C3/C4). Anchors are committed plaintext; scrubbing + a review step are required before this is safe for sensitive repos.
+
 ## License
 
 MIT. See `LICENSE`.

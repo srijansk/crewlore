@@ -79,6 +79,33 @@ def test_invalid_kind_is_skipped_not_crashed():
     assert extractor.extract(EVENTS, "ses_1") == []
 
 
+def test_handles_fenced_json_response():
+    # Real models (e.g. Haiku) wrap the array in ```json ... ``` fences.
+    inner = _one_claim_response("fires twice in staging")
+    fenced = f"```json\n{inner}\n```"
+    claims = LLMExtractor(lambda prompt: fenced).extract(EVENTS, "ses_1")
+    assert len(claims) == 1
+
+
+def test_handles_prose_wrapped_json_response():
+    inner = _one_claim_response("fires twice in staging")
+    wrapped = f"Here are the claims I found:\n{inner}\nLet me know if you need more."
+    claims = LLMExtractor(lambda prompt: wrapped).extract(EVENTS, "ses_1")
+    assert len(claims) == 1
+
+
+def test_prompt_includes_known_topics_for_reuse():
+    captured = {}
+
+    def rec(prompt):
+        captured["p"] = prompt
+        return "[]"
+
+    LLMExtractor(rec).extract(EVENTS, "ses_1", known_topics=["ledger-db", "webhook-dedupe"])
+    assert "ledger-db" in captured["p"]
+    assert "webhook-dedupe" in captured["p"]
+
+
 def test_prompt_carries_the_transcript_text():
     captured = {}
 

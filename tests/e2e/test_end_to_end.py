@@ -26,7 +26,7 @@ class DemoExtractor:
         ("dynamo", "decision", "Use DynamoDB for the ledger.", "ledger-db", None),
     ]
 
-    def extract(self, events, session_id):
+    def extract(self, events, session_id, known_topics=None):
         claims = []
         for ev in events:
             low = ev.content.lower()

@@ -43,8 +43,37 @@ class DictExtractor:
     def __init__(self, mapping):
         self.mapping = mapping
 
-    def extract(self, events, session_id):
+    def extract(self, events, session_id, known_topics=None):
         return list(self.mapping.get(session_id, []))
+
+
+class RecordingExtractor:
+    """Records the known_topics it was handed per session."""
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.seen_topics: dict[str, list[str]] = {}
+
+    def extract(self, events, session_id, known_topics=None):
+        self.seen_topics[session_id] = list(known_topics or [])
+        return list(self.mapping.get(session_id, []))
+
+
+def test_known_topics_seeded_from_prior_claims():
+    prior = [_claim("use Postgres", "ses_0", topic="ledger-db", kind="decision")]
+    ex = RecordingExtractor({"ses_1": []})
+    compile_sessions({"ses_1": _signal_events("ses_1")}, ex, prior_claims=prior)
+    assert "ledger-db" in ex.seen_topics["ses_1"]
+
+
+def test_known_topics_accumulate_across_sessions_in_one_run():
+    a = _claim("use Postgres", "ses_1", topic="ledger-db", kind="decision")
+    b = _claim("use Dynamo", "ses_2", topic="ledger-db", kind="decision")
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    ex = RecordingExtractor({"ses_1": [a], "ses_2": [b]})
+    compile_sessions(sessions, ex)
+    # ses_2 should be told about the topic produced while processing ses_1.
+    assert "ledger-db" in ex.seen_topics["ses_2"]
 
 
 def test_only_signal_sessions_are_compiled():
@@ -85,6 +114,18 @@ def test_conflict_recorded_not_merged_for_same_scope_topic():
     assert len(result.claims) == 2  # both survive; disagreement is not merged away
     assert len(result.conflicts) == 1
     assert set(result.conflicts[0].claim_ids) == {pg.id, dy.id}
+
+
+def test_different_kinds_same_topic_do_not_conflict():
+    # A gotcha (the problem) and a decision (the fix) can share a topic without
+    # disagreeing. Conflicts require the same kind, else complementary claims
+    # get falsely flagged (observed with a real model on a billing session).
+    gotcha = _claim("handler lacks idempotency check", "ses_1", topic="webhook-idem", kind="gotcha")
+    decision = _claim("use idempotency key", "ses_2", topic="webhook-idem", kind="decision")
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    extractor = DictExtractor({"ses_1": [gotcha], "ses_2": [decision]})
+    result = compile_sessions(sessions, extractor)
+    assert result.conflicts == []
 
 
 def test_no_conflict_when_topic_absent():

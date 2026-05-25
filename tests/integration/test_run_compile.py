@@ -33,7 +33,7 @@ class DictExtractor:
     def __init__(self, mapping):
         self.mapping = mapping
 
-    def extract(self, events, session_id):
+    def extract(self, events, session_id, known_topics=None):
         return list(self.mapping.get(session_id, []))
 
 
