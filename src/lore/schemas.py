@@ -88,6 +88,10 @@ class Claim(BaseModel):
     statement: str
     kind: ClaimKind
     scope: str
+    # A short normalized key grouping claims that speak to the same question
+    # (e.g. "ledger-db"). Same scope + topic, different statement => a conflict.
+    # Deliberately excluded from the content-addressed id.
+    topic: str | None = None
     # The actionable form — what a future session should *do*. A claim that cannot
     # be made actionable is dumpyard material and should be down-ranked or dropped.
     action: str | None = None

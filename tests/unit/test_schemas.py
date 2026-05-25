@@ -81,6 +81,16 @@ def test_authority_and_confidence_default_and_are_bounded():
         _claim(authority=-0.1)
 
 
+def test_topic_defaults_none_and_does_not_change_identity():
+    # topic groups claims for conflict detection; it must not change the
+    # content-addressed id (else dedup across sessions would break).
+    a = _claim()
+    b = _claim(topic="dedupe-strategy")
+    assert a.topic is None
+    assert b.topic == "dedupe-strategy"
+    assert a.id == b.id
+
+
 def test_json_round_trip_preserves_id_and_fields():
     claim = _claim(action="Dedupe on idempotency key before processing.")
     restored = Claim.model_validate_json(claim.model_dump_json())
