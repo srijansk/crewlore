@@ -14,9 +14,20 @@ from datetime import datetime, timezone
 from lore.schemas import Claim, Conflict
 from lore.store import LoreStore
 
+# Common words carry no retrieval signal and cause false matches across unrelated
+# topics (the lab's concept-vs-identifier-vocabulary observation). Drop them so
+# overlap reflects shared *concepts*, not shared grammar.
+_STOPWORDS = frozenset(
+    """a an and are as at be by do does for from how i in into is it its of on or that the
+    their then there these this to was we what when where which who why will with you your
+    not no don't can cannot need use using configure again do""".split()
+)
+
 
 def _tokens(text: str) -> set[str]:
-    return {t for t in re.split(r"[^a-z0-9]+", text.lower()) if t}
+    return {
+        t for t in re.split(r"[^a-z0-9]+", text.lower()) if t and t not in _STOPWORDS
+    }
 
 
 def _claim_text(c: Claim) -> str:
