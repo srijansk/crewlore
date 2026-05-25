@@ -86,6 +86,12 @@ class LoreStore:
         lines = self._read_jsonl(self.session_path(session_id))
         return [NSFEvent.model_validate_json(ln) for ln in lines]
 
+    def list_sessions(self) -> list[str]:
+        sessions_dir = self.lore / "sessions"
+        if not sessions_dir.is_dir():
+            return []
+        return [p.stem for p in sessions_dir.glob("*.jsonl")]
+
     # --- jsonl helpers ---
     @staticmethod
     def _write_jsonl(path: Path, models) -> None:

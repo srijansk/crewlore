@@ -79,6 +79,18 @@ def test_conflicts_round_trip(tmp_path):
     assert [c.id for c in loaded] == [c.id for c in conflicts]
 
 
+def test_list_sessions_returns_captured_ids(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    ev = NSFEvent(
+        session="x", actor="user", kind="user_message",
+        timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc), content="hi",
+    )
+    store.write_session("ses_a", [ev])
+    store.write_session("ses_b", [ev])
+    assert sorted(store.list_sessions()) == ["ses_a", "ses_b"]
+
+
 def test_session_capture_round_trips_as_nsf(tmp_path):
     store = LoreStore(tmp_path)
     store.init()
