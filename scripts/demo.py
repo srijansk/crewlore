@@ -6,20 +6,33 @@ success-criteria measurements (fidelity + held-out preventable-rediscovery rate)
 The LLM is replaced by a small deterministic demo extractor so the demo is
 reproducible offline; a real run swaps in `LLMExtractor` with a BYO key.
 
-    python scripts/demo.py
+    uv run python scripts/demo.py        # recommended (handles env + deps)
+    # or: source .venv/bin/activate && python scripts/demo.py
 """
+# ruff: noqa: E402  (src-path bootstrap must run before importing `lore`)
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 
-from lore.capture.adapters.claude_code import ClaudeCodeAdapter
-from lore.compile.run import run_compile
-from lore.replay import fidelity_report, replay_report
-from lore.schemas import Anchor, Claim, Provenance
-from lore.serve.server import KnowledgeServer
-from lore.store import LoreStore
+# Make `lore` importable even without an editable install (deps still required).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+try:
+    from lore.capture.adapters.claude_code import ClaudeCodeAdapter
+    from lore.compile.run import run_compile
+    from lore.replay import fidelity_report, replay_report
+    from lore.schemas import Anchor, Claim, Provenance
+    from lore.serve.server import KnowledgeServer
+    from lore.store import LoreStore
+except ModuleNotFoundError as exc:  # missing third-party deps (pydantic/typer/…)
+    sys.exit(
+        f"Missing dependency: {exc.name}. Run this demo inside the project env:\n"
+        "  uv run python scripts/demo.py\n"
+        "  (or: uv venv && source .venv/bin/activate && uv pip install -e '.[dev]')"
+    )
 
 
 class DemoExtractor:

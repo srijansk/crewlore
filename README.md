@@ -27,9 +27,13 @@ The intelligence is in **compile**. Capture and serve are deliberately thin so a
 ## Try the demo (no API key)
 
 ```bash
-uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
-python scripts/demo.py
+uv run python scripts/demo.py          # recommended: builds the env + deps for you
+# or, with an activated env:
+#   uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
+#   python scripts/demo.py
 ```
+
+> Note: run it through the project env (`uv run`, or an activated `.venv`). Plain `python scripts/demo.py` on a system/pyenv interpreter won't have the package or its deps and will fail with `No module named 'lore'`.
 
 It runs the whole loop on synthetic, public-safe sessions and prints the compiled knowledge book plus the two success-criteria numbers:
 
