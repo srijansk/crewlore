@@ -61,6 +61,20 @@ def test_compile_without_credentials_errors_clearly(tmp_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     LoreStore(tmp_path).init()
-    result = runner.invoke(app, ["compile", "--repo", str(tmp_path)])
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")]
+    )
+    assert result.exit_code != 0
+    assert "key" in result.stdout.lower() or "key" in str(result.exception).lower()
+
+
+def test_watch_once_without_credentials_errors_clearly(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    LoreStore(tmp_path).init()
+    result = runner.invoke(
+        app,
+        ["watch", "--once", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")],
+    )
     assert result.exit_code != 0
     assert "key" in result.stdout.lower() or "key" in str(result.exception).lower()

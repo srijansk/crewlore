@@ -29,3 +29,15 @@ Ran the real extraction path end-to-end and fixed what it surfaced:
 - Feed existing topic vocabulary back to the extractor so it reuses keys across sessions.
 
 Confirmed working live: extraction returns well-formed claims, the verbatim-anchor fidelity gate holds at 100%, trivial sessions are gated out, and retrieval returns relevant claims. See README "Known limitations" for the residual conflict-coordinate-consistency gap.
+
+### Automatic compilation + secret scrubbing
+
+Compilation is now automatic by default — no human has to remember to run it:
+
+- **Secret scrubber** (`lore.scrub`) runs at ingest: API keys, AWS keys, private-key blocks, and secret assignments are redacted before anything is stored or sent to the model.
+- **Capture-from-transcripts** (`lore.capture.ingest`): reads the coding agent's existing on-disk transcripts, incrementally (skips already-captured sessions). No live hook needed for MVP.
+- **`auto_compile`** = ingest → compile → prune (actuation lifecycle) → re-render the book, in one idempotent pass.
+- **`lore watch`** runs that pass on an interval (`--once` for cron/CI); `lore compile` is the manual escape hatch.
+- **Signal gate** widened to capture procedures/conventions/team-norms, not only friction (was silently dropping "how we do X" / "the rule is Y" sessions).
+
+Live end-to-end on public-safe data (Haiku): 6 transcripts ingested, 2 secrets redacted, 7 compiled claims (decisions/gotchas/procedures), a rendered team-knowledge book, and a 67% preventable-rediscovery rate (2/3 held-out sessions).

@@ -1,7 +1,8 @@
 """`lore` — the single user-facing surface.
 
     lore init       create .lore/ and detect the harness
-    lore compile    distill captured sessions -> claims + knowledge book
+    lore compile    ingest new transcripts -> distill -> prune (one pass)
+    lore watch      do that automatically on an interval (--once for cron)
     lore query      task-conditioned retrieval (instruments usage)
     lore status     counts + actuation health (so you can see the dumpyard early)
     lore serve      MCP server for query-time retrieval
@@ -9,6 +10,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import typer
@@ -19,6 +21,26 @@ from lore.store import LoreStore
 app = typer.Typer(help="Compile coding-agent sessions into team tribal knowledge, locally.")
 
 RepoOpt = typer.Option(Path("."), "--repo", help="Path to the team repo root.")
+TranscriptsOpt = typer.Option(None, "--transcripts", help="Override the transcripts dir.")
+
+
+def _transcript_dir(store: LoreStore, override: Path | None) -> Path:
+    if override is not None:
+        return override
+    cfg = store.load_config().get("capture", {}) or {}
+    return Path(cfg.get("transcripts", "~/.claude/projects")).expanduser()
+
+
+def _build_extractor(store: LoreStore):
+    """Build the live LLM extractor or exit with a clear credentials error."""
+    from lore.compile.extractor import LLMExtractor
+    from lore.compile.llm import CredentialsError, build_complete
+
+    try:
+        return LLMExtractor(build_complete(store.load_config()))
+    except CredentialsError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @app.command()
@@ -64,22 +86,49 @@ def query(text: str, repo: Path = RepoOpt, limit: int = 5):
             typer.echo(f"    -> {c.action}")
 
 
+def _compile_once(store: LoreStore, transcript_dir: Path) -> dict:
+    from lore.capture.adapters.claude_code import ClaudeCodeAdapter
+    from lore.compile.run import auto_compile
+
+    extractor = _build_extractor(store)
+    return auto_compile(store, extractor, ClaudeCodeAdapter(), transcript_dir)
+
+
 @app.command()
-def compile(repo: Path = RepoOpt):  # noqa: A001 - matches the user-facing verb
-    """Distill captured sessions into claims and the knowledge book."""
-    from lore.compile.extractor import LLMExtractor
-    from lore.compile.llm import CredentialsError, build_complete
-    from lore.compile.run import run_compile
-
+def compile(repo: Path = RepoOpt, transcripts: Path = TranscriptsOpt):  # noqa: A001
+    """Ingest new transcripts, distill to claims + book, and prune (one pass)."""
     store = LoreStore(repo)
-    try:
-        complete = build_complete(store.load_config())
-    except CredentialsError as exc:
-        typer.echo(f"error: {exc}")
-        raise typer.Exit(1) from exc
+    stats = _compile_once(store, _transcript_dir(store, transcripts))
+    typer.echo(
+        f"ingested {stats['ingested']} new sessions "
+        f"({stats['redactions']} redactions); "
+        f"{stats['active']} active claims, {stats['conflicts']} conflicts"
+    )
 
-    result = run_compile(store, LLMExtractor(complete))
-    typer.echo(f"compiled {len(result.claims)} claims, {len(result.conflicts)} conflicts")
+
+@app.command()
+def watch(
+    repo: Path = RepoOpt,
+    transcripts: Path = TranscriptsOpt,
+    interval: int = typer.Option(300, "--interval", help="Seconds between passes."),
+    once: bool = typer.Option(False, "--once", help="Run a single pass and exit (cron mode)."),
+):
+    """Automatically compile on an interval — so nobody has to remember to."""
+    store = LoreStore(repo)
+    tdir = _transcript_dir(store, transcripts)
+    while True:
+        stats = _compile_once(store, tdir)
+        typer.echo(
+            f"[watch] +{stats['ingested']} sessions, "
+            f"{stats['active']} active claims, {stats['conflicts']} conflicts"
+        )
+        if once:
+            break
+        try:
+            time.sleep(interval)
+        except KeyboardInterrupt:  # pragma: no cover
+            typer.echo("stopped.")
+            break
 
 
 @app.command()

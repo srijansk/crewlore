@@ -18,7 +18,8 @@ DEFAULT_CONFIG = {
     "harness": "claude-code",
     "model": {"provider": "anthropic", "name": "claude-sonnet-4-6"},
     "scopes": ["."],
-    "compile": {"cadence": "manual"},
+    "capture": {"transcripts": "~/.claude/projects"},
+    "compile": {"cadence": "auto", "watch_interval_seconds": 300},
 }
 
 

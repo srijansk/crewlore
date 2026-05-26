@@ -13,14 +13,16 @@ The compilation quality — not the plumbing — is the product. And a knowledge
 ## Architecture
 
 ```
-capture (thin adapters)  ->  compile (the moat)  ->  serve (plaintext + MCP)
-       raw session             NSF -> claims            .lore/ in your repo
-                                     |
-                              actuation loop  <-  usage from serve
-                       (decay unused / reinforce used / retire overridden)
+ingest+scrub (thin adapters) -> compile (the moat) -> serve (plaintext + MCP)
+   transcripts -> NSF             NSF -> claims          .lore/ in your repo
+                                        |
+                                 actuation loop  <-  usage from serve
+                          (decay unused / reinforce used / retire overridden)
+
+        `lore watch` runs ingest -> compile -> prune automatically, on an interval
 ```
 
-The intelligence is in **compile**. Capture and serve are deliberately thin so adding a harness is a small adapter contribution. The **actuation loop** closes the cycle: usage recorded at serve time drives a usage-based lifecycle so the store *churns* instead of growing into a dumpyard of unused claims.
+The intelligence is in **compile**. Capture and serve are deliberately thin so adding a harness is a small adapter contribution. Compilation is **automatic** (`lore watch`): it reads existing transcripts, scrubs secrets, compiles incrementally, and prunes — no human trigger. The **actuation loop** closes the cycle: usage recorded at serve time drives a usage-based lifecycle so the store *churns* instead of growing into a dumpyard of unused claims.
 
 ## Try the demo (no API key)
 
@@ -41,17 +43,20 @@ It also surfaces a recorded **conflict** (two decisions disagree → kept with b
 ```bash
 pipx install agent-lore          # or: uvx --from agent-lore lore
 cd my-team-repo
-lore init                        # creates .lore/, detects harness, installs session hook
-lore compile                     # distills sessions -> .lore/knowledge/ + claims
+lore init                        # creates .lore/ in the repo
+lore watch                       # AUTOMATIC: ingest transcripts, scrub secrets, compile, prune
+                                 #   (lore watch --once for cron/CI; lore compile for a manual pass)
 lore serve                       # MCP server for query-time retrieval
 git add .lore/knowledge .lore/claims && git commit
 ```
 
+Compilation is **automatic by default** — `lore watch` reads the coding agent's existing on-disk transcripts on an interval, so nobody has to remember to compile. Secrets are scrubbed at ingest before anything is stored or sent to the model.
+
 ## Known limitations (v0.1)
 
-- **Conflict detection is bottlenecked by coordinate consistency, not the rule.** Conflicts are found among claims sharing `(scope, kind, topic)`. The detection rule is correct and unit-tested, but real models assign *inconsistent* scope/topic coordinates to the same question across independently-compiled sessions (observed live: one ledger decision landed at scope `ledger service` / topic `ledger_storage`, the contradicting one at scope `ledger storage` / topic `database_selection`), so genuine disagreements can fail to group. v0.1 mitigates this by feeding the existing topic vocabulary back to the extractor for reuse; fully closing it is an entity-/coordinate-resolution problem (deterministic scope from touched file paths + a semantic reconciliation pass) and is deliberately deferred.
+- **Conflict detection is bottlenecked by alignment, not the rule.** Conflicts are found among claims sharing `(scope, kind, topic)` by *exact lexical match*. The rule is correct and unit-tested, but real models phrase those coordinates inconsistently across sessions (observed live: one ledger decision landed at scope `ledger service` / topic `ledger_storage`, the contradicting one at scope `ledger storage` / topic `database_selection`), so genuine disagreements can fail to group. The intended fix is **semantic, not more lexical rules**: cluster claims by embedding similarity within a kind ("same question?"), then have the model adjudicate ("do they disagree?"), and tune that. v0.1 ships a cheap prior — feeding the existing topic vocabulary back to the extractor for reuse; grounding `scope` in the files a session touched is an optional signal. Deferred.
 - **Live extraction validated on Anthropic Haiku;** the deterministic stages are fully tested, extraction is exercised through an injected `complete()` seam plus a live smoke test. Quality of extracted claims tracks the model used.
-- **No human review gate before claims are written** yet (see the design review's C3/C4). Anchors are committed plaintext; scrubbing + a review step are required before this is safe for sensitive repos.
+- **Human review gate is partial.** A secret-scrubber runs at ingest (API keys, AWS keys, private-key blocks, secret assignments redacted before anything is stored or sent to the model) — the automated half of the leakage gate. The *quality* half (a human approving claims before they're served, so noisy sessions don't yield junk claims — observed live: a debug dump produced a muddled claim) is still pending; for now lean on git PR-review of the `.lore/claims` diff. See the design review's C3/C4.
 
 ## License
 

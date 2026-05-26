@@ -23,12 +23,18 @@ _DECISION = ("let's go with", "lets go with", "we decided", "we chose", "decided
              "go with", "should we use", "we'll use", "we will use")
 _GOTCHA = ("careful", "watch out", "gotcha", "fires twice", "double-fire", "race condition",
            "edge case", "footgun", "subtle", "beware")
+# Procedures and team norms carry no friction words but are core tribal knowledge;
+# without these the gate silently drops "how we do X" / "the rule is Y" sessions.
+_CONVENTION = ("always", "never", "must", "convention", "policy", "the rule is", "team rule",
+               "going forward", "make sure to", "we write", "we always", "we never",
+               "reviewers reject", "by convention", "standard practice")
 
 _MARKERS = {
     "correction": _CORRECTION,
     "error": _ERROR,
     "decision": _DECISION,
     "gotcha": _GOTCHA,
+    "convention": _CONVENTION,
 }
 
 

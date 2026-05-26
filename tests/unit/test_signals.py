@@ -60,3 +60,22 @@ def test_gotcha_phrase_is_a_signal():
     ]
     assert session_has_signal(events) is True
     assert "gotcha" in signal_reasons(events)
+
+
+def test_procedure_statement_is_a_signal():
+    # Procedures/conventions carry no friction words but are core tribal knowledge.
+    events = [
+        _ev("agent", "agent_message",
+            "Always run migrations before deploy, and never hand-edit the generated files."),
+    ]
+    assert session_has_signal(events) is True
+    assert "convention" in signal_reasons(events)
+
+
+def test_style_norm_is_a_signal():
+    events = [
+        _ev("user", "user_message",
+            "Team rule: we write the failing test first; reviewers reject any PR without one."),
+    ]
+    assert session_has_signal(events) is True
+    assert "convention" in signal_reasons(events)
