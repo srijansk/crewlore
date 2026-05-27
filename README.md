@@ -2,16 +2,16 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen.svg)](#development)
+[![Local-first](https://img.shields.io/badge/local--first-no%20cloud-success.svg)](#your-data-stays-yours)
+[![Discussions](https://img.shields.io/badge/discussions-join-blueviolet.svg)](https://github.com/srijansk/agent-lore/discussions)
 
 > **Your coding agents keep relearning what your team already figured out.**
 > `agent-lore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
 
-<!-- TODO before public launch: an asciinema/GIF of `lore watch` turning a raw session into a compiled claim. -->
+For engineering teams who do real work through AI coding agents and want the team-level knowledge captured in their own repo — owned, versioned, and reviewable like code.
 
 ```bash
-pipx install agent-lore        # PyPI release pending — until then:
-# pipx install git+https://github.com/srijansk/agent-lore.git
+pipx install git+https://github.com/srijansk/agent-lore.git
 ```
 
 ## Quickstart
@@ -26,10 +26,33 @@ lore query "billing webhook"   # ask the knowledge layer anything, anytime
 
 That's it — engineers keep working in whatever agent they use; `lore` keeps the knowledge layer fresh in the background. Commit `.lore/knowledge` and `.lore/claims` and your teammates inherit it on the next `git pull`.
 
-Want to see it work end-to-end with zero setup and no API key?
+> [!NOTE]
+> **Status: alpha.** The core is stable and tested end to end. The on-disk schema may change before 1.0 — and because everything is plaintext and git-versioned, breaking format changes will ship with migrations.
+
+### Try it in 30 seconds — no API key
 
 ```bash
-uv run python scripts/demo.py
+git clone https://github.com/srijansk/agent-lore.git
+cd agent-lore && uv run python scripts/demo.py
+```
+
+Runs the full loop on bundled public-safe sessions and prints the compiled knowledge book plus the success metrics. Sample output:
+
+```text
+COMPILED KNOWLEDGE BOOK
+## billing/webhook
+- [gotcha] Billing webhook handler lacks an idempotency check;
+           dedupe on the Stripe idempotency key.
+- [decision] Use Stripe idempotency key for webhook dedup, not global locks.
+
+## ledger-service
+- [decision] Use Postgres rather than DynamoDB — multi-row transactions
+             and a unique constraint prevent double-entry.
+
+SUCCESS CRITERIA
+  Fidelity:                100% (4/4 claims have verbatim-resolvable anchors)
+  Conflicts surfaced:      1 (recorded, not merged)
+  Preventable rediscovery: 67% (2/3 held-out sessions re-derived known knowledge)
 ```
 
 ## What you get
@@ -51,7 +74,10 @@ Raw, messy sessions go in. A clean, citable team-knowledge book comes out — gr
 - [procedure] Write the failing test first; PRs without one are rejected in review.
 ```
 
-Each entry is a **compiled claim** — a decision, procedure, gotcha, or style norm — carrying its provenance and a verbatim **anchor** so a human can verify it and an agent can trust it. On the bundled demo, every claim's anchor resolves verbatim against its source (100% fidelity), and replaying later sessions shows two of three re-deriving something the layer already knew.
+Each entry is a **compiled claim** — a decision, procedure, gotcha, or style norm — carrying its provenance and a verbatim **anchor** so a human can verify it and an agent can trust it.
+
+> [!NOTE]
+> **On the bundled demo:** every claim's anchor resolves verbatim against its source (**100% fidelity**), a real disagreement was kept with both provenances (**1 conflict recorded**, not silently merged), and replaying held-out sessions showed **2 of 3 re-deriving knowledge the layer already had**.
 
 ## How it works
 
@@ -116,34 +142,17 @@ compile:
 
 Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `agent-lore` never ships keys anywhere.
 
-## Status
-
-Alpha, and honest about it. The core is stable and tested end to end; the moving edges are clearly scoped:
-
-- **Stable:** capture, secret scrubbing, the compile pipeline, retrieval, the actuation loop, and the `.lore/` plaintext format.
-- **May change before 1.0:** the on-disk schema. Because everything is plaintext and git-versioned, you can always read and migrate it; breaking format changes will ship with migrations.
-- **Today's adapter:** Claude Code. The architecture is harness-neutral by design; more adapters land once the core is proven on one.
-
 ## Roadmap & limitations
 
-- Cross-session **conflict detection** is improving — disagreements about the same decision are surfaced, not buried, but reliably aligning claims across independently-compiled sessions is an active area of work.
-- A **human review gate** is partial: secret-scrubbing is automated; an explicit approve-before-serve step is planned. For now, review the `.lore/claims` diff in your normal PR flow.
-- More **capture adapters** (Cursor, Copilot, …) and a real-time capture hook are planned after the Claude Code path is proven.
-
-## Development
-
-```bash
-git clone https://github.com/srijansk/agent-lore.git
-cd agent-lore
-uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
-pytest
-```
-
-96 tests across unit / integration / e2e. The deterministic stages run with no network I/O; LLM extraction is unit-tested behind an injected fake, so `pytest` makes no real API calls. Set `ANTHROPIC_API_KEY` to exercise live compilation.
+- **Stable today:** capture, secret scrubbing, the compile pipeline, retrieval, the actuation loop, and the `.lore/` plaintext format.
+- **In flight:** cross-session conflict alignment — real disagreements are surfaced today, but reliably aligning claims about the same question across independently-compiled sessions is an active area of work.
+- **Planned:** an explicit human approve-before-serve gate (secret scrubbing is already automated), more capture adapters beyond Claude Code, and a real-time capture hook.
 
 ## Contributing
 
-Issues and PRs welcome — open an issue to discuss substantial changes first. Adding support for another coding agent is the most valuable contribution and is intentionally small: implement one adapter against the normalized session format.
+Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/agent-lore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and the dev loop.
+
+Tests are fully deterministic — no real API calls during `pytest`.
 
 ## License
 
