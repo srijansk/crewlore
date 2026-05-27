@@ -36,48 +36,38 @@ git clone https://github.com/srijansk/agent-lore.git
 cd agent-lore && uv run python scripts/demo.py
 ```
 
-Runs the full loop on bundled public-safe sessions and prints the compiled knowledge book plus the success metrics. Sample output:
+The demo runs the full loop on bundled public-safe sessions and prints what it found:
 
-```text
-COMPILED KNOWLEDGE BOOK
-## billing/webhook
-- [gotcha] Billing webhook handler lacks an idempotency check;
-           dedupe on the Stripe idempotency key.
-- [decision] Use Stripe idempotency key for webhook dedup, not global locks.
-
-## ledger-service
-- [decision] Use Postgres rather than DynamoDB — multi-row transactions
-             and a unique constraint prevent double-entry.
-
-SUCCESS CRITERIA
-  Fidelity:                100% (4/4 claims have verbatim-resolvable anchors)
-  Conflicts surfaced:      1 (recorded, not merged)
-  Preventable rediscovery: 67% (2/3 held-out sessions re-derived known knowledge)
-```
+> [!NOTE]
+> **Fidelity — 100%.** Every claim's citation resolves verbatim back to its source.
+> **Conflicts surfaced — 1.** A real disagreement kept with both provenances, not silently merged.
+> **Preventable rediscovery — 67%.** Two of three held-out follow-up sessions re-derived knowledge the layer already had.
 
 ## What you get
 
-Raw, messy sessions go in. A clean, citable team-knowledge book comes out — grouped by area, every line backed by a verbatim quote from the session it came from:
+Raw, messy sessions go in. Out comes a structured, citable **compiled claim** — every one carrying its kind, its scope, the action it implies for future work, and a verbatim **anchor** back to the moment it was discovered:
+
+> **`[gotcha]`** · *services/billing*
+>
+> Billing webhook handler lacks an idempotency check, causing duplicate charges when Stripe retries webhooks.
+>
+> **Do** — dedupe on the Stripe idempotency key before processing.
+>
+> > *anchor* — "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
+
+A human can verify it (the anchor points back to the exact session line); an agent can trust it (the citation is real, not hallucinated). Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by area and committed to your repo alongside your code:
 
 ```markdown
 ## billing/webhook
-- [gotcha] Billing webhook handler lacks an idempotency check, causing duplicate
-  charges when Stripe retries webhooks.
-    Do: dedupe on the Stripe idempotency key before processing.
-    anchor: "the handler has no idempotency check, so when Stripe retries..."
+- [gotcha]   Billing webhook handler lacks idempotency check; dedupe on the Stripe key.
+- [decision] Use Stripe idempotency key for webhook dedup, not global locks.
 
 ## deployment
 - [procedure] Always run migrations before deploy to prevent missing columns.
-    Do: add a pre-deploy check that migrations have run against the target DB.
 
 ## .
 - [procedure] Write the failing test first; PRs without one are rejected in review.
 ```
-
-Each entry is a **compiled claim** — a decision, procedure, gotcha, or style norm — carrying its provenance and a verbatim **anchor** so a human can verify it and an agent can trust it.
-
-> [!NOTE]
-> **On the bundled demo:** every claim's anchor resolves verbatim against its source (**100% fidelity**), a real disagreement was kept with both provenances (**1 conflict recorded**, not silently merged), and replaying held-out sessions showed **2 of 3 re-deriving knowledge the layer already had**.
 
 ## How it works
 
