@@ -4,7 +4,7 @@ Live demo of `agent-lore` for an AI dev-tools audience. The arc is built so that
 
 ## Demo target repo
 
-`pydantic/pydantic-ai` (or whichever public repo you've captured sessions from). The audience can clone it and verify everything you show on stage.
+[`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — 17.3k ⭐, MIT, active. The audience can clone it and verify everything you show on stage. See [`candidate-tasks.md`](candidate-tasks.md) for the curated session list (and the issue pair that produces the conflict moment).
 
 ## Setup checklist (before stepping on stage)
 
@@ -39,7 +39,7 @@ $ ls ~/.claude/projects/-Users-you-pydantic-ai/
 ses-1234.jsonl  ses-2345.jsonl  ses-3456.jsonl  ...  (N sessions, M authors)
 ```
 
-> "This is `pydantic-ai`, ⭐ N, real codebase you'll recognize. Over the last week, I and [collaborator(s)] each picked up a different open issue. Different problems, different sessions, didn't coordinate. Eight transcripts now sit on disk — that's *one developer-week of distributed thinking* with nowhere to go."
+> "This is `pydantic-ai`, ⭐ 17k, real codebase you'll recognize. Over the last week, I and [collaborator(s)] each picked up a different open issue. Different problems, different sessions, didn't coordinate. N transcripts now sit on disk — that's *one developer-week of distributed thinking* with nowhere to go."
 
 **Beats:** establish that the input is real and reproducible.
 

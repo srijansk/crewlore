@@ -15,7 +15,7 @@ By **June 4**, the demo repo's `.lore/` directory contains:
 
 ## Target repo
 
-`pydantic/pydantic-ai` (or whichever was confirmed). The repo must be public so the demo audience can clone and verify, MIT/Apache-licensed, and have an active issue tracker so the sessions are about real work, not invented problems.
+[`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — confirmed. Cloned locally at `~/demos/pydantic-ai` (shallow). 17.3k ⭐, MIT, 556 open issues, last commit yesterday. See [`candidate-tasks.md`](candidate-tasks.md) for the curated session shortlist; that doc is the practical starting point.
 
 ## How to choose tasks (so the data is good)
 
@@ -41,20 +41,17 @@ To get a **real conflict surfaced** for the conference demo, you and the collabo
 
 ## Day-by-day plan
 
-### Day 1 — set up (≈ 30 min)
+### Day 1 — set up (≈ 5 min, already done)
+
+The repo is already cloned at `~/demos/pydantic-ai`. To confirm everything is wired:
 
 ```bash
-# 1. Clone the demo repo somewhere clean
-gh repo clone pydantic/pydantic-ai ~/demos/pydantic-ai && cd ~/demos/pydantic-ai
-
-# 2. Init lore in it
-lore init
-
-# 3. Confirm Claude Code is writing transcripts here:
-ls ~/.claude/projects/ | grep pydantic-ai
+cd ~/demos/pydantic-ai
+lore init                                       # creates .lore/ in the repo
+ls ~/.claude/projects/ | grep pydantic-ai       # confirm Claude Code transcripts will land here
 ```
 
-If the project directory doesn't exist yet, open Claude Code once in `~/demos/pydantic-ai` so it registers; then back here.
+If the project directory doesn't exist in `~/.claude/projects/` yet, open Claude Code once in `~/demos/pydantic-ai` so it registers; then back here.
 
 ### Days 2–5 — capture (≈ 30–60 min each)
 
