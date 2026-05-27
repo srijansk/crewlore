@@ -47,13 +47,21 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 
 Raw, messy sessions go in. Out comes a structured, citable **compiled claim** — every one carrying its kind, its scope, the action it implies for future work, and a verbatim **anchor** back to the moment it was discovered:
 
-> **`[gotcha]`** · *services/billing*
->
-> Billing webhook handler lacks an idempotency check, causing duplicate charges when Stripe retries webhooks.
->
-> **Do** — dedupe on the Stripe idempotency key before processing.
->
-> > *anchor* — "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
+<table>
+<tr>
+<td>
+
+**`[gotcha]`** · *services/billing*
+
+Billing webhook handler lacks an idempotency check, causing duplicate charges when Stripe retries webhooks.
+
+**Do** — dedupe on the Stripe idempotency key before processing.
+
+> *anchor* — "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
+
+</td>
+</tr>
+</table>
 
 A human can verify it (the anchor points back to the exact session line); an agent can trust it (the citation is real, not hallucinated). Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by area and committed to your repo alongside your code:
 
