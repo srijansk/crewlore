@@ -14,6 +14,19 @@ For engineering teams who do real work through AI coding agents and want the tea
 pipx install git+https://github.com/srijansk/agent-lore.git
 ```
 
+<details>
+<summary>Trouble installing?</summary>
+
+If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). Pin a known-working interpreter:
+
+```bash
+pipx install --python python3.13 git+https://github.com/srijansk/agent-lore.git
+```
+
+To make pipx default to Python 3.13 going forward: `export PIPX_DEFAULT_PYTHON=$(which python3.13)`.
+
+</details>
+
 ## Quickstart
 
 ```bash
