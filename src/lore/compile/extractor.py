@@ -118,13 +118,22 @@ class LLMExtractor:
             return None
 
 
+_FENCE_RE = re.compile(r"```(?:json|JSON)?\s*\n(.*?)\n\s*```", re.DOTALL)
+
+
 def _safe_json_array(raw: str) -> list:
     if not isinstance(raw, str):
         return []
+    # 1. Strict: response is pure JSON.
     data = _try_load(raw)
+    # 2. Fenced: ```json ... ``` — handles prose with brackets around the fence.
     if data is None:
-        # Models often wrap the array in ```json ... ``` fences or surrounding
-        # prose; fall back to the outermost [ ... ] span.
+        m = _FENCE_RE.search(raw)
+        if m:
+            data = _try_load(m.group(1).strip())
+    # 3. Last resort: the outermost [ ... ] span. Brittle if prose contains
+    #    brackets; only reached when neither strict-parse nor fence extraction works.
+    if data is None:
         start, end = raw.find("["), raw.rfind("]")
         if start != -1 and end > start:
             data = _try_load(raw[start : end + 1])

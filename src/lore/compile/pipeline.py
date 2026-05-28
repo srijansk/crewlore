@@ -120,7 +120,12 @@ def _detect_conflicts(claims: list[Claim]) -> list[Conflict]:
     conflicts: list[Conflict] = []
     for (scope, _kind, topic), members in groups.items():
         ids = sorted({m.id for m in members})
-        if len(ids) >= 2:
+        # Require claims from ≥2 distinct sessions: a single session's
+        # complementary findings under the same topic aren't disagreements,
+        # they're a collected investigation. True conflicts surface across
+        # sessions / authors.
+        sessions = {m.provenance.session for m in members}
+        if len(ids) >= 2 and len(sessions) >= 2:
             conflicts.append(
                 Conflict(
                     scope=scope,

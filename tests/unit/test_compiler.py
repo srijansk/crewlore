@@ -116,6 +116,20 @@ def test_conflict_recorded_not_merged_for_same_scope_topic():
     assert set(result.conflicts[0].claim_ids) == {pg.id, dy.id}
 
 
+def test_no_conflict_when_all_claims_come_from_same_session():
+    # Real-data finding (G1 session, 2026-05-28): a single session naturally
+    # emits multiple complementary claims under the same (scope, kind, topic)
+    # — a webhook investigation produces several gotchas about the same bug,
+    # not contradicting each other. Flagging these as conflicts is a false
+    # positive. Conflicts only mean something across sessions.
+    a = _claim("dump drops metadata", "ses_1", topic="metadata-loss", kind="gotcha")
+    b = _claim("load drops metadata too", "ses_1", topic="metadata-loss", kind="gotcha")
+    sessions = {"ses_1": _signal_events("ses_1")}
+    extractor = DictExtractor({"ses_1": [a, b]})
+    result = compile_sessions(sessions, extractor)
+    assert result.conflicts == []
+
+
 def test_different_kinds_same_topic_do_not_conflict():
     # A gotcha (the problem) and a decision (the fix) can share a topic without
     # disagreeing. Conflicts require the same kind, else complementary claims

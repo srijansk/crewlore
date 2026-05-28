@@ -42,7 +42,8 @@ def _anthropic_complete(model: str) -> Complete:
         client = anthropic.Anthropic()
         msg = client.messages.create(
             model=model,
-            max_tokens=4096,
+            max_tokens=8192,
+            temperature=0,  # deterministic — extraction is a structured-output task, not creative
             messages=[{"role": "user", "content": prompt}],
         )
         return "".join(block.text for block in msg.content if block.type == "text")
@@ -63,6 +64,7 @@ def _openai_complete(model: str) -> Complete:
         client = openai.OpenAI()
         resp = client.chat.completions.create(
             model=model,
+            temperature=0,  # deterministic — extraction is structured-output, not creative
             messages=[{"role": "user", "content": prompt}],
         )
         return resp.choices[0].message.content or ""

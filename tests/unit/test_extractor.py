@@ -87,6 +87,21 @@ def test_handles_fenced_json_response():
     assert len(claims) == 1
 
 
+def test_handles_fenced_json_with_brackets_in_surrounding_prose():
+    # Real-data failure mode: a model returns prose before/after the fenced
+    # array containing its own [ or ] (e.g. "[Note]", "(see [42])"). The
+    # outermost-bracket-span fallback breaks in that case; fence extraction
+    # must take precedence.
+    inner = _one_claim_response("fires twice in staging")
+    noisy = (
+        "Here is my analysis [based on the transcript].\n"
+        f"```json\n{inner}\n```\n"
+        "Let me know if you want changes [details available]."
+    )
+    claims = LLMExtractor(lambda prompt: noisy).extract(EVENTS, "ses_1")
+    assert len(claims) == 1
+
+
 def test_handles_prose_wrapped_json_response():
     inner = _one_claim_response("fires twice in staging")
     wrapped = f"Here are the claims I found:\n{inner}\nLet me know if you need more."
