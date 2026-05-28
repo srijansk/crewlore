@@ -8,7 +8,8 @@ Reproducible artifacts for showing `agent-lore` to other people — the README h
 |---|---|
 | [`conference-runbook.md`](conference-runbook.md) | The 6-minute live-demo arc: scene-by-scene timings, speaker notes, Q&A prep, backup plan, rehearsal checklist. |
 | [`capture-playbook.md`](capture-playbook.md) | How to gather real Claude Code sessions on the demo target repo over ~7 days so the demo runs on real data, not synthetic. |
-| [`candidate-tasks.md`](candidate-tasks.md) | The curated shortlist of open `pydantic/pydantic-ai` issues to pick from — pre-selected for claim-type diversity and a paired conflict moment. **Start here when capturing.** |
+| [`candidate-tasks.md`](candidate-tasks.md) | The curated shortlist of open `pydantic/pydantic-ai` issues — pre-selected for claim-type diversity and a paired conflict moment. |
+| [`session-briefs.md`](session-briefs.md) | Per-issue cheat sheet: plain-English explanation, the prompt to use, what the session should land on, and **predicted claims you can grade `lore` against without needing deep pydantic-ai expertise**. **Start here when capturing.** |
 | [`recording.tape`](recording.tape) | A [charmbracelet/vhs](https://github.com/charmbracelet/vhs) tape script that renders the README hero asciinema/GIF. |
 
 ## Reproducing the README hero asciinema
