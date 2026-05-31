@@ -122,17 +122,20 @@ utilization: 62% of active claims have been served
 
 ## Q&A prep
 
-Likely questions and crisp answers.
+The full positioning Q&A — *"why `lore` and not [changelog / `CLAUDE.md` / vector DB / memory framework / built-in memory / etc.]"* — lives in [`q-and-a.md`](q-and-a.md), with deep dives, on-stage one-liners, and honest concessions per question. **Drill the top three before the talk:** the changelog question, the `CLAUDE.md` question, and the cost question.
+
+The shortest top-of-mind table for stage:
 
 | Question | Answer |
 |---|---|
-| Cursor / Copilot / Aider / Codex adapter? | "Adapter contribution — small. The architecture is harness-neutral; one module + a manifest." |
-| How do you handle secrets? | "Scrubbed at ingest before anything is stored or sent to a model. Patterns for API keys, AWS keys, private-key blocks, secret assignments. Plus you git-PR-review the `.lore/claims` diff." |
-| Doesn't this just grow forever? | "No — that's the actuation loop. Unused claims decay and archive; contradicted claims are retired. Healthy `.lore/` plateaus." |
-| Cost to run? | "BYO key. Roughly $0.50–$2 per compile of dozens of sessions with a fast model." |
-| Why not just dump everything into a vector DB? | "We could. The compile step — dedup, conflict-as-knowledge, verbatim anchors, scoping — is the whole moat. Retrieval is the easy half." |
-| What if the LLM extracts a wrong claim? | "Two answers. First, verbatim anchors mean you can verify every line. Second, the actuation loop retires claims that get overridden in real use. The review gate is the next thing we're shipping." |
-| How is this different from RAG over my code? | "RAG searches *code*; this compiles *what your team learned from working on the code*. The unit is a claim, not a chunk." |
+| **Why not just keep a changelog / agent log?** | "A changelog is what you *write*; `lore` is what's *compiled*. Changelogs accumulate, compile dedupes. Anchors verify; freeform changelogs don't. The compile step is the product." |
+| Why not put it all in `CLAUDE.md`? | "`CLAUDE.md` holds the rules you already know. `lore` holds the gotchas you'd never think to write down. They compose." |
+| Cursor / Copilot / Aider / Codex? | "Adapter contribution — small. Architecture is harness-neutral; one module + a manifest." |
+| How do you handle secrets? | "Scrubbed at ingest before anything is stored or sent to a model. Plus you git-PR-review the `.lore/claims` diff." |
+| Doesn't this just grow forever? | "No — actuation loop. Unused claims decay; contradicted claims retire. Healthy `.lore/` plateaus." |
+| Cost? | "BYO key. ~$0.20 per session with Sonnet 4.6. Incremental — you only pay for new sessions." |
+| Why not RAG / a vector DB? | "RAG searches *code*; `lore` captures *what your team learned working on the code*. Different unit: chunks vs claims." |
+| What if the LLM extracts a wrong claim? | "Verbatim anchors verify every line; the actuation loop retires claims overridden in real use. Explicit review gate ships next." |
 
 ## Backup plan
 
