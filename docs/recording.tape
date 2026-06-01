@@ -1,4 +1,4 @@
-# VHS tape — README hero GIF for agent-lore.
+# VHS tape — README hero GIF for crewlore.
 #
 # Render: vhs docs/recording.tape
 # Output: docs/assets/demo.gif
@@ -12,10 +12,11 @@
 Output docs/assets/demo.gif
 
 # --- Visual tuning ---
-Set FontSize 14
-Set Width 1280
-Set Height 820
-Set Theme "TokyoNight"
+# Higher contrast theme + larger font for README-hero legibility on dark/light.
+Set FontSize 18
+Set Width 1400
+Set Height 900
+Set Theme "Catppuccin Mocha"
 Set TypingSpeed 30ms
 Set PlaybackSpeed 1.0
 Set Padding 30
@@ -28,7 +29,7 @@ Enter
 Show
 
 # --- Frame 1: what is this ---
-Type "# agent-lore — your agent sessions, compiled into team knowledge."
+Type "# crewlore — your agent sessions, compiled into team knowledge."
 Enter
 Sleep 1s
 Type "# Local-first. Plaintext in your repo. Every claim citable."
@@ -44,6 +45,6 @@ Sleep 10s
 Type "# Browse a real run on pydantic-ai → docs/examples/pydantic-ai/"
 Enter
 Sleep 1500ms
-Type "# github.com/srijansk/agent-lore  ·  alpha"
+Type "# github.com/srijansk/crewlore  ·  alpha"
 Enter
 Sleep 2500ms

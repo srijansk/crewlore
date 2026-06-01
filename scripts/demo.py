@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end demo of agent-lore on synthetic, public-safe data — no API key.
+"""End-to-end demo of crewlore on synthetic, public-safe data — no API key.
 
 Runs the whole loop: capture (Claude Code adapter) -> compile -> serve -> the two
 success-criteria measurements (fidelity + held-out preventable-rediscovery rate).
@@ -21,6 +21,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 try:
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.table import Table
+
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
     from lore.compile.run import run_compile
     from lore.replay import fidelity_report, replay_report
@@ -130,18 +134,17 @@ def main() -> None:
 
         result = run_compile(store, DemoExtractor())
 
-        print("=" * 70)
-        print("COMPILED KNOWLEDGE BOOK")
-        print("=" * 70)
-        print((Path(tmp) / ".lore" / "knowledge" / "README.md").read_text())
+        console = Console()
 
-        print("=" * 70)
-        print("QUERY: 'billing webhook firing twice'")
-        print("=" * 70)
+        console.rule("[bold cyan]COMPILED KNOWLEDGE BOOK[/bold cyan]")
+        book_md = (Path(tmp) / ".lore" / "knowledge" / "README.md").read_text()
+        console.print(Markdown(book_md))
+
+        console.rule("[bold cyan]QUERY: 'billing webhook firing twice'[/bold cyan]")
         for c in KnowledgeServer(store).query("billing webhook firing twice"):
-            print(f"  [{c.kind}] {c.statement}")
+            console.print(f"  [bold magenta]\\[{c.kind}][/bold magenta] {c.statement}")
             if c.action:
-                print(f"      -> {c.action}")
+                console.print(f"      [dim]->[/dim] [italic]{c.action}[/italic]")
 
         transcript = "\n".join(
             e.content for sid in store.list_sessions() for e in store.load_session(sid)
@@ -150,19 +153,33 @@ def main() -> None:
         post = {sid: adapter.parse_records(raw) for sid, raw in POST_SESSIONS.items()}
         rep = replay_report([c for c in result.claims if c.status == "active"], post)
 
-        print("=" * 70)
-        print("SUCCESS CRITERIA")
-        print("=" * 70)
+        console.rule("[bold cyan]SUCCESS CRITERIA[/bold cyan]")
         clean = fid.total - len(fid.defects)
-        print(f"  Fidelity:                  {fid.rate:.0%} "
-              f"({clean}/{fid.total} claims have verbatim-resolvable anchors)")
-        print(f"  Conflicts surfaced:        {len(result.conflicts)} "
-              "(Postgres vs DynamoDB on the ledger — recorded, not merged away)")
-        print(f"  Preventable rediscovery:   {rep.rate:.0%} "
-              f"({rep.preventable}/{rep.total} post-cutoff sessions re-derived known knowledge)")
-        print()
-        print("  Read: of the sessions that happened AFTER the knowledge was compiled,")
-        print(f"  {rep.preventable} of {rep.total} hit something lore already knew.")
+        criteria = Table(show_header=False, box=None, pad_edge=False, padding=(0, 2))
+        criteria.add_column(style="bold yellow", no_wrap=True)
+        criteria.add_column(style="bold green", no_wrap=True)
+        criteria.add_column(style="dim")
+        criteria.add_row(
+            "Fidelity",
+            f"{fid.rate:.0%}",
+            f"{clean}/{fid.total} claims have verbatim-resolvable anchors",
+        )
+        criteria.add_row(
+            "Conflicts surfaced",
+            f"{len(result.conflicts)}",
+            "Postgres vs DynamoDB on the ledger — recorded, not merged away",
+        )
+        criteria.add_row(
+            "Preventable rediscovery",
+            f"{rep.rate:.0%}",
+            f"{rep.preventable}/{rep.total} post-cutoff sessions re-derived known knowledge",
+        )
+        console.print(criteria)
+        console.print()
+        console.print(
+            f"  [dim]Of the sessions that happened AFTER compile, "
+            f"[bold]{rep.preventable} of {rep.total}[/bold] hit something lore already knew.[/dim]"
+        )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """MCP server exposing query-time retrieval to any MCP-speaking harness.
 
-Requires the optional `serve` extra (`pip install 'agent-lore[serve]'`). This is a
+Requires the optional `serve` extra (`pip install 'crewlore[serve]'`). This is a
 thin wrapper over the tested `KnowledgeServer`; the retrieval/instrumentation
 logic it exposes lives in `lore.serve.server`.
 """
@@ -15,7 +15,7 @@ from lore.store import LoreStore
 
 def build_server(store: LoreStore) -> FastMCP:
     server = KnowledgeServer(store)
-    mcp = FastMCP("agent-lore")
+    mcp = FastMCP("crewlore")
 
     @mcp.tool()
     def lore_query(task: str, limit: int = 5) -> list[dict]:

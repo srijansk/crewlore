@@ -50,7 +50,7 @@ def rank_claims(claims: list[Claim], query: str, limit: int = 5) -> list[Claim]:
 
 def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
     """Render compiled claims as a human+agent-readable markdown book."""
-    lines = ["# Team knowledge (compiled by agent-lore)", ""]
+    lines = ["# Team knowledge (compiled by crewlore)", ""]
     by_scope: dict[str, list[Claim]] = {}
     for c in claims:
         if c.status == "active":

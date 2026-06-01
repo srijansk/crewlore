@@ -137,7 +137,7 @@ def serve(repo: Path = RepoOpt):
     try:
         from lore.serve.mcp_server import run_mcp
     except ImportError:
-        typer.echo("MCP extra not installed. Install with: pipx install 'agent-lore[serve]'")
+        typer.echo("MCP extra not installed. Install with: pipx install 'crewlore[serve]'")
         raise typer.Exit(1) from None
     run_mcp(LoreStore(repo))
 

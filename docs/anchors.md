@@ -1,6 +1,6 @@
 # Anchors and the fidelity contract
 
-What "verbatim anchor" means in `agent-lore`, exactly. This is the trust contract the project's central claim rests on.
+What "verbatim anchor" means in `crewlore`, exactly. This is the trust contract the project's central claim rests on.
 
 ## The claim
 

@@ -1,4 +1,4 @@
-"""Core data model for agent-lore.
+"""Core data model for crewlore.
 
 The compiled unit of knowledge is a `Claim` carrying provenance and verbatim
 anchors. Claim identity is content-addressed (kind, scope, normalized statement)

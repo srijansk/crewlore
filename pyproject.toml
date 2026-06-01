@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-lore"
+name = "crewlore"
 version = "0.1.0"
 description = "An open, local-first, harness-agnostic compiler that turns AI-coding-agent sessions into a versioned, plaintext team tribal-knowledge layer in your own git repo."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 authors = [
-    { name = "Agent Lore Contributors" },
+    { name = "crewlore Contributors" },
 ]
 keywords = ["ai", "agents", "knowledge", "tribal-knowledge", "compiler", "mcp", "cli", "local-first"]
 classifiers = [

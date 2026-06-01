@@ -54,7 +54,7 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 
 | | |
 |---|---|
-| `agent-lore` version | `0.1.0` |
+| `crewlore` version | `0.1.0` |
 | Model | `claude-sonnet-4-6` via Anthropic API |
 | Temperature | `0` (deterministic structured-output extraction) |
 | Max tokens | `8192` |
@@ -72,7 +72,7 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 
 You cannot exactly reproduce these 18 claims — Claude Code sessions are non-deterministic in their content, and your investigation will go down different code paths than ours did. What you CAN reproduce:
 
-1. **The pipeline mechanism.** Install `agent-lore`, do your own real Claude Code sessions on pydantic-ai (or any repo), and run `lore compile`. The output shape (claims with canonically-verified anchors, scope-grouped book, deterministic claim IDs, scrub at ingest) will be the same.
+1. **The pipeline mechanism.** Install `crewlore`, do your own real Claude Code sessions on pydantic-ai (or any repo), and run `lore compile`. The output shape (claims with canonically-verified anchors, scope-grouped book, deterministic claim IDs, scrub at ingest) will be the same.
 2. **Anchor verification of *this* example.** Every anchor in `book.md` references content from one of the three captured sessions (session ids above). The canonical-form contract in `docs/anchors.md` defines what "verbatim" tolerates and rejects.
 3. **The Day-2 inheritance behavior.** After your own compile, queries via `lore query "..."` will retrieve relevant claims from your session(s), demonstrating the same cross-session inheritance pattern.
 
@@ -80,14 +80,14 @@ You cannot exactly reproduce these 18 claims — Claude Code sessions are non-de
 
 - No conflict was manufactured. The three sessions covered legitimately different scopes; we let the data speak.
 - No claims were edited post-extraction. The book is the raw output from `lore compile`, including phrasing quirks from the model.
-- No anchors were rewritten or "tightened." If a quote feels long or includes the model's framing, that's its choice — `agent-lore`'s job is to keep it honest within the canonical-form contract, and it does.
+- No anchors were rewritten or "tightened." If a quote feels long or includes the model's framing, that's its choice — `crewlore`'s job is to keep it honest within the canonical-form contract, and it does.
 
 ## Real-data findings during this capture
 
-The capture-and-compile process surfaced bugs and contract gaps in `agent-lore` itself, all addressed before committing this example:
+The capture-and-compile process surfaced bugs and contract gaps in `crewlore` itself, all addressed before committing this example:
 
 1. **Haiku drift on long contexts** — Haiku model drifted away from structured-output format past ~30k transcript tokens; Sonnet 4.6 doesn't. Tracked, default model switched to Sonnet 4.6.
-2. **Non-deterministic LLM output** — extractor needed `temperature=0` for reliable structured extraction. Fixed in commit [`a62be7f`](https://github.com/srijansk/agent-lore/commit/a62be7f).
+2. **Non-deterministic LLM output** — extractor needed `temperature=0` for reliable structured extraction. Fixed in commit [`a62be7f`](https://github.com/srijansk/crewlore/commit/a62be7f).
 3. **Fragile JSON parser** — `_safe_json_array` outermost-bracket fallback broke when prose contained brackets. Explicit code-fence regex extraction added. Fixed in `a62be7f`.
 4. **Conflict detection over-flagging single-session claims** — multiple complementary findings from one session were flagged as conflicts. Tightened to require claims from ≥2 distinct sessions. Fixed in `a62be7f`.
 5. **Fidelity gate's canonical-form contract was implicit** — the gate strictly substring-matched against prompt-rendered transcripts including `[actor/kind]` markers and `tool_call` content. Markdown decoration in source vs decoration-less model quotes also broke matches. The canonical-form contract was made explicit and documented in [`docs/anchors.md`](../../anchors.md); the haystack now excludes `tool_call` events and the canonical form strips Markdown decoration consistently on both sides. Adversarial tests pin down what's still rejected (fabrication, content drift, stitching).

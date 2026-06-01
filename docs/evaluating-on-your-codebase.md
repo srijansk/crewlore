@@ -1,6 +1,6 @@
-# Evaluating `agent-lore` on your own codebase
+# Evaluating `crewlore` on your own codebase
 
-How to capture a meaningful set of Claude Code sessions on a real repo, compile them with `agent-lore`, and decide whether the output is good enough to adopt. Built around the same loop used for the [pydantic-ai example](examples/pydantic-ai/) — concrete enough to follow, generic enough to apply to any repo.
+How to capture a meaningful set of Claude Code sessions on a real repo, compile them with `crewlore`, and decide whether the output is good enough to adopt. Built around the same loop used for the [pydantic-ai example](examples/pydantic-ai/) — concrete enough to follow, generic enough to apply to any repo.
 
 ## Goal
 
@@ -45,7 +45,7 @@ This creates `.lore/` in the repo. Claude Code automatically writes session tran
 
 ### Days 2–N — work (≈ 30–60 min per session)
 
-Open Claude Code in the repo. Work the problem. **Engage** — ask, push back, weigh options, reach a position. Don't passively let the agent run; the value `agent-lore` extracts is in the friction.
+Open Claude Code in the repo. Work the problem. **Engage** — ask, push back, weigh options, reach a position. Don't passively let the agent run; the value `crewlore` extracts is in the friction.
 
 After each session, note (one line in your own notebook) what you'd expect `lore` to capture from it. We'll cross-check on compile day.
 

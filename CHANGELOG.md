@@ -62,3 +62,13 @@ The fidelity gate's tolerance shape — what counts as a "verbatim" anchor — i
 - **100% per-session canonical fidelity** — every anchor verified against its session's content under the explicit contract
 - **0 conflicts** (sessions disjoint in scope)
 - Provenance documents five real-data bugs the capture process found and fixed before publication.
+
+### Renamed from `agent-lore` to `crewlore`
+
+The original working name `agent-lore` collided on PyPI and on GitHub (taken by an unrelated 2018 project). Renamed to `crewlore` — two familiar words, instant comprehension, available on PyPI + GitHub. The importable package, CLI command, and `.lore/` directory layout stay the same; only the distribution and GitHub URL change.
+
+### README hero GIF rework
+
+- **Compiled-book renders as Markdown** in the recording (via `rich.markdown.Markdown`) — headings, bullets, and kind tags are now visibly formatted; previously the GIF showed raw text and the "interesting facts" landed weakly.
+- **Architecture diagram is Mermaid**, not ASCII — renders inline on GitHub with the engine + artifact visually emphasized.
+- **Higher-contrast theme + larger font** in `docs/recording.tape` (Catppuccin Mocha, 18pt) for legibility at README hero size.

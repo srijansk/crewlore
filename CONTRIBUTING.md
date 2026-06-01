@@ -1,6 +1,6 @@
-# Contributing to agent-lore
+# Contributing to crewlore
 
-Thanks for considering a contribution. `agent-lore` is small, alpha, and intentionally focused — the best way to help right now is to try it on a real repo, open a [discussion](https://github.com/srijansk/agent-lore/discussions) about what worked and what didn't, and (if you're up for it) ship a small, well-scoped PR.
+Thanks for considering a contribution. `crewlore` is small, alpha, and intentionally focused — the best way to help right now is to try it on a real repo, open a [discussion](https://github.com/srijansk/crewlore/discussions) about what worked and what didn't, and (if you're up for it) ship a small, well-scoped PR.
 
 Before substantial changes, please open a discussion or an issue so we can agree on the shape before you write code. A 5-minute conversation usually saves an hour of rework.
 
@@ -11,8 +11,8 @@ Before substantial changes, please open a discussion or an issue so we can agree
 ## Local setup
 
 ```bash
-git clone https://github.com/srijansk/agent-lore.git
-cd agent-lore
+git clone https://github.com/srijansk/crewlore.git
+cd crewlore
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 pytest

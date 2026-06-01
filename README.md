@@ -1,21 +1,21 @@
-# agent-lore
+# crewlore
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Local-first](https://img.shields.io/badge/local--first-no%20cloud-success.svg)](#your-data-stays-yours)
-[![Discussions](https://img.shields.io/badge/discussions-join-blueviolet.svg)](https://github.com/srijansk/agent-lore/discussions)
+[![Discussions](https://img.shields.io/badge/discussions-join-blueviolet.svg)](https://github.com/srijansk/crewlore/discussions)
 
 > **Your coding agents keep relearning what your team already figured out.**
-> `agent-lore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
+> `crewlore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="agent-lore in action — sessions compiled into a citable team knowledge book" />
+  <img src="docs/assets/demo.gif" alt="crewlore in action — sessions compiled into a citable team knowledge book" />
 </p>
 
 For engineering teams who do real work through AI coding agents and want the team-level knowledge captured in their own repo — owned, versioned, and reviewable like code.
 
 ```bash
-pipx install git+https://github.com/srijansk/agent-lore.git
+pipx install git+https://github.com/srijansk/crewlore.git
 ```
 
 <details>
@@ -24,7 +24,7 @@ pipx install git+https://github.com/srijansk/agent-lore.git
 If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). Pin a known-working interpreter:
 
 ```bash
-pipx install --python python3.13 git+https://github.com/srijansk/agent-lore.git
+pipx install --python python3.13 git+https://github.com/srijansk/crewlore.git
 ```
 
 To make pipx default to Python 3.13 going forward: `export PIPX_DEFAULT_PYTHON=$(which python3.13)`.
@@ -49,8 +49,8 @@ That's it — engineers keep working in whatever agent they use; `lore` keeps th
 ### Try it in 30 seconds — no API key
 
 ```bash
-git clone https://github.com/srijansk/agent-lore.git
-cd agent-lore && uv run python scripts/demo.py
+git clone https://github.com/srijansk/crewlore.git
+cd crewlore && uv run python scripts/demo.py
 ```
 
 The demo runs the full loop on bundled public-safe sessions and prints what it found:
@@ -62,7 +62,7 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 
 ### Or see it run on a real codebase
 
-Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `agent-lore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **18 claims, 8 scope groupings, 100% fidelity** under the [canonical-form contract](docs/anchors.md), every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
+Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **18 claims, 8 scope groupings, 100% fidelity** under the [canonical-form contract](docs/anchors.md), every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
 
 ## What you get
 
@@ -92,15 +92,24 @@ A human can verify it (the anchor points back to the exact session line); an age
 
 ## How it works
 
-```
-ingest + scrub  ──▶  compile (the engine)  ──▶  serve (files + MCP)
- transcripts→NSF       NSF → compiled claims      .lore/ in your repo
-                              │
-                       actuation loop  ◀──  usage from serve
-                 (decay unused · reinforce used · retire overridden)
+```mermaid
+flowchart LR
+    S["coding agent<br/>sessions"] --> I["ingest + scrub<br/><sub>transcripts → NSF<br/>secrets redacted</sub>"]
+    I --> C["compile<br/><sub>NSF → claims<br/>verbatim anchors</sub>"]
+    C --> R["<b>.lore/ in your repo</b><br/><sub>knowledge book + claims<br/>plaintext, git-versioned</sub>"]
+    R --> SV["serve<br/><sub>files + MCP query</sub>"]
+    SV --> N["next agent session<br/>inherits the knowledge"]
 
-   `lore watch` runs ingest → compile → prune automatically, on an interval.
+    SV -. "usage signal" .-> AL["actuation loop<br/><sub>decay · reinforce · retire</sub>"]
+    AL -. "lifecycle update" .-> R
+
+    classDef engine fill:#4a5d9e,stroke:#1a2c4d,color:#fff,stroke-width:2px
+    classDef artifact fill:#2d6a4f,stroke:#1b4332,color:#fff,stroke-width:2px
+    class C engine
+    class R artifact
 ```
+
+> `lore watch` runs ingest → compile → prune automatically, on an interval.
 
 - **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts secrets (API keys, tokens, private keys) *before* anything is stored or sent to a model.
 - **Compile** — extracts atomic claims, deduplicates them, records disagreements instead of silently overwriting, scores authority by how often a claim recurs, and drops any claim whose citation doesn't resolve verbatim.
@@ -113,7 +122,7 @@ The intelligence is in **compile**; ingest and serve are deliberately thin, so s
 
 Knowledge discovered inside an agent session is private by default and lost by default. It lives in one developer's transcript, so the next engineer — and every future agent run — re-reads the same files, re-learns the same gotcha, and re-makes a decision the team already made. There's no shared layer that both humans and agents read from, so decisions drift and bugs resurface.
 
-`agent-lore` makes that knowledge a first-class, versioned artifact in the place your team already trusts: your git repo.
+`crewlore` makes that knowledge a first-class, versioned artifact in the place your team already trusts: your git repo.
 
 **What it is:** a compiler that turns sessions into accurate, deduplicated, conflict-aware, provenance-carrying team knowledge, served back to any agent.
 
@@ -121,7 +130,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 
 ## Your data stays yours
 
-- **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local model — nothing routes through any `agent-lore`-operated service, because there is none.
+- **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local model — nothing routes through any `crewlore`-operated service, because there is none.
 - **Plaintext, in your repo.** The knowledge layer is human-readable Markdown and JSONL under `.lore/`, versioned by git. `git log .lore/` is your audit trail.
 - **Secrets never travel.** Scrubbing happens at ingest, before storage or any model call. Raw session captures are git-ignored by default.
 
@@ -151,7 +160,7 @@ compile:
   watch_interval_seconds: 300
 ```
 
-Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `agent-lore` never ships keys anywhere.
+Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere.
 
 ## Roadmap & limitations
 
@@ -161,7 +170,7 @@ Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `agent-lore` never 
 
 ## Contributing
 
-Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/agent-lore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and the dev loop.
+Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/crewlore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and the dev loop.
 
 Tests are fully deterministic — no real API calls during `pytest`.
 

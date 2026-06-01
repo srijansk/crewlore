@@ -1,4 +1,4 @@
-# Team knowledge (compiled by agent-lore)
+# Team knowledge (compiled by crewlore)
 
 ## docs/version-policy.md
 

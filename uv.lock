@@ -3,48 +3,6 @@ revision = 2
 requires-python = ">=3.10"
 
 [[package]]
-name = "agent-lore"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-anthropic = [
-    { name = "anthropic" },
-]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-openai = [
-    { name = "openai" },
-]
-serve = [
-    { name = "mcp" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
-    { name = "mcp", marker = "extra == 'serve'", specifier = ">=1.0" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
-    { name = "pydantic", specifier = ">=2.0,<3.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pyyaml", specifier = ">=6.0,<7.0" },
-    { name = "rich", specifier = ">=13.0,<14.0" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "typer", specifier = ">=0.12,<1.0" },
-]
-provides-extras = ["openai", "anthropic", "serve", "dev"]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -333,6 +291,48 @@ wheels = [
 toml = [
     { name = "tomli", marker = "python_full_version <= '3.11'" },
 ]
+
+[[package]]
+name = "crewlore"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+anthropic = [
+    { name = "anthropic" },
+]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+openai = [
+    { name = "openai" },
+]
+serve = [
+    { name = "mcp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
+    { name = "mcp", marker = "extra == 'serve'", specifier = ">=1.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
+    { name = "pydantic", specifier = ">=2.0,<3.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pyyaml", specifier = ">=6.0,<7.0" },
+    { name = "rich", specifier = ">=13.0,<14.0" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "typer", specifier = ">=0.12,<1.0" },
+]
+provides-extras = ["openai", "anthropic", "serve", "dev"]
 
 [[package]]
 name = "cryptography"

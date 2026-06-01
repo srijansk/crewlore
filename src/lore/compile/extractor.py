@@ -51,7 +51,7 @@ def _canonical_form(text: str) -> str:
 
     The fidelity gate's contract is that a claim's anchor quote, after canonical
     normalization, resolves to a substring of the session's content after the
-    same normalization. This is what "verbatim anchor" guarantees in agent-lore.
+    same normalization. This is what "verbatim anchor" guarantees in crewlore.
 
     The canonical form applies three transformations, in order:
 

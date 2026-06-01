@@ -1,6 +1,6 @@
-# Example: `agent-lore` compiled on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)
+# Example: `crewlore` compiled on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)
 
-Real-data evidence of `agent-lore` working on a public codebase. Every claim in `book.md` cites session content from a Claude Code investigation of a real open issue in pydantic-ai; the cited code lines live in pydantic-ai's public repo and you can verify each one.
+Real-data evidence of `crewlore` working on a public codebase. Every claim in `book.md` cites session content from a Claude Code investigation of a real open issue in pydantic-ai; the cited code lines live in pydantic-ai's public repo and you can verify each one.
 
 ## Headline numbers
 
@@ -20,7 +20,7 @@ Real-data evidence of `agent-lore` working on a public codebase. Every claim in 
 |---|---|
 | [`book.md`](book.md) | The compiled knowledge book, exactly as `lore` rendered it to `.lore/knowledge/README.md`. This is what a teammate would see on `git pull`. |
 | [`claims.jsonl`](claims.jsonl) | The raw structured claims, one JSON object per line — schemas, provenance, anchors, and usage stats. Skim for verifiability. |
-| [`provenance.md`](provenance.md) | Full reproducibility detail: session IDs, dates, exact commit of pydantic-ai, model, `agent-lore` version. |
+| [`provenance.md`](provenance.md) | Full reproducibility detail: session IDs, dates, exact commit of pydantic-ai, model, `crewlore` version. |
 
 ## How to verify
 
@@ -28,7 +28,7 @@ You can't reproduce the *exact* claims (Claude Code sessions are non-determinist
 
 ```bash
 # 1. Install
-pipx install --python python3.13 git+https://github.com/srijansk/agent-lore.git
+pipx install --python python3.13 git+https://github.com/srijansk/crewlore.git
 
 # 2. Clone the same target
 gh repo clone pydantic/pydantic-ai ~/demos/pydantic-ai
