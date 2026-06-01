@@ -60,4 +60,4 @@ You can also verify *this* example by reading each anchor in `book.md` and check
 
 ## How this was captured
 
-See [`provenance.md`](provenance.md) for the full procedural detail and [`docs/demo/capture-playbook.md`](../../demo/capture-playbook.md) for the methodology used.
+See [`provenance.md`](provenance.md) for the full procedural detail and [`docs/evaluating-on-your-codebase.md`](../../evaluating-on-your-codebase.md) for the general capture methodology.

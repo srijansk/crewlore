@@ -1,12 +1,12 @@
 # VHS tape — README hero GIF for agent-lore.
 #
-# Render: vhs docs/demo/recording.tape
+# Render: vhs docs/recording.tape
 # Output: docs/assets/demo.gif
 # Requires: brew install vhs
 #
 # This tape runs the bundled offline demo (scripts/demo.py) which uses
 # deterministic synthetic data — no API key, no network, fully reproducible.
-# Anyone can clone the repo and `vhs docs/demo/recording.tape` to regenerate
+# Anyone can clone the repo and `vhs docs/recording.tape` to regenerate
 # the GIF.
 
 Output docs/assets/demo.gif

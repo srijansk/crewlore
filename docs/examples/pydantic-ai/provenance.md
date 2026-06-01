@@ -96,4 +96,4 @@ That's the "test on real data before prod" payoff — five real bugs caught and 
 
 ## Lineage
 
-- The capture process and per-issue session briefs that drove these sessions live in [`docs/demo/capture-playbook.md`](../../demo/capture-playbook.md) and [`docs/demo/session-briefs.md`](../../demo/session-briefs.md).
+- The general capture methodology lives in [`docs/evaluating-on-your-codebase.md`](../../evaluating-on-your-codebase.md). The per-issue session briefs that drove these specific sessions are archived in the lab at `knowledge-lab/meta/talks/2026-06-08-ai-tinkerers/session-briefs.md` (private; not part of this repo).
