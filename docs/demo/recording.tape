@@ -1,70 +1,49 @@
-# VHS tape for the README hero asciinema.
+# VHS tape — README hero GIF for agent-lore.
 #
-# Render with: vhs docs/demo/recording.tape
-# Output:     docs/assets/demo.gif
+# Render: vhs docs/demo/recording.tape
+# Output: docs/assets/demo.gif
+# Requires: brew install vhs
 #
-# Requires charmbracelet/vhs:  brew install vhs   (https://github.com/charmbracelet/vhs)
-#
-# The tape uses the bundled offline demo so the recording is deterministic and
-# requires no API key. For a recording against a real repo, swap the Type lines
-# that run `scripts/demo.py` for the actual `lore init` / `lore watch` flow.
+# This tape runs the bundled offline demo (scripts/demo.py) which uses
+# deterministic synthetic data — no API key, no network, fully reproducible.
+# Anyone can clone the repo and `vhs docs/demo/recording.tape` to regenerate
+# the GIF.
 
 Output docs/assets/demo.gif
 
-Set FontSize 16
+# --- Visual tuning ---
+Set FontSize 14
 Set Width 1280
-Set Height 760
+Set Height 820
 Set Theme "Tokyo Night"
-Set TypingSpeed 35ms
+Set TypingSpeed 30ms
 Set PlaybackSpeed 1.0
 Set Padding 30
+Set BorderRadius 8
 
-# --- Cold start ---
+# --- Setup: hide cwd noise; assume user is in the repo with venv ready ---
 Hide
-Type "cd /tmp/agent-lore-demo && clear"
+Type "cd $(git rev-parse --show-toplevel) && clear"
 Enter
 Show
 
-Type "# agent-lore — turning agent sessions into team knowledge"
-Enter
-Sleep 1500ms
-
-Type "# 1. The compiled team-knowledge book lives in .lore/ in your repo:"
+# --- Frame 1: what is this ---
+Type "# agent-lore — your agent sessions, compiled into team knowledge."
 Enter
 Sleep 1s
-
-Type "cat .lore/knowledge/README.md"
-Enter
-Sleep 6s
-
-# --- Provenance: anchors are verbatim ---
-Type "# 2. Every claim has a verbatim anchor — citation, not hallucination:"
+Type "# Local-first. Plaintext in your repo. Every claim citable."
 Enter
 Sleep 1500ms
 
-Type "grep -A1 'anchor' .lore/knowledge/README.md | head -6"
+# --- Frame 2: run it ---
+Type "uv run python scripts/demo.py"
 Enter
-Sleep 4s
+Sleep 10s
 
-# --- Live: querying the layer ---
-Type "# 3. Any agent can pull the relevant slice on demand:"
+# --- Frame 3: close ---
+Type "# Browse a real run on pydantic-ai → docs/examples/pydantic-ai/"
 Enter
 Sleep 1500ms
-
-Type "lore query 'billing webhook idempotency'"
+Type "# github.com/srijansk/agent-lore  ·  alpha"
 Enter
-Sleep 5s
-
-# --- Trust beats: actuation health ---
-Type "# 4. Usage drives lifecycle — the store stays small and fresh:"
-Enter
-Sleep 1500ms
-
-Type "lore status"
-Enter
-Sleep 4s
-
-# --- Close ---
-Type "# github.com/srijansk/agent-lore  ·  local-first  ·  alpha"
-Enter
-Sleep 3s
+Sleep 2500ms
