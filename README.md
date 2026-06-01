@@ -56,6 +56,10 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 > **Conflicts surfaced — 1.** A real disagreement kept with both provenances, not silently merged.
 > **Preventable rediscovery — 67%.** Two of three held-out follow-up sessions re-derived knowledge the layer already had.
 
+### Or see it run on a real codebase
+
+Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `agent-lore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **9 claims, 4 scopes, 100% fidelity**, every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
+
 ## What you get
 
 Raw, messy sessions go in. Out comes a structured, citable **compiled claim** — every one carrying its kind, its scope, the action it implies for future work, and a verbatim **anchor** back to the moment it was discovered:
