@@ -109,6 +109,123 @@ def test_handles_prose_wrapped_json_response():
     assert len(claims) == 1
 
 
+def _claim_with_quote(quote: str, statement: str = "Some fact."):
+    return json.dumps([
+        {
+            "statement": statement,
+            "kind": "gotcha",
+            "scope": "tools/approval",
+            "anchors": [{"source_kind": "transcript", "ref": "agent", "quote": quote}],
+        }
+    ])
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Fidelity-gate contract tests. These pin down what "verbatim anchor" means:
+#
+#   ACCEPTED — presentation differences (Markdown decoration, whitespace,
+#              case, cross-event-boundary spans) do NOT invalidate a quote.
+#   REJECTED — content differences (fabrication, paraphrase, dropped or
+#              substituted meaningful words, stitched disjoint substrings)
+#              DO invalidate a quote.
+#
+# The canonical form that defines this contract is `_canonical_form` in
+# extractor.py — see its docstring for the precise transformations.
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_fidelity_accepts_markdown_decoration_difference():
+    """Source has backticks and bold; model's quote drops them. Same content."""
+    events = [
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="`ApprovalRequiredToolset.call_tool` — **in the workflow** "
+                    "(checks `ctx.tool_call_approved`, raises `ApprovalRequired`).",
+        ),
+    ]
+    raw = _claim_with_quote(
+        "ApprovalRequiredToolset.call_tool — in the workflow "
+        "(checks ctx.tool_call_approved, raises ApprovalRequired)."
+    )
+    claims = LLMExtractor(lambda p: raw).extract(events, "s")
+    assert len(claims) == 1
+
+
+def test_fidelity_accepts_quote_spanning_event_boundaries():
+    """A long agent reply punctuated by a tool_call splits into separate NSF
+    events. The model rightly quotes the continuous prose as a human reads it;
+    the haystack reflects session content, not prompt-formatting markers."""
+    spanning = [
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="Architecture facts: the toolset hierarchy is",
+        ),
+        NSFEvent(
+            session="s", actor="agent", kind="tool_call",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="Read", meta={"input": {}},
+        ),
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="ApprovalRequiredToolset wrapping the temporalized leaf.",
+        ),
+    ]
+    raw = _claim_with_quote(
+        "Architecture facts: the toolset hierarchy is "
+        "ApprovalRequiredToolset wrapping the temporalized leaf."
+    )
+    claims = LLMExtractor(lambda p: raw).extract(spanning, "s")
+    assert len(claims) == 1
+
+
+def test_fidelity_rejects_fabricated_quote():
+    """Quote has no overlap with source content. Hard reject."""
+    events = [
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="The Vercel adapter drops metadata on round-trip.",
+        ),
+    ]
+    raw = _claim_with_quote("The fabrication that never appeared in the session.")
+    claims = LLMExtractor(lambda p: raw).extract(events, "s")
+    assert claims == []
+
+
+def test_fidelity_rejects_quote_with_changed_meaningful_word():
+    """Source says 'Postgres'; the would-be quote says 'DynamoDB'. A meaningful
+    word change is content drift, not presentation. Reject."""
+    events = [
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="We decided to use Postgres for the ledger service.",
+        ),
+    ]
+    raw = _claim_with_quote("We decided to use DynamoDB for the ledger service.")
+    claims = LLMExtractor(lambda p: raw).extract(events, "s")
+    assert claims == []
+
+
+def test_fidelity_rejects_quote_stitching_disjoint_substrings():
+    """Both fragments exist in source — but the quote splices them in the wrong
+    order. Stitching disjoint, out-of-order substrings is fabrication. Reject."""
+    events = [
+        NSFEvent(
+            session="s", actor="agent", kind="agent_message",
+            timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            content="The webhook fires twice in staging. "
+                    "Separately, the ledger uses Postgres.",
+        ),
+    ]
+    raw = _claim_with_quote("The ledger uses Postgres webhook fires twice")
+    claims = LLMExtractor(lambda p: raw).extract(events, "s")
+    assert claims == []
+
+
 def test_prompt_includes_known_topics_for_reuse():
     captured = {}
 

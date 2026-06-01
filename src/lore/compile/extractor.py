@@ -42,8 +42,51 @@ TRANSCRIPT:
 """
 
 
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
+_MARKDOWN_DECORATION = re.compile(r"[`*_]")
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _canonical_form(text: str) -> str:
+    """The canonical form of a text string for fidelity comparison.
+
+    The fidelity gate's contract is that a claim's anchor quote, after canonical
+    normalization, resolves to a substring of the session's content after the
+    same normalization. This is what "verbatim anchor" guarantees in agent-lore.
+
+    The canonical form applies three transformations, in order:
+
+    1. **Strip Markdown decoration.** Agent prose in transcripts is written in
+       Markdown — backticks around identifiers (``ApprovalRequiredToolset``),
+       asterisks for **bold**, underscores for *italic*. The model intuitively
+       drops these decoration markers when quoting, because they're formatting,
+       not content. Both sides must drop them to compare semantic content.
+
+    2. **Collapse whitespace.** All runs of whitespace (spaces, newlines, tabs)
+       become a single space. This lets a quote span event boundaries — e.g.,
+       a long agent reply punctuated by a tool call — and still match the
+       continuous prose a human would read.
+
+    3. **Lowercase.** Case is presentation, not content; lowercasing both sides
+       prevents the model's occasional capitalization variance from killing
+       legitimate quotes.
+
+    What the canonical form does NOT do:
+    - Strip ordinary punctuation (`.`, `,`, `:`, `;`, `?`, `!`, `()`, `[]`, `{}`)
+    - Strip words (no stopword removal, no stemming)
+    - Reorder tokens
+    - Substitute synonyms
+
+    So a quote that drops a meaningful word, paraphrases, or stitches disjoint
+    substrings will still be rejected — the gate remains strict against
+    fabrication. It is permissive only about presentation, not content.
+    """
+    text = _MARKDOWN_DECORATION.sub("", text)
+    text = _WHITESPACE.sub(" ", text)
+    return text.strip().lower()
+
+
+# Back-compat alias for the call sites that used _normalize() during build-up.
+_normalize = _canonical_form
 
 
 class LLMExtractor:
@@ -71,7 +114,17 @@ class LLMExtractor:
             return []
 
         observed_at = self._latest_timestamp(events)
-        haystack = _normalize(transcript)
+        # Fidelity haystack reflects session *prose*, not prompt formatting.
+        # We drop two things from it:
+        #  - the `[actor/kind]` markers we render into the prompt for context
+        #  - `tool_call` events (their content is just the tool *name*, e.g.
+        #    "Read"/"Bash" — not prose; including it breaks substring matches
+        #    when a long agent reply is split by a tool_call between segments)
+        # The result: a quote that spans an agent reply punctuated by tool
+        # calls still validates against the continuous prose.
+        haystack = _normalize(
+            "\n".join(e.content for e in events if e.kind != "tool_call")
+        )
         provenance = Provenance(session=session_id, author=self._author, harness=self._harness)
 
         claims: list[Claim] = []

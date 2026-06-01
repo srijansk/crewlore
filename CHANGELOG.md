@@ -41,3 +41,24 @@ Compilation is now automatic by default — no human has to remember to run it:
 - **Signal gate** widened to capture procedures/conventions/team-norms, not only friction (was silently dropping "how we do X" / "the rule is Y" sessions).
 
 Live end-to-end on public-safe data (Haiku): 6 transcripts ingested, 2 secrets redacted, 7 compiled claims (decisions/gotchas/procedures), a rendered team-knowledge book, and a 67% preventable-rediscovery rate (2/3 held-out sessions).
+
+### Fidelity-gate contract made explicit (`_canonical_form`)
+
+The fidelity gate's tolerance shape — what counts as a "verbatim" anchor — is now a documented contract instead of an implicit substring check. Driven by real-data findings from capturing pydantic-ai sessions where agent prose contains Markdown decoration and long replies are split across NSF events by tool calls.
+
+- **New module-level `_canonical_form(text)`** in `lore.compile.extractor`. Three transformations applied in order, each with its own line and rationale: strip Markdown decoration (`` ` ``, `*`, `_`); collapse whitespace; lowercase. Full docstring covering the contract.
+- **What's accepted:** Markdown decoration differences, whitespace differences, case differences, quotes that span event boundaries (e.g. a long agent reply split by a tool_call).
+- **What's still rejected:** fabricated content, paraphrase, changed meaningful words, out-of-order stitching of disjoint substrings.
+- **Five adversarial tests** pin down both halves: `test_fidelity_accepts_*` for tolerated variations, `test_fidelity_rejects_*` for content-drift cases.
+- **New spec doc:** [`docs/anchors.md`](docs/anchors.md) — the precise contract, why each transformation exists, what's deliberately preserved, and the v0.2 roadmap item (position-pointer anchors that eliminate the gate entirely).
+- **Haystack excludes `tool_call` events** — their `content` is just the tool name (e.g. `"Read"`), not session prose; including it would break quotes that span agent-message events separated by tool calls.
+
+### Real-data evidence: pydantic-ai example expanded
+
+`docs/examples/pydantic-ai/` now reflects three captured sessions (G1 #5679, G3 #5358, D1 #5536):
+
+- **18 active claims** (7 gotchas, 7 decisions, 3 procedures, 1 style)
+- **8 distinct scope groupings** spanning UI adapters, decorator introspection, durable-execution threat modeling, toolsets, tests, and version policy
+- **100% per-session canonical fidelity** — every anchor verified against its session's content under the explicit contract
+- **0 conflicts** (sessions disjoint in scope)
+- Provenance documents five real-data bugs the capture process found and fixed before publication.

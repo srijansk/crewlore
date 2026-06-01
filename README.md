@@ -58,7 +58,7 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 
 ### Or see it run on a real codebase
 
-Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `agent-lore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **9 claims, 4 scopes, 100% fidelity**, every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
+Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `agent-lore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **18 claims, 8 scope groupings, 100% fidelity** under the [canonical-form contract](docs/anchors.md), every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
 
 ## What you get
 
