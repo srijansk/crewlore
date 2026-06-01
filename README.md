@@ -94,13 +94,13 @@ A human can verify it (the anchor points back to the exact session line); an age
 
 ```mermaid
 flowchart LR
-    S["coding agent<br/>sessions"] --> I["ingest + scrub<br/><sub>transcripts → NSF<br/>secrets redacted</sub>"]
-    I --> C["compile<br/><sub>NSF → claims<br/>verbatim anchors</sub>"]
-    C --> R["<b>.lore/ in your repo</b><br/><sub>knowledge book + claims<br/>plaintext, git-versioned</sub>"]
-    R --> SV["serve<br/><sub>files + MCP query</sub>"]
+    S["coding agent<br/>sessions"] --> I["ingest + scrub<br/>(transcripts → NSF,<br/>secrets redacted)"]
+    I --> C["compile<br/>(NSF → claims,<br/>verbatim anchors)"]
+    C --> R["<b>.lore/</b> in your repo<br/>(knowledge book + claims,<br/>plaintext, git-versioned)"]
+    R --> SV["serve<br/>(files + MCP query)"]
     SV --> N["next agent session<br/>inherits the knowledge"]
 
-    SV -. "usage signal" .-> AL["actuation loop<br/><sub>decay · reinforce · retire</sub>"]
+    SV -. "usage signal" .-> AL["actuation loop<br/>(decay · reinforce · retire)"]
     AL -. "lifecycle update" .-> R
 
     classDef engine fill:#4a5d9e,stroke:#1a2c4d,color:#fff,stroke-width:2px
