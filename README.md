@@ -8,6 +8,10 @@
 > **Your coding agents keep relearning what your team already figured out.**
 > `agent-lore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="agent-lore in action — sessions compiled into a citable team knowledge book" />
+</p>
+
 For engineering teams who do real work through AI coding agents and want the team-level knowledge captured in their own repo — owned, versioned, and reviewable like code.
 
 ```bash
