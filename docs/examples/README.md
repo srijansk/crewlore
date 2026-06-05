@@ -8,6 +8,6 @@ The numbers in the repo's main README come from these examples. The anchors are 
 
 | Example | Target | Sessions | Claims | Fidelity |
 |---|---|---|---|---|
-| [`pydantic-ai/`](pydantic-ai/) | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) (17.3k ⭐) | 2 | 9 | 100% |
+| [`pydantic-ai/`](pydantic-ai/) | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) (17.3k ⭐) | 3 | 18 | 100% |
 
 More examples land as we validate `crewlore` on additional repos. Contribute one: follow [`docs/evaluating-on-your-codebase.md`](../evaluating-on-your-codebase.md), then open a PR adding your `docs/examples/<repo-name>/` snapshot with the same file shape (`book.md`, `claims.jsonl`, `provenance.md`, `README.md`).

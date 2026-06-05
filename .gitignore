@@ -25,3 +25,7 @@ htmlcov/
 # Secrets
 .env
 *.key
+
+# Local-only working dir — strategy notes, launch copy drafts,
+# experiments. Never committed; never pushed.
+local/

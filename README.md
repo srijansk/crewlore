@@ -1,9 +1,12 @@
 # crewlore
 
+[![CI](https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg)](https://github.com/srijansk/crewlore/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Local-first](https://img.shields.io/badge/local--first-no%20cloud-success.svg)](#your-data-stays-yours)
-[![Discussions](https://img.shields.io/badge/discussions-join-blueviolet.svg)](https://github.com/srijansk/crewlore/discussions)
+[![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](docs/examples/pydantic-ai/)
+[![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](docs/examples/pydantic-ai/)
+[![rediscovery prevented 67%](https://img.shields.io/badge/rediscovery_prevented-67%25-blueviolet.svg)](docs/examples/pydantic-ai/)
+[![Discussions](https://img.shields.io/badge/discussions-join-lightgrey.svg)](https://github.com/srijansk/crewlore/discussions)
 
 > **Your coding agents keep relearning what your team already figured out.**
 > `crewlore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
@@ -60,9 +63,14 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 > **Conflicts surfaced — 1.** A real disagreement kept with both provenances, not silently merged.
 > **Preventable rediscovery — 67%.** Two of three held-out follow-up sessions re-derived knowledge the layer already had.
 
-### Or see it run on a real codebase
+## See it run on a real codebase: pydantic-ai (17.3k ⭐)
 
-Real-data evidence: [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) — `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (17.3k ⭐). **18 claims, 8 scope groupings, 100% fidelity** under the [canonical-form contract](docs/anchors.md), every anchor verifiable against the project's source at a documented commit. The browsable book is [there](docs/examples/pydantic-ai/book.md); the raw structured claims are [there](docs/examples/pydantic-ai/claims.jsonl); full reproducibility detail is in [`provenance.md`](docs/examples/pydantic-ai/provenance.md).
+[`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) is a committed snapshot of `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo — 3 Claude Code sessions on real issues, no synthetic data.
+
+- **18 claims** compiled across 8 scope groupings (UI adapters, decorator introspection, durable-execution threat modeling, toolsets, tests, version policy)
+- **100% fidelity** under the explicit [canonical-form contract](docs/anchors.md) — every anchor canonically resolves to a substring of its source session
+- **0 conflicts** because the three sessions covered disjoint scopes — the conflict detector wasn't given anything to flag
+- **Receipts:** the rendered [`book.md`](docs/examples/pydantic-ai/book.md), the raw [`claims.jsonl`](docs/examples/pydantic-ai/claims.jsonl), and full [`provenance.md`](docs/examples/pydantic-ai/provenance.md) (session ids, commit hashes, compile cost, scrub redactions, five real-data bugs the capture surfaced and we fixed before publishing)
 
 ## What you get
 
@@ -111,12 +119,19 @@ flowchart LR
 
 > `lore watch` runs ingest → compile → prune automatically, on an interval.
 
-- **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts secrets (API keys, tokens, private keys) *before* anything is stored or sent to a model.
+- **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts a curated set of secret patterns (Anthropic / OpenAI / generic `sk-*` API keys, AWS keys, GitHub classic + fine-grained PATs, Google API keys, Slack tokens, HuggingFace tokens, JWTs, connection-string passwords, private-key blocks, and `password=…` assignment shapes) *before* anything is stored or sent to a model. The pattern set is documented in [`docs/scrub.md`](docs/scrub.md).
 - **Compile** — extracts atomic claims, deduplicates them, records disagreements instead of silently overwriting, scores authority by how often a claim recurs, and drops any claim whose citation doesn't resolve verbatim.
 - **Serve** — writes a human- and agent-readable knowledge book to `.lore/knowledge/`, and exposes a query tool (including an optional MCP server) so any agent can pull the relevant slice on demand.
 - **Actuation loop** — every retrieval is recorded, and that usage drives a lifecycle: unused claims decay and archive, contradicted claims are retired, useful claims are reinforced. The store stays small and fresh instead of growing into a pile nobody reads.
 
 The intelligence is in **compile**; ingest and serve are deliberately thin, so supporting another coding agent is a small adapter, not a rewrite.
+
+## How it differs
+
+- **vs. hosted memory (Letta, mem0)** — their store lives in someone else's cloud and you can't `git log` it; `crewlore`'s lives in your repo as plaintext.
+- **vs. per-IDE memory (Cursor rules, Claude memory, Continue, Cody)** — tied to one developer, one IDE; `crewlore` is a *team* artifact, committed and reviewed like code.
+- **vs. hand-curated `CLAUDE.md` / `.cursorrules`** — humans write those by hand and they go stale; `crewlore` compiles + reinforces from real sessions and retires what stops being used.
+- **vs. RAG over a vector DB** — RAG retrieves *documents*; `crewlore` compiles atomic, citable *claims* with verbatim anchors, so a human or agent can verify the source line in two seconds, and so the same claim survives across phrasing variance.
 
 ## Why this exists
 
@@ -143,7 +158,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore compile` | Run a single ingest-and-compile pass manually. |
 | `lore query "<task>"` | Retrieve the claims most relevant to a task (records usage). |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being used. |
-| `lore serve` | Start an MCP server exposing query-time retrieval to any MCP-speaking agent. |
+| `lore serve --mcp` | Start an MCP server exposing query-time retrieval to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires `pip install 'crewlore[serve]'`. See [`docs/mcp.md`](docs/mcp.md) for wiring snippets. |
 
 ## Configuration
 
@@ -152,7 +167,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 ```yaml
 model:
   provider: anthropic          # anthropic | openai | (local)
-  name: claude-haiku-4-5
+  name: claude-sonnet-4-6
 capture:
   transcripts: ~/.claude/projects
 compile:
