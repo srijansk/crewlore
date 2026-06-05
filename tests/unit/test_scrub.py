@@ -53,3 +53,81 @@ def test_scrub_events_redacts_content():
     assert n >= 1
     # other fields preserved
     assert scrubbed[0].kind == "tool_result"
+
+
+def test_redacts_github_classic_pat():
+    out, n = scrub_text("export GH=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345")
+    assert "ghp_aBcDe" not in out
+    assert "REDACTED:github-token" in out
+    assert n >= 1
+
+
+def test_redacts_github_fine_grained_pat():
+    out, n = scrub_text("token: github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    assert "github_pat_ABC" not in out
+    assert "REDACTED:github-token" in out
+    assert n >= 1
+
+
+def test_redacts_google_api_key():
+    out, n = scrub_text("KEY = AIzaSyA-aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456")
+    assert "AIzaSy" not in out
+    assert "REDACTED:google-api-key" in out
+    assert n >= 1
+
+
+def test_redacts_slack_token():
+    for raw in (
+        "xoxb-1234567890-0987654321-AbCdEfGhIjKlMnOpQrStUvWx",
+        "xoxp-1234567890-1234567890-1234567890-abcdef",
+        "xoxa-2-AbCdEfGhIjKl",
+    ):
+        out, n = scrub_text(f"slack token: {raw}")
+        assert raw[:8] not in out, f"slack prefix survived for {raw!r}"
+        assert "REDACTED:slack-token" in out
+        assert n >= 1
+
+
+def test_redacts_huggingface_token():
+    out, n = scrub_text("HF=hf_abcdefghijklmnopqrstuvwxyz012345")
+    assert "hf_abcdefghij" not in out
+    assert "REDACTED:hf-token" in out
+    assert n >= 1
+
+
+def test_redacts_jwt():
+    jwt = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ"
+        ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    )
+    out, n = scrub_text(f"Authorization: Bearer {jwt}")
+    assert "eyJhbGc" not in out
+    assert "REDACTED:jwt" in out
+    assert n >= 1
+
+
+def test_redacts_postgres_uri_password_preserving_user_and_host():
+    out, n = scrub_text("DATABASE_URL=postgres://app_user:r3al_p4ssw0rd!@db.example.com:5432/mydb")
+    # password is gone…
+    assert "r3al_p4ssw0rd" not in out
+    # …but the surrounding URI structure survives so logs stay diagnostic.
+    assert "postgres://app_user:" in out
+    assert "@db.example.com:5432/mydb" in out
+    assert "REDACTED:uri-password" in out
+    assert n >= 1
+
+
+def test_redacts_mongodb_uri_password():
+    out, n = scrub_text("MONGO=mongodb://srv:s3cretP@cluster0.mongodb.net/db")
+    assert "s3cretP" not in out
+    assert "mongodb://srv:" in out
+    assert "REDACTED:uri-password" in out
+    assert n >= 1
+
+
+def test_leaves_non_secret_urls_untouched():
+    text = "see https://example.com/path?q=1 and postgres://localhost:5432/db (no auth)"
+    out, n = scrub_text(text)
+    assert out == text
+    assert n == 0
