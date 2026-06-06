@@ -2,37 +2,22 @@
 
 [![CI](https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg)](https://github.com/srijansk/crewlore/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](docs/examples/pydantic-ai/)
 [![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](docs/examples/pydantic-ai/)
 [![rediscovery prevented 67%](https://img.shields.io/badge/rediscovery_prevented-67%25-blueviolet.svg)](docs/examples/pydantic-ai/)
-[![Discussions](https://img.shields.io/badge/discussions-join-lightgrey.svg)](https://github.com/srijansk/crewlore/discussions)
 
 > **Your coding agents keep relearning what your team already figured out.**
-> `crewlore` compiles the decisions, gotchas, and conventions discovered inside AI-coding-agent sessions into a versioned, plaintext knowledge layer that lives in your own git repo — and serves the relevant slice back to any agent at the start of a session. Local-first: nothing leaves your machines.
+> `crewlore` compiles agent sessions into a citable, plaintext team-knowledge layer that lives in your git repo. Local-first.
 
 <p align="center">
   <img src="docs/assets/demo.gif" alt="crewlore in action — sessions compiled into a citable team knowledge book" />
 </p>
 
-For engineering teams who do real work through AI coding agents and want the team-level knowledge captured in their own repo — owned, versioned, and reviewable like code.
-
 ```bash
 pipx install git+https://github.com/srijansk/crewlore.git
 ```
 
-<details>
-<summary>Trouble installing?</summary>
-
-If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). Pin a known-working interpreter:
-
-```bash
-pipx install --python python3.13 git+https://github.com/srijansk/crewlore.git
-```
-
-To make pipx default to Python 3.13 going forward: `export PIPX_DEFAULT_PYTHON=$(which python3.13)`.
-
-</details>
+> **Validated on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)** (17.3k ⭐) · 3 sessions · 18 claims · 100% fidelity · [see receipts →](docs/examples/pydantic-ai/)
 
 ## Quickstart
 
@@ -46,8 +31,18 @@ lore query "billing webhook"   # ask the knowledge layer anything, anytime
 
 That's it — engineers keep working in whatever agent they use; `lore` keeps the knowledge layer fresh in the background. Commit `.lore/knowledge` and `.lore/claims` and your teammates inherit it on the next `git pull`.
 
-> [!NOTE]
-> **Status: alpha.** The core is stable and tested end to end. The on-disk schema may change before 1.0 — and because everything is plaintext and git-versioned, breaking format changes will ship with migrations.
+<details>
+<summary>Trouble installing?</summary>
+
+If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). Pin a known-working interpreter:
+
+```bash
+pipx install --python python3.13 git+https://github.com/srijansk/crewlore.git
+```
+
+To make pipx default to Python 3.13 going forward: `export PIPX_DEFAULT_PYTHON=$(which python3.13)`.
+
+</details>
 
 ### Try it in 30 seconds — no API key
 
@@ -178,6 +173,9 @@ compile:
 Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere.
 
 ## Roadmap & limitations
+
+> [!NOTE]
+> **Status: alpha.** The core is stable and tested end to end. The on-disk schema may change before 1.0 — and because everything is plaintext and git-versioned, breaking format changes will ship with migrations.
 
 - **Stable today:** capture, secret scrubbing, the compile pipeline, retrieval, the actuation loop, and the `.lore/` plaintext format.
 - **In flight:** cross-session conflict alignment — real disagreements are surfaced today, but reliably aligning claims about the same question across independently-compiled sessions is an active area of work.
