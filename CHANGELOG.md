@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+Docs-only release. No code or behavior changes — the package is identical to 0.1.0.
+
+- README install instruction is `pipx install crewlore`, and the hero image plus all in-README links are absolute GitHub URLs so the PyPI project page renders correctly (relative links 404 on PyPI). The 0.1.0 page was published before this fix and is immutable; 0.1.1 carries the corrected page.
+
+## 0.1.0
 
 First working vertical slice — capture → compile → serve → actuate → measure, built test-first.
 

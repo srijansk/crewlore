@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crewlore"
-version = "0.1.0"
+version = "0.1.1"
 description = "An open, local-first, harness-agnostic compiler that turns AI-coding-agent sessions into a versioned, plaintext team tribal-knowledge layer in your own git repo."
 readme = "README.md"
 license = {file = "LICENSE"}
