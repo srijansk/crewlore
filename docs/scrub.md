@@ -2,7 +2,7 @@
 
 Anchors are verbatim transcript excerpts and the store is committed plaintext, so any secret that lands in a session must be redacted before the session is written. This doc enumerates exactly what the scrubber catches and what it doesn't — so you can make an informed call about whether you also want a human review step before pushing `.lore/`.
 
-The scrubbing runs **at ingest**, before storage, before the LLM call, before anchors are written. See `lore.scrub.scrub_text` for the implementation.
+The scrubbing runs **at ingest**, before storage, before the LLM call, before anchors are written. It covers both message **content** and event **meta** — tool-call arguments (e.g. a token passed to a `Bash` command) live in `meta`, so `meta` is walked recursively and its string leaves are scrubbed too. See `lore.scrub.scrub_text` and `lore.scrub.scrub_events` for the implementation.
 
 ## What gets redacted
 
@@ -12,23 +12,24 @@ Each pattern is high-precision (anchored by a distinctive prefix or shape) to ke
 |---|---|---|---|
 | 1 | RSA / EC / OpenSSH **private-key blocks** | `-----BEGIN ... PRIVATE KEY----- … -----END ... PRIVATE KEY-----` | `[REDACTED:private-key]` |
 | 2 | **OpenAI / Anthropic / generic `sk-*` API keys** | `sk-[A-Za-z0-9_-]{16,}` | `[REDACTED:api-key]` |
-| 3 | **AWS Access Key ID** | `AKIA[0-9A-Z]{16}` | `[REDACTED:aws-key]` |
+| 3 | **AWS access-key IDs** — long-term (`AKIA`) and STS temporary (`ASIA`) | `(?:AKIA\|ASIA)[0-9A-Z]{16}` | `[REDACTED:aws-key]` |
 | 4 | **GitHub classic PAT** | `ghp_[A-Za-z0-9]{20,}` | `[REDACTED:github-token]` |
 | 5 | **GitHub fine-grained PAT** | `github_pat_[A-Za-z0-9_]{22,}` | `[REDACTED:github-token]` |
 | 6 | **Google API key** | `AIza[A-Za-z0-9_-]{35}` | `[REDACTED:google-api-key]` |
-| 7 | **Slack tokens** (bot, user, app, refresh, app-level) | `xox[abprs]-[A-Za-z0-9-]{10,}` | `[REDACTED:slack-token]` |
+| 7 | **Slack tokens** (bot/user/app/refresh/config — any `xox?-`) | `xox[a-z]-[A-Za-z0-9-]{10,}` | `[REDACTED:slack-token]` |
 | 8 | **HuggingFace user-access tokens** | `hf_[A-Za-z0-9]{30,}` | `[REDACTED:hf-token]` |
 | 9 | **JWTs** (3 base64url segments, starting with `eyJ`) | `eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | `[REDACTED:jwt]` |
 | 10 | **Connection-string passwords** (`postgres://`, `mongodb://`, `mysql://`, `redis://`, `amqp(s)://`, `mssql://`) | password group between `user:` and `@host` | `[REDACTED:uri-password]` (scheme + user + host preserved) |
-| 11 | **Generic `password=` / `secret=` / `token=` / `api_key=` assignment shapes** | `(?i)(?:password\|secret\|token\|api[_-]?key)\s*[:=]\s*['"]?[^\s'"]{6,}` | `[REDACTED:secret]` |
+| 11 | **Generic assignment shapes** — `password`/`passwd`/`secret`/`token`/`api_key`/`aws_secret_access_key`/`aws_session_token` `= value`, where the value may be a quoted multi-word string or a bare token | `(?i)(?:password\|passwd\|secret\|token\|api[_-]?key\|aws_secret_access_key\|aws_session_token)\s*[:=]\s*(?:"…"\|'…'\|[^\s'"]{6,})` | `[REDACTED:secret]` |
 
-Patterns are tested individually in `tests/unit/test_scrub.py` (one test per class above, plus a negative test that ordinary prose survives untouched).
+Patterns are tested individually in `tests/unit/test_scrub.py` (one test per class above, plus negative tests that ordinary prose, clean URLs, and clean tool-call meta survive untouched).
 
 ## What is *not* redacted
 
 The scrubber is **not a DLP system**. It raises the floor on what reaches the model and the store; it is not a substitute for a security review when sensitive content is in play. Specifically:
 
 - **Custom or in-house token formats** (e.g. an internal service that issues opaque tokens with no distinctive prefix). If your team has one, add a pattern to `src/lore/scrub.py` and a test in `tests/unit/test_scrub.py`.
+- **A raw AWS secret access key on its own** — the 40-char secret is caught when it appears as `AWS_SECRET_ACCESS_KEY=…` (pattern 11), but a bare 40-char base64-ish string with no surrounding keyword is indistinguishable from ordinary data and is left alone to avoid false positives. Same for bare high-entropy strings generally.
 - **Free-form prose containing the secret value** without one of the recognized markers (e.g. someone literally types `the password is hunter2` — the generic assignment pattern catches `password = …` but not free prose).
 - **Already-base64'd or otherwise encoded secrets** the model received as opaque blobs.
 - **PII** (emails, phone numbers, names) — out of scope for this module; if you need PII handling, layer a separate pass.

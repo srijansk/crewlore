@@ -114,5 +114,5 @@ After 4–6 sessions and one compile:
 For sensitive codebases (regulated industries, IP-heavy work):
 
 1. Review the `claims.jsonl` diff in every PR that compiles new sessions, exactly like reviewing code. The plaintext format makes this practical.
-2. Use a local model (configured in `.lore/config.yaml`) instead of a hosted API if your compliance posture forbids sending code context to a third party. Quality tracks the model; Sonnet-class is the current sweet spot.
+2. Use a local model instead of a hosted API if your compliance posture forbids sending code context to a third party: set `model.provider: local` and `model.base_url` (any OpenAI-compatible endpoint — Ollama, LM Studio, vLLM) in `.lore/config.yaml`. Quality tracks the model; Sonnet-class is the current sweet spot.
 3. The on-disk format is plaintext + git; no proprietary store; no phone-home. The audit trail is `git log .lore/`.

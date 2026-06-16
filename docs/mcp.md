@@ -68,9 +68,9 @@ The instrumentation closes the loop: the more the layer is *used*, the more its 
 
 **`lore: command not found` after install** — `pipx ensurepath` and restart your shell, or use the absolute path to the binary in `mcp.json`'s `command` field.
 
-**The tool list doesn't show `lore_query`** — your client may be caching the previous tool list. Restart the client. If still not listed, run `lore serve --mcp` manually in a terminal and verify it stays running (i.e. it's waiting on stdin); if it exits immediately, run with `--verbose` to see the error.
+**The tool list doesn't show `lore_query`** — your client may be caching the previous tool list. Restart the client. If still not listed, run `lore serve --mcp` manually in a terminal and verify it stays running (i.e. it's waiting on stdin); if it exits immediately, the error prints to stderr.
 
-**Returns empty claims** — the repo's `.lore/claims/active.jsonl` is empty or your query doesn't overlap with any compiled claim's scope/statement/topic vocabulary. Run `lore status` to see how many active claims you have, and `lore query "<your task>" --debug` to see ranking scores.
+**Returns empty claims** — the repo's `.lore/claims/claims.jsonl` is empty or your query doesn't overlap with any compiled claim's scope/statement/topic vocabulary. Run `lore status` to see how many active claims you have, and `lore query "<your task>"` to check what the same ranking returns from the CLI.
 
 ## Privacy posture
 

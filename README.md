@@ -4,7 +4,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](docs/examples/pydantic-ai/)
 [![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](docs/examples/pydantic-ai/)
-[![rediscovery prevented 67%](https://img.shields.io/badge/rediscovery_prevented-67%25-blueviolet.svg)](docs/examples/pydantic-ai/)
 
 > **Your coding agents keep relearning what your team already figured out.**
 > `crewlore` compiles agent sessions into a citable, plaintext team-knowledge layer that lives in your git repo. Local-first.
@@ -56,14 +55,14 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 > [!NOTE]
 > **Fidelity — 100%.** Every claim's citation resolves verbatim back to its source.
 > **Conflicts surfaced — 1.** A real disagreement kept with both provenances, not silently merged.
-> **Preventable rediscovery — 67%.** Two of three held-out follow-up sessions re-derived knowledge the layer already had.
+> **Preventable rediscovery — 2 of 3.** Two of the three held-out follow-up sessions re-derived knowledge the layer already had. (Illustrative demo data — n=3, not a benchmark.)
 
 ## See it run on a real codebase: pydantic-ai (17.3k ⭐)
 
 [`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) is a committed snapshot of `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo — 3 Claude Code sessions on real issues, no synthetic data.
 
-- **18 claims** compiled across 8 scope groupings (UI adapters, decorator introspection, durable-execution threat modeling, toolsets, tests, version policy)
-- **100% fidelity** under the explicit [canonical-form contract](docs/anchors.md) — every anchor canonically resolves to a substring of its source session
+- **18 claims** compiled across 9 scope groupings (UI adapters, decorator introspection, durable-execution threat modeling, toolsets, tests, version policy)
+- **100% fidelity** under the explicit [canonical-form contract](docs/anchors.md) — every anchor's quote canonically resolves to a substring of its source session. (Fidelity certifies the *citation* is real, not that the model's *statement* is fully entailed by it — that's what human/PR review of the book is for.)
 - **0 conflicts** because the three sessions covered disjoint scopes — the conflict detector wasn't given anything to flag
 - **Receipts:** the rendered [`book.md`](docs/examples/pydantic-ai/book.md), the raw [`claims.jsonl`](docs/examples/pydantic-ai/claims.jsonl), and full [`provenance.md`](docs/examples/pydantic-ai/provenance.md) (session ids, commit hashes, compile cost, scrub redactions, five real-data bugs the capture surfaced and we fixed before publishing)
 
@@ -82,15 +81,18 @@ Raw, messy sessions go in. Out comes a structured, citable **compiled claim** �
 A human can verify it (the anchor points back to the exact session line); an agent can trust it (the citation is real, not hallucinated). Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by area and committed to your repo alongside your code:
 
 ```markdown
-## billing/webhook
-- [gotcha]   Billing webhook handler lacks idempotency check; dedupe on the Stripe key.
-- [decision] Use Stripe idempotency key for webhook dedup, not global locks.
+# Team knowledge (compiled by crewlore)
+
+## services/billing
+
+- **[gotcha]** Billing webhook handler lacks an idempotency check; dedupe on the Stripe key.
+  - *Do:* Dedupe on the Stripe idempotency key before processing.
+  - _anchor_ `ses_1#1`: "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
 
 ## deployment
-- [procedure] Always run migrations before deploy to prevent missing columns.
 
-## .
-- [procedure] Write the failing test first; PRs without one are rejected in review.
+- **[procedure]** Run migrations before deploy to prevent missing columns.
+  - *Do:* Run `make migrate` before every deploy.
 ```
 
 ## How it works
@@ -119,14 +121,14 @@ flowchart LR
 - **Serve** — writes a human- and agent-readable knowledge book to `.lore/knowledge/`, and exposes a query tool (including an optional MCP server) so any agent can pull the relevant slice on demand.
 - **Actuation loop** — every retrieval is recorded, and that usage drives a lifecycle: unused claims decay and archive, contradicted claims are retired, useful claims are reinforced. The store stays small and fresh instead of growing into a pile nobody reads.
 
-The intelligence is in **compile**; ingest and serve are deliberately thin, so supporting another coding agent is a small adapter, not a rewrite.
+The intelligence is in **compile**; ingest and serve are deliberately thin, so supporting another coding agent is a small adapter, not a rewrite. To be precise about the word "compile": extraction is an LLM step (the only non-deterministic part), wrapped in deterministic stages — verbatim-anchor verification, content-addressed dedup, conflict recording, and authority scoring. "Compile" means the repeatable session → claims transform, not that an LLM is absent.
 
 ## How it differs
 
 - **vs. hosted memory (Letta, mem0)** — their store lives in someone else's cloud and you can't `git log` it; `crewlore`'s lives in your repo as plaintext.
 - **vs. per-IDE memory (Cursor rules, Claude memory, Continue, Cody)** — tied to one developer, one IDE; `crewlore` is a *team* artifact, committed and reviewed like code.
 - **vs. hand-curated `CLAUDE.md` / `.cursorrules`** — humans write those by hand and they go stale; `crewlore` compiles + reinforces from real sessions and retires what stops being used.
-- **vs. RAG over a vector DB** — RAG retrieves *documents*; `crewlore` compiles atomic, citable *claims* with verbatim anchors, so a human or agent can verify the source line in two seconds, and so the same claim survives across phrasing variance.
+- **vs. RAG over a vector DB** — RAG retrieves *document chunks*; `crewlore` compiles atomic, citable *claims* with verbatim anchors, so a human or agent can verify the cited source in seconds. (Retrieval today is deterministic lexical overlap, not embeddings — simpler and dependency-free; semantic ranking is on the roadmap.)
 
 ## Why this exists
 
@@ -140,9 +142,9 @@ Knowledge discovered inside an agent session is private by default and lost by d
 
 ## Your data stays yours
 
-- **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local model — nothing routes through any `crewlore`-operated service, because there is none.
+- **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local OpenAI-compatible model (Ollama, LM Studio, vLLM) via `provider: local` — nothing routes through any `crewlore`-operated service, because there is none.
 - **Plaintext, in your repo.** The knowledge layer is human-readable Markdown and JSONL under `.lore/`, versioned by git. `git log .lore/` is your audit trail.
-- **Secrets never travel.** Scrubbing happens at ingest, before storage or any model call. Raw session captures are git-ignored by default.
+- **Secrets never travel.** Scrubbing — of both message content and tool-call arguments — happens at ingest, before storage or any model call. It's a high-precision pattern set (a floor, not a DLP guarantee; see [`docs/scrub.md`](docs/scrub.md)), and raw session captures are git-ignored by default regardless.
 
 ## CLI
 
@@ -161,8 +163,10 @@ Knowledge discovered inside an agent session is private by default and lost by d
 
 ```yaml
 model:
-  provider: anthropic          # anthropic | openai | (local)
+  provider: anthropic          # anthropic | openai | local
   name: claude-sonnet-4-6
+  # For provider: local — point at any OpenAI-compatible endpoint you run:
+  # base_url: http://localhost:11434/v1   # e.g. Ollama, LM Studio, vLLM
 capture:
   transcripts: ~/.claude/projects
 compile:
@@ -170,7 +174,7 @@ compile:
   watch_interval_seconds: 300
 ```
 
-Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere.
+Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere. The default Anthropic provider works out of the box. For OpenAI or a local OpenAI-compatible model, add the SDK: `pipx inject crewlore openai` (or `pip install 'crewlore[openai]'`). With `provider: local` nothing leaves your machine at all — the compile call hits your own endpoint.
 
 ## Roadmap & limitations
 

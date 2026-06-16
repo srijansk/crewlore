@@ -23,7 +23,7 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 | Session id (Claude Code) | `a8fa3beb-ec13-4ba2-8f68-9c745eecfaa2` |
 | Captured | 2026-05-28 |
 | Wall-clock duration | ~35 minutes |
-| NSF events extracted | 179 (1 user_message, 38 agent_message, 67 tool_call, 67 tool_result) |
+| NSF events extracted | 173 (1 user_message, 38 agent_message, 67 tool_call, 67 tool_result) |
 | Signal-gate reasons fired | `correction · error · gotcha · convention` |
 | Claims contributed | 8 |
 
@@ -58,13 +58,13 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 | Model | `claude-sonnet-4-6` via Anthropic API |
 | Temperature | `0` (deterministic structured-output extraction) |
 | Max tokens | `8192` |
-| Compile command | equivalent to `lore compile --repo ~/demos/pydantic-ai --transcripts ~/.claude/projects/-Users-srijansaket-demos-pydantic-ai` |
+| Compile command | equivalent to `lore compile --repo ~/demos/pydantic-ai --transcripts ~/.claude/projects/-Users-you-demos-pydantic-ai` |
 | Compile cost | ~$0.60 (combined input + output across three sessions) |
 | Scrub redactions | 0 (no secrets in any of the three sessions) |
 
 ## Result stats
 
-- **18 active claims** across **8 scope groupings** and **5 distinct topics**.
+- **18 active claims** across **9 scope groupings** and **6 distinct topics**.
 - **100% fidelity** under the canonical-form contract defined in [`docs/anchors.md`](../../anchors.md). Every anchor's quote canonically resolves to a substring of its source session's content. The canonical form tolerates whitespace, case, and Markdown decoration; it rejects content drift, fabrication, paraphrase, and out-of-order stitching.
 - **0 conflicts** — the three sessions cover disjoint scopes (UI adapter round-tripping, decorator introspection, and durable-execution threat modeling), so no `(scope, kind, topic)` group has claims from ≥2 sessions disagreeing.
 
