@@ -8,11 +8,12 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
 
-from lore.schemas import Claim, Conflict, NSFEvent
+from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
     "harness": "claude-code",
@@ -34,6 +35,12 @@ class LoreStore:
         return self.lore / "claims" / "claims.jsonl"
 
     @property
+    def usage_path(self) -> Path:
+        # Volatile usage stats live in a gitignored sidecar so that `lore query`
+        # (which bumps counters) never churns the git-tracked claims.jsonl.
+        return self.lore / "claims" / "usage.jsonl"
+
+    @property
     def conflicts_path(self) -> Path:
         return self.lore / "claims" / "conflicts.jsonl"
 
@@ -44,6 +51,9 @@ class LoreStore:
     def session_path(self, session_id: str) -> Path:
         return self.lore / "sessions" / f"{session_id}.jsonl"
 
+    def extraction_cache_path(self, session_id: str) -> Path:
+        return self.lore / "cache" / f"{session_id}.jsonl"
+
     # --- lifecycle ---
     def init(self) -> None:
         (self.lore / "claims").mkdir(parents=True, exist_ok=True)
@@ -51,8 +61,9 @@ class LoreStore:
         (self.lore / "sessions").mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
             self.config_path.write_text(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
-        # Raw sessions never get committed — they can carry secrets/PII.
-        (self.lore / ".gitignore").write_text("sessions/\n")
+        # Raw sessions never get committed — they can carry secrets/PII. The
+        # extraction cache and volatile usage stats are local-only too.
+        (self.lore / ".gitignore").write_text("sessions/\ncache/\nclaims/usage.jsonl\n")
 
     def load_config(self) -> dict:
         if not self.config_path.exists():
@@ -63,10 +74,37 @@ class LoreStore:
     def write_claims(self, claims: list[Claim]) -> None:
         self.claims_path.parent.mkdir(parents=True, exist_ok=True)
         ordered = sorted(claims, key=lambda c: c.id)
-        self._write_jsonl(self.claims_path, ordered)
+        # Committed truth excludes volatile usage stats — they live in a gitignored
+        # sidecar, so retrieval (which bumps usage) leaves claims.jsonl byte-stable.
+        self.claims_path.write_text(
+            "".join(c.model_dump_json(exclude={"usage"}) + "\n" for c in ordered)
+        )
+        self._write_usage(ordered)
 
     def load_claims(self) -> list[Claim]:
-        return [Claim.model_validate_json(ln) for ln in self._read_jsonl(self.claims_path)]
+        claims = [Claim.model_validate_json(ln) for ln in self._read_jsonl(self.claims_path)]
+        usage = self._load_usage()
+        for c in claims:
+            if c.id in usage:
+                c.usage = usage[c.id]
+        return claims
+
+    def _write_usage(self, claims: list[Claim]) -> None:
+        # Only persist non-default usage, keyed by claim id, to keep the sidecar small.
+        rows = [
+            {"id": c.id, "usage": c.usage.model_dump(mode="json")}
+            for c in claims
+            if c.usage != UsageStats()
+        ]
+        self.usage_path.parent.mkdir(parents=True, exist_ok=True)
+        self.usage_path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+    def _load_usage(self) -> dict[str, UsageStats]:
+        out: dict[str, UsageStats] = {}
+        for ln in self._read_jsonl(self.usage_path):
+            row = json.loads(ln)
+            out[row["id"]] = UsageStats.model_validate(row["usage"])
+        return out
 
     # --- conflicts ---
     def write_conflicts(self, conflicts: list[Conflict]) -> None:
@@ -92,6 +130,24 @@ class LoreStore:
         if not sessions_dir.is_dir():
             return []
         return [p.stem for p in sessions_dir.glob("*.jsonl")]
+
+    # --- extraction cache (gitignored; sessions are immutable so the id is a safe key) ---
+    def load_extraction(self, session_id: str) -> list[Claim] | None:
+        """Return the cached per-session extraction, or None if not cached.
+
+        An empty list (file exists, no claims) is a real cached result — a
+        signal-bearing session can legitimately produce no claims, and we must
+        not re-run the model on it every pass.
+        """
+        path = self.extraction_cache_path(session_id)
+        if not path.exists():
+            return None
+        return [Claim.model_validate_json(ln) for ln in self._read_jsonl(path)]
+
+    def save_extraction(self, session_id: str, claims: list[Claim]) -> None:
+        path = self.extraction_cache_path(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_jsonl(path, claims)
 
     # --- jsonl helpers ---
     @staticmethod

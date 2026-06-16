@@ -15,6 +15,7 @@ from pathlib import Path
 
 import typer
 
+from lore import __version__
 from lore.serve.server import KnowledgeServer
 from lore.store import LoreStore
 
@@ -22,6 +23,22 @@ app = typer.Typer(help="Compile coding-agent sessions into team tribal knowledge
 
 RepoOpt = typer.Option(Path("."), "--repo", help="Path to the team repo root.")
 TranscriptsOpt = typer.Option(None, "--transcripts", help="Override the transcripts dir.")
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"crewlore {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", callback=_version_callback, is_eager=True,
+        help="Show the crewlore version and exit.",
+    ),
+) -> None:
+    """Compile coding-agent sessions into team tribal knowledge, locally."""
 
 
 def _transcript_dir(store: LoreStore, override: Path | None) -> Path:
@@ -86,19 +103,25 @@ def query(text: str, repo: Path = RepoOpt, limit: int = 5):
             typer.echo(f"    -> {c.action}")
 
 
-def _compile_once(store: LoreStore, transcript_dir: Path) -> dict:
+def _compile_once(store: LoreStore, transcript_dir: Path, *, rebuild: bool = False) -> dict:
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
     from lore.compile.run import auto_compile
 
     extractor = _build_extractor(store)
-    return auto_compile(store, extractor, ClaudeCodeAdapter(), transcript_dir)
+    return auto_compile(store, extractor, ClaudeCodeAdapter(), transcript_dir, rebuild=rebuild)
 
 
 @app.command()
-def compile(repo: Path = RepoOpt, transcripts: Path = TranscriptsOpt):  # noqa: A001
+def compile(  # noqa: A001
+    repo: Path = RepoOpt,
+    transcripts: Path = TranscriptsOpt,
+    rebuild: bool = typer.Option(
+        False, "--rebuild", help="Ignore the extraction cache and re-extract all sessions."
+    ),
+):
     """Ingest new transcripts, distill to claims + book, and prune (one pass)."""
     store = LoreStore(repo)
-    stats = _compile_once(store, _transcript_dir(store, transcripts))
+    stats = _compile_once(store, _transcript_dir(store, transcripts), rebuild=rebuild)
     typer.echo(
         f"ingested {stats['ingested']} new sessions "
         f"({stats['redactions']} redactions); "
@@ -112,12 +135,19 @@ def watch(
     transcripts: Path = TranscriptsOpt,
     interval: int = typer.Option(300, "--interval", help="Seconds between passes."),
     once: bool = typer.Option(False, "--once", help="Run a single pass and exit (cron mode)."),
+    rebuild: bool = typer.Option(
+        False, "--rebuild", help="Ignore the extraction cache and re-extract all sessions."
+    ),
 ):
-    """Automatically compile on an interval — so nobody has to remember to."""
+    """Automatically compile on an interval — so nobody has to remember to.
+
+    Extraction is cached per session, so each pass only sends newly-ingested
+    sessions to the model; cost is incremental, not per-corpus-per-interval.
+    """
     store = LoreStore(repo)
     tdir = _transcript_dir(store, transcripts)
     while True:
-        stats = _compile_once(store, tdir)
+        stats = _compile_once(store, tdir, rebuild=rebuild)
         typer.echo(
             f"[watch] +{stats['ingested']} sessions, "
             f"{stats['active']} active claims, {stats['conflicts']} conflicts"
@@ -132,8 +162,16 @@ def watch(
 
 
 @app.command()
-def serve(repo: Path = RepoOpt):
-    """Start the MCP server exposing query-time retrieval."""
+def serve(
+    repo: Path = RepoOpt,
+    mcp: bool = typer.Option(
+        True, "--mcp", help="Run as an MCP server over stdio (the only mode today)."
+    ),
+):
+    """Start the MCP server exposing query-time retrieval to any MCP client."""
+    if not mcp:  # reserved for future non-MCP serve modes
+        typer.echo("Only MCP serving is supported today; run without --no-mcp.")
+        raise typer.Exit(1)
     try:
         from lore.serve.mcp_server import run_mcp
     except ImportError:

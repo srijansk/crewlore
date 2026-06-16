@@ -46,10 +46,18 @@ def compile_sessions(
     # genuinely-conflicting claims never group. Seed from prior claims, then grow.
     known_topics: set[str] = {c.topic for c in candidates if c.topic}
     for session_id, events in sessions.items():
-        if session_has_signal(events):  # C0 lever 3: skip trivial sessions
+        if not session_has_signal(events):  # C0 lever 3: skip trivial sessions
+            continue
+        try:
             extracted = extractor.extract(events, session_id, sorted(known_topics))
-            candidates.extend(extracted)
-            known_topics.update(c.topic for c in extracted if c.topic)
+        except Exception:
+            # One problematic session (oversized context, transient 429/500) must
+            # not abort the whole compile — skip it and continue. Nothing is cached
+            # on failure, so the next pass retries it. Mirrors ingest's defensive
+            # per-file posture.
+            continue
+        candidates.extend(extracted)
+        known_topics.update(c.topic for c in extracted if c.topic)
 
     claims = _dedup_and_score(candidates)
     conflicts = _detect_conflicts(claims)

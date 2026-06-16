@@ -131,3 +131,58 @@ def test_leaves_non_secret_urls_untouched():
     out, n = scrub_text(text)
     assert out == text
     assert n == 0
+
+
+def test_redacts_aws_sts_temporary_key():
+    out, n = scrub_text("temp creds ASIAIOSFODNN7EXAMPLE in the env")
+    assert "ASIAIOSFODNN7EXAMPLE" not in out
+    assert "REDACTED:aws-key" in out
+    assert n >= 1
+
+
+def test_redacts_aws_secret_access_key_assignment():
+    out, n = scrub_text("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+    assert "wJalrXUtnFEMI" not in out
+    assert n >= 1
+
+
+def test_redacts_slack_config_token_xoxc():
+    out, n = scrub_text("token: xoxc-1234567890-abcdefghijklmnop")
+    assert "xoxc-1234567890" not in out
+    assert "REDACTED:slack-token" in out
+    assert n >= 1
+
+
+def test_redacts_quoted_multiword_passphrase():
+    out, n = scrub_text('password = "correct horse battery staple"')
+    assert "correct horse battery staple" not in out
+    assert n >= 1
+
+
+def test_scrub_events_redacts_secret_in_tool_call_meta():
+    # The high-risk case: a secret passed as a tool-call argument lands in meta,
+    # not content. It must be scrubbed before the session is written to disk.
+    leaky_cmd = "curl -H 'Authorization: Bearer sk-ant-api03-LEAKED_in_args_123456'"
+    ev = NSFEvent(
+        session="s", actor="agent", kind="tool_call",
+        timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        content="Bash",
+        meta={"input": {"command": leaky_cmd}},
+    )
+    scrubbed, n = scrub_events([ev])
+    assert n >= 1
+    assert "sk-ant" not in scrubbed[0].meta["input"]["command"]
+    # content (the tool name) is untouched; structure is preserved.
+    assert scrubbed[0].content == "Bash"
+    assert "command" in scrubbed[0].meta["input"]
+
+
+def test_scrub_events_leaves_clean_meta_untouched():
+    ev = NSFEvent(
+        session="s", actor="agent", kind="tool_call",
+        timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        content="Bash", meta={"input": {"command": "grep webhook"}},
+    )
+    scrubbed, n = scrub_events([ev])
+    assert n == 0
+    assert scrubbed[0].meta == {"input": {"command": "grep webhook"}}

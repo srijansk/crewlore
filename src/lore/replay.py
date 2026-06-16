@@ -12,16 +12,14 @@ These are the two numbers that decide whether `lore` works:
 
 from __future__ import annotations
 
-import re
-
 from pydantic import BaseModel
 
+# Reuse the compile-time gate's canonical form so the *reported* fidelity number
+# uses exactly the contract the gate enforces (Markdown-decoration tolerance,
+# whitespace collapse, case-folding) — one definition of "verbatim", not two.
+from lore.compile.extractor import _canonical_form
 from lore.schemas import Claim, NSFEvent
 from lore.serve.server import rank_claims
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
 
 
 class FidelityReport(BaseModel):
@@ -38,10 +36,10 @@ class ReplayReport(BaseModel):
 
 
 def fidelity_report(claims: list[Claim], source_text: str) -> FidelityReport:
-    haystack = _normalize(source_text)
+    haystack = _canonical_form(source_text)
     defects: list[str] = []
     for c in claims:
-        ok = bool(c.anchors) and all(_normalize(a.quote) in haystack for a in c.anchors)
+        ok = bool(c.anchors) and all(_canonical_form(a.quote) in haystack for a in c.anchors)
         if not ok:
             defects.append(c.id)
     total = len(claims)

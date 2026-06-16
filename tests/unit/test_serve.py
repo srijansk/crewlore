@@ -54,6 +54,24 @@ def test_query_instruments_usage_and_persists(tmp_path):
     assert reloaded.usage.times_served == 1
 
 
+def test_query_does_not_churn_committed_claims_file(tmp_path):
+    # Usage stats live in a gitignored sidecar, so a query (which bumps usage)
+    # must leave the git-tracked claims.jsonl byte-for-byte identical — otherwise
+    # `git log .lore/` fills with noise and a live demo dirties the repo.
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([_claim("dedupe billing webhook", "services/billing")])
+    before = store.claims_path.read_bytes()
+
+    KnowledgeServer(store).query("billing webhook")
+
+    after = store.claims_path.read_bytes()
+    assert before == after  # committed truth unchanged
+    # ...but the usage bump is persisted (in the sidecar) and visible on reload.
+    assert store.usage_path.exists()
+    assert store.load_claims()[0].usage.times_served == 1
+
+
 def test_query_respects_limit(tmp_path):
     store = LoreStore(tmp_path)
     store.init()

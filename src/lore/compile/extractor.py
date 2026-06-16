@@ -85,10 +85,6 @@ def _canonical_form(text: str) -> str:
     return text.strip().lower()
 
 
-# Back-compat alias for the call sites that used _normalize() during build-up.
-_normalize = _canonical_form
-
-
 class LLMExtractor:
     def __init__(
         self, complete: Complete, *, author: str = "unknown", harness: str = "claude-code"
@@ -122,7 +118,7 @@ class LLMExtractor:
         #    when a long agent reply is split by a tool_call between segments)
         # The result: a quote that spans an agent reply punctuated by tool
         # calls still validates against the continuous prose.
-        haystack = _normalize(
+        haystack = _canonical_form(
             "\n".join(e.content for e in events if e.kind != "tool_call")
         )
         provenance = Provenance(session=session_id, author=self._author, harness=self._harness)
@@ -152,7 +148,7 @@ class LLMExtractor:
                 quote=a["quote"],
             )
             for a in item.get("anchors", [])
-            if a.get("quote") and _normalize(a["quote"]) in haystack
+            if a.get("quote") and _canonical_form(a["quote"]) in haystack
         ]
         if not verified:  # fidelity gate: no verbatim anchor -> reject
             return None

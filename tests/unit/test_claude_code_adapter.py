@@ -93,6 +93,18 @@ def test_unknown_record_types_are_skipped():
     assert events == []
 
 
+def test_missing_or_naive_timestamp_yields_aware_datetime():
+    # Older / edited / third-party transcripts can omit `timestamp`, and a present
+    # one may lack a zone. Both must be tz-aware or the actuation lifecycle (which
+    # subtracts UTC `now`) crashes with a naive-vs-aware TypeError.
+    no_ts = {"type": "user", "message": {"role": "user", "content": "no timestamp here"}}
+    naive_ts = {"type": "user", "timestamp": "2026-05-19T10:00:00",
+                "message": {"role": "user", "content": "naive timestamp"}}
+    events = ClaudeCodeAdapter().parse_records([no_ts, naive_ts])
+    assert len(events) == 2
+    assert all(e.timestamp.tzinfo is not None for e in events)
+
+
 def test_full_transcript_preserves_order():
     records = [USER_TEXT, ASSISTANT_TEXT_AND_TOOL, TOOL_RESULT, UNKNOWN]
     events = ClaudeCodeAdapter().parse_records(records)

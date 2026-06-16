@@ -30,6 +30,19 @@ def test_unused_stale_claim_is_archived():
     assert out[0].status == "archived"
 
 
+def test_naive_observed_at_does_not_crash_lifecycle():
+    # Regression: a claim with a tz-naive observed_at (e.g. from a timestampless
+    # transcript) must not crash the lifecycle's `now - observed_at` subtraction.
+    claim = Claim(
+        statement="naive-stamped gotcha", kind="gotcha", scope="services/billing",
+        provenance=Provenance(session="s", author="a", harness="claude-code"),
+        anchors=[Anchor(source_kind="transcript", ref="s#1", quote="x")],
+        observed_at=datetime(2026, 1, 1),  # NAIVE on purpose
+    )
+    out = apply_lifecycle([claim], now=NOW, max_unused_age=30 * DAY)
+    assert out[0].status == "archived"  # old + unused -> decays, no TypeError
+
+
 def test_recent_unused_claim_is_kept():
     claims = [_claim("recent gotcha", observed_days_ago=5)]
     out = apply_lifecycle(claims, now=NOW, max_unused_age=30 * DAY)

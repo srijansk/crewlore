@@ -162,6 +162,29 @@ def test_recompile_is_idempotent():
     assert len(second.claims) == 1
 
 
+class _PartlyRaisingExtractor:
+    """Raises on one session id, returns claims for others — models a transient
+    API failure / oversized-context error on a single session."""
+
+    def __init__(self, mapping, fail_on):
+        self.mapping = mapping
+        self.fail_on = fail_on
+
+    def extract(self, events, session_id, known_topics=None):
+        if session_id == self.fail_on:
+            raise RuntimeError("simulated 429 / context overflow")
+        return list(self.mapping.get(session_id, []))
+
+
+def test_extractor_failure_on_one_session_does_not_abort_compile():
+    good = _claim("dedupe on idempotency key", "ses_ok")
+    sessions = {"ses_bad": _signal_events("ses_bad"), "ses_ok": _signal_events("ses_ok")}
+    extractor = _PartlyRaisingExtractor({"ses_ok": [good]}, fail_on="ses_bad")
+    # The bad session is skipped; the good session still compiles.
+    result = compile_sessions(sessions, extractor)
+    assert {c.statement for c in result.claims} == {"dedupe on idempotency key"}
+
+
 def test_merge_keeps_latest_observed_at():
     early = _claim("dedupe on idempotency key", "ses_1", when=10)
     late = _claim("dedupe on idempotency key", "ses_2", when=20)

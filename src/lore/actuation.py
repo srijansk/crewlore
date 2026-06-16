@@ -14,11 +14,16 @@ Run this periodically (e.g. after each compile, or on a cron) over the store.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from lore.schemas import Claim
 
 _REINFORCE_PER_INFLUENCE = 0.1
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Coerce a possibly-naive datetime to UTC so aware/naive subtraction can't crash."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 def apply_lifecycle(
@@ -44,7 +49,11 @@ def _step(c: Claim, now: datetime, max_unused_age: timedelta, override_threshold
         return c.model_copy(update={"status": "archived"})
 
     # Never used and stale -> decay out of the active set.
-    if u.times_served == 0 and c.observed_at is not None and (now - c.observed_at) > max_unused_age:
+    if (
+        u.times_served == 0
+        and c.observed_at is not None
+        and (_as_utc(now) - _as_utc(c.observed_at)) > max_unused_age
+    ):
         return c.model_copy(update={"status": "archived"})
 
     # Used and valued -> reinforce.

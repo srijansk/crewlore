@@ -22,7 +22,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 ClaimKind = Literal["decision", "procedure", "gotcha", "style"]
-ClaimStatus = Literal["active", "archived", "superseded"]
+ClaimStatus = Literal["active", "archived"]
 Actor = Literal["user", "agent", "system"]
 
 
