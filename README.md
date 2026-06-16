@@ -2,21 +2,21 @@
 
 [![CI](https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg)](https://github.com/srijansk/crewlore/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](docs/examples/pydantic-ai/)
-[![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](docs/examples/pydantic-ai/)
+[![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
+[![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
 
 > **Your coding agents keep relearning what your team already figured out.**
 > `crewlore` compiles agent sessions into a citable, plaintext team-knowledge layer that lives in your git repo. Local-first.
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="crewlore in action — sessions compiled into a citable team knowledge book" />
+  <img src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/demo.gif" alt="crewlore in action — sessions compiled into a citable team knowledge book" />
 </p>
 
 ```bash
-pipx install git+https://github.com/srijansk/crewlore.git
+pipx install crewlore
 ```
 
-> **Validated on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)** (17.3k ⭐) · 3 sessions · 18 claims · 100% fidelity · [see receipts →](docs/examples/pydantic-ai/)
+> **Validated on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)** (17.3k ⭐) · 3 sessions · 18 claims · 100% fidelity · [see receipts →](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
 
 ## Quickstart
 
@@ -33,10 +33,10 @@ That's it — engineers keep working in whatever agent they use; `lore` keeps th
 <details>
 <summary>Trouble installing?</summary>
 
-If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). Pin a known-working interpreter:
+If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). This is about the interpreter pipx uses, not the package — pin a known-working one:
 
 ```bash
-pipx install --python python3.13 git+https://github.com/srijansk/crewlore.git
+pipx install --python python3.13 crewlore
 ```
 
 To make pipx default to Python 3.13 going forward: `export PIPX_DEFAULT_PYTHON=$(which python3.13)`.
@@ -59,12 +59,12 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 
 ## See it run on a real codebase: pydantic-ai (17.3k ⭐)
 
-[`docs/examples/pydantic-ai/`](docs/examples/pydantic-ai/) is a committed snapshot of `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo — 3 Claude Code sessions on real issues, no synthetic data.
+[`docs/examples/pydantic-ai/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/) is a committed snapshot of `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo — 3 Claude Code sessions on real issues, no synthetic data.
 
 - **18 claims** compiled across 9 scope groupings (UI adapters, decorator introspection, durable-execution threat modeling, toolsets, tests, version policy)
-- **100% fidelity** under the explicit [canonical-form contract](docs/anchors.md) — every anchor's quote canonically resolves to a substring of its source session. (Fidelity certifies the *citation* is real, not that the model's *statement* is fully entailed by it — that's what human/PR review of the book is for.)
+- **100% fidelity** under the explicit [canonical-form contract](https://github.com/srijansk/crewlore/blob/main/docs/anchors.md) — every anchor's quote canonically resolves to a substring of its source session. (Fidelity certifies the *citation* is real, not that the model's *statement* is fully entailed by it — that's what human/PR review of the book is for.)
 - **0 conflicts** because the three sessions covered disjoint scopes — the conflict detector wasn't given anything to flag
-- **Receipts:** the rendered [`book.md`](docs/examples/pydantic-ai/book.md), the raw [`claims.jsonl`](docs/examples/pydantic-ai/claims.jsonl), and full [`provenance.md`](docs/examples/pydantic-ai/provenance.md) (session ids, commit hashes, compile cost, scrub redactions, five real-data bugs the capture surfaced and we fixed before publishing)
+- **Receipts:** the rendered [`book.md`](https://github.com/srijansk/crewlore/blob/main/docs/examples/pydantic-ai/book.md), the raw [`claims.jsonl`](https://github.com/srijansk/crewlore/blob/main/docs/examples/pydantic-ai/claims.jsonl), and full [`provenance.md`](https://github.com/srijansk/crewlore/blob/main/docs/examples/pydantic-ai/provenance.md) (session ids, commit hashes, compile cost, scrub redactions, five real-data bugs the capture surfaced and we fixed before publishing)
 
 ## What you get
 
@@ -116,7 +116,7 @@ flowchart LR
 
 > `lore watch` runs ingest → compile → prune automatically, on an interval.
 
-- **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts a curated set of secret patterns (Anthropic / OpenAI / generic `sk-*` API keys, AWS keys, GitHub classic + fine-grained PATs, Google API keys, Slack tokens, HuggingFace tokens, JWTs, connection-string passwords, private-key blocks, and `password=…` assignment shapes) *before* anything is stored or sent to a model. The pattern set is documented in [`docs/scrub.md`](docs/scrub.md).
+- **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts a curated set of secret patterns (Anthropic / OpenAI / generic `sk-*` API keys, AWS keys, GitHub classic + fine-grained PATs, Google API keys, Slack tokens, HuggingFace tokens, JWTs, connection-string passwords, private-key blocks, and `password=…` assignment shapes) *before* anything is stored or sent to a model. The pattern set is documented in [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md).
 - **Compile** — extracts atomic claims, deduplicates them, records disagreements instead of silently overwriting, scores authority by how often a claim recurs, and drops any claim whose citation doesn't resolve verbatim.
 - **Serve** — writes a human- and agent-readable knowledge book to `.lore/knowledge/`, and exposes a query tool (including an optional MCP server) so any agent can pull the relevant slice on demand.
 - **Actuation loop** — every retrieval is recorded, and that usage drives a lifecycle: unused claims decay and archive, contradicted claims are retired, useful claims are reinforced. The store stays small and fresh instead of growing into a pile nobody reads.
@@ -144,7 +144,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 
 - **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local OpenAI-compatible model (Ollama, LM Studio, vLLM) via `provider: local` — nothing routes through any `crewlore`-operated service, because there is none.
 - **Plaintext, in your repo.** The knowledge layer is human-readable Markdown and JSONL under `.lore/`, versioned by git. `git log .lore/` is your audit trail.
-- **Secrets never travel.** Scrubbing — of both message content and tool-call arguments — happens at ingest, before storage or any model call. It's a high-precision pattern set (a floor, not a DLP guarantee; see [`docs/scrub.md`](docs/scrub.md)), and raw session captures are git-ignored by default regardless.
+- **Secrets never travel.** Scrubbing — of both message content and tool-call arguments — happens at ingest, before storage or any model call. It's a high-precision pattern set (a floor, not a DLP guarantee; see [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md)), and raw session captures are git-ignored by default regardless.
 
 ## CLI
 
@@ -155,7 +155,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore compile` | Run a single ingest-and-compile pass manually. |
 | `lore query "<task>"` | Retrieve the claims most relevant to a task (records usage). |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being used. |
-| `lore serve --mcp` | Start an MCP server exposing query-time retrieval to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires `pip install 'crewlore[serve]'`. See [`docs/mcp.md`](docs/mcp.md) for wiring snippets. |
+| `lore serve --mcp` | Start an MCP server exposing query-time retrieval to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires `pip install 'crewlore[serve]'`. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md) for wiring snippets. |
 
 ## Configuration
 
@@ -187,10 +187,10 @@ Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never sh
 
 ## Contributing
 
-Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/crewlore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and the dev loop.
+Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/crewlore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](https://github.com/srijansk/crewlore/blob/main/CONTRIBUTING.md) for local setup and the dev loop.
 
 Tests are fully deterministic — no real API calls during `pytest`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/srijansk/crewlore/blob/main/LICENSE).
