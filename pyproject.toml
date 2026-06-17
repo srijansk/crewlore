@@ -38,6 +38,12 @@ dependencies = [
 [project.scripts]
 lore = "lore.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/srijansk/crewlore"
+Repository = "https://github.com/srijansk/crewlore"
+Issues = "https://github.com/srijansk/crewlore/issues"
+Changelog = "https://github.com/srijansk/crewlore/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 # OpenAI SDK — for `model.provider: openai` and for `local` (OpenAI-compatible endpoints).
 openai = ["openai>=1.0"]

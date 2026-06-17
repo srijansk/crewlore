@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `[project.urls]` (Homepage / Repository / Issues / Changelog) so the PyPI project page links back to the repo. Takes effect on the next published release.
+
 ## 0.1.1
 
 Docs-only release. No code or behavior changes — the package is identical to 0.1.0.
