@@ -54,6 +54,19 @@ dev = ["pytest>=8.0", "pytest-cov", "ruff", "openai>=1.0"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/lore"]
 
+[tool.hatch.build.targets.sdist]
+# The sdist is for building the package, not for browsing the repo: keep the
+# README hero GIF, the committed example snapshots, and the studies out of it.
+exclude = [
+  "/.github",
+  "/docs/assets",
+  "/docs/examples",
+  "/docs/recording.tape",
+  "/studies",
+  "/local",
+  "/uv.lock",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
