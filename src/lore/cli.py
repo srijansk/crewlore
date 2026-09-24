@@ -16,7 +16,7 @@ from pathlib import Path
 import typer
 
 from lore import __version__
-from lore.serve.server import KnowledgeServer
+from lore.serve.server import KnowledgeServer, claim_label
 from lore.store import LoreStore
 
 app = typer.Typer(help="Compile coding-agent sessions into team tribal knowledge, locally.")
@@ -98,17 +98,36 @@ def query(text: str, repo: Path = RepoOpt, limit: int = 5):
         typer.echo("(no relevant claims)")
         return
     for c in results:
-        typer.echo(f"[{c.kind}] ({c.scope}) {c.statement}")
+        typer.echo(f"[{claim_label(c)}] ({c.scope}) {c.statement}")
         if c.action:
-            typer.echo(f"    -> {c.action}")
+            verb = "" if c.adoption == "current" else "instead: "
+            typer.echo(f"    -> {verb}{c.action}")
 
 
-def _compile_once(store: LoreStore, transcript_dir: Path, *, rebuild: bool = False) -> dict:
+def _compile_once(
+    store: LoreStore, transcript_dir: Path, *, rebuild: bool = False, adapter=None
+) -> dict:
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
+    from lore.compile.extractor import FatalExtractionError
     from lore.compile.run import auto_compile
 
     extractor = _build_extractor(store)
-    return auto_compile(store, extractor, ClaudeCodeAdapter(), transcript_dir, rebuild=rebuild)
+    try:
+        return auto_compile(
+            store, extractor, adapter or ClaudeCodeAdapter(), transcript_dir, rebuild=rebuild
+        )
+    except FatalExtractionError as exc:
+        # Without this the run would report success having compiled nothing.
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
+
+
+def _warn_on_failures(stats: dict) -> None:
+    if failed := stats.get("failed"):
+        typer.echo(
+            f"  ! {failed} session(s) failed to extract and were skipped; "
+            "they will be retried on the next pass"
+        )
 
 
 @app.command()
@@ -127,6 +146,55 @@ def compile(  # noqa: A001
         f"({stats['redactions']} redactions); "
         f"{stats['active']} active claims, {stats['conflicts']} conflicts"
     )
+    _warn_on_failures(stats)
+
+
+@app.command("import-prs")
+def import_prs(
+    source_repo: str = typer.Argument(..., metavar="OWNER/REPO", help="GitHub repo to import."),
+    repo: Path = RepoOpt,
+    limit: int = typer.Option(50, "--limit", help="How many recent pull requests to scan."),
+    all_authors: bool = typer.Option(
+        False, "--all-authors", help="Import human-authored PRs too, not just agent-authored ones."
+    ),
+    rebuild: bool = typer.Option(
+        False, "--rebuild", help="Ignore the extraction cache and re-extract all sessions."
+    ),
+):
+    """Compile a GitHub repo's pull-request threads into knowledge.
+
+    Agent-authored PR threads state the intent, the alternatives weighed and the
+    constraint hit, so a repo you have never run an agent in still has a usable
+    knowledge layer — no local transcripts, no waiting for sessions to pile up.
+    """
+    from lore.capture.adapters.github_pr import GitHubPRAdapter
+    from lore.capture.sources.github import GitHubError, GitHubPRSource
+
+    store = LoreStore(repo)
+    out_dir = store.lore / "sources" / "github"
+    try:
+        stats = GitHubPRSource().export(
+            source_repo, out_dir, limit=limit, agents_only=not all_authors
+        )
+    except GitHubError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"exported {stats['written']} PR threads from {source_repo}")
+    if stats["skipped_non_agent"]:
+        typer.echo(
+            f"  skipped {stats['skipped_non_agent']} with no agent authorship detected "
+            "(use --all-authors to include them)"
+        )
+    if not stats["written"]:
+        return
+
+    result = _compile_once(store, out_dir, rebuild=rebuild, adapter=GitHubPRAdapter())
+    typer.echo(
+        f"ingested {result['ingested']} new sessions; "
+        f"{result['active']} active claims, {result['conflicts']} conflicts"
+    )
+    _warn_on_failures(result)
 
 
 @app.command()
@@ -152,6 +220,7 @@ def watch(
             f"[watch] +{stats['ingested']} sessions, "
             f"{stats['active']} active claims, {stats['conflicts']} conflicts"
         )
+        _warn_on_failures(stats)
         if once:
             break
         try:

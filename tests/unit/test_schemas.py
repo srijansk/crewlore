@@ -98,3 +98,25 @@ def test_json_round_trip_preserves_id_and_fields():
     assert restored.id == claim.id
     assert restored.action == "Dedupe on idempotency key before processing."
     assert restored.anchors[0].quote == "the webhook fires twice in staging"
+
+
+def test_adoption_defaults_to_current_and_does_not_change_identity():
+    base = dict(
+        statement="Store the idempotency key in Redis.", kind="decision", scope="services/billing",
+        provenance=Provenance(session="s", author="a", harness="claude-code"),
+    )
+    current = Claim(**base)
+    declined = Claim(**base, adoption="not_adopted")
+    assert current.adoption == "current"
+    assert declined.adoption == "not_adopted"
+    # Like `topic`, adoption is metadata about the statement, not part of what
+    # the statement is — the id must not fork on it.
+    assert current.id == declined.id
+
+
+def test_adoption_must_be_a_known_value():
+    with pytest.raises(ValidationError):
+        Claim(
+            statement="x", kind="decision", scope="a", adoption="rejected",
+            provenance=Provenance(session="s", author="a", harness="claude-code"),
+        )

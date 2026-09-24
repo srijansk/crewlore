@@ -52,3 +52,31 @@ def test_unknown_provider_errors_with_actionable_message():
     assert "Unknown model provider" in msg
     # The message must not send the user down a dead end — it names the real options.
     assert "anthropic" in msg and "openai" in msg and "local" in msg
+
+
+# GUARDS: a key that is present but rejected is indistinguishable from a
+# transient error at the call site. It must be raised as fatal, or the compiler
+# skips every session and reports a successful, empty run.
+def test_rejected_api_key_becomes_a_fatal_credentials_error():
+    import pytest
+
+    from lore.compile.extractor import FatalExtractionError
+    from lore.compile.llm import CredentialsError, _reraise_auth_errors
+
+    class Unauthorized(Exception):
+        status_code = 401
+
+    assert issubclass(CredentialsError, FatalExtractionError)
+    with pytest.raises(CredentialsError, match="rejected the API key"):
+        _reraise_auth_errors(Unauthorized(), "Anthropic")
+
+
+# GUARDS: rate limits and server errors must stay retryable, not be misreported
+# as a credentials problem that tells the user to go check their key.
+def test_transient_status_codes_are_not_treated_as_credentials_failures():
+    from lore.compile.llm import _reraise_auth_errors
+
+    class RateLimited(Exception):
+        status_code = 429
+
+    _reraise_auth_errors(RateLimited(), "Anthropic")  # returns, caller re-raises

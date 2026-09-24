@@ -8,9 +8,10 @@ same shape — that is what makes `lore` harness-neutral by construction.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
+from lore.capture.adapters._timestamps import parse_ts as _parse_ts
 from lore.schemas import NSFEvent
 
 MANIFEST = {
@@ -19,20 +20,6 @@ MANIFEST = {
     "log_location": "~/.claude/projects/",
     "session_hook": "PostToolUse/Stop hooks write transcript JSONL (default)",
 }
-
-
-def _parse_ts(raw: str | None) -> datetime:
-    """Always return a timezone-aware UTC datetime.
-
-    A transcript record may omit `timestamp` (older/edited/third-party files), and
-    a present timestamp may lack a zone. Both must yield an aware datetime, or the
-    actuation lifecycle (which subtracts `now` in UTC) crashes with a naive-vs-aware
-    TypeError downstream.
-    """
-    if not raw:
-        return datetime.fromtimestamp(0, tz=timezone.utc)
-    dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 class ClaudeCodeAdapter:

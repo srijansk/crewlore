@@ -9,6 +9,7 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -71,9 +72,10 @@ class LoreStore:
         return yaml.safe_load(self.config_path.read_text()) or {}
 
     # --- claims ---
-    def write_claims(self, claims: list[Claim]) -> None:
+    def write_claims(self, claims: list[Claim], *, now: datetime | None = None) -> None:
         self.claims_path.parent.mkdir(parents=True, exist_ok=True)
-        ordered = sorted(claims, key=lambda c: c.id)
+        stamped = self._stamp_entry_time(claims, now or datetime.now(timezone.utc))
+        ordered = sorted(stamped, key=lambda c: c.id)
         # Committed truth excludes volatile usage stats — they live in a gitignored
         # sidecar, so retrieval (which bumps usage) leaves claims.jsonl byte-stable.
         self.claims_path.write_text(
@@ -88,6 +90,36 @@ class LoreStore:
             if c.id in usage:
                 c.usage = usage[c.id]
         return claims
+
+    def _stamp_entry_time(self, claims: list[Claim], now: datetime) -> list[Claim]:
+        """Stamp `compiled_at` on claims entering the store for the first time.
+
+        Entry time is a property of the *store*, not of the object being written,
+        so an unstamped claim inherits whatever time the store already recorded
+        for that id and only a genuinely new claim gets `now`. That keeps writes
+        idempotent (rewriting the same claims is byte-stable) and stops a
+        re-extracted claim from resetting its own unused-decay clock.
+
+        Doing this at the store boundary rather than during extraction also keeps
+        extraction deterministic, and therefore cacheable.
+        """
+        known = self._entry_times()
+        out: list[Claim] = []
+        for c in claims:
+            if c.compiled_at:
+                out.append(c)
+                continue
+            out.append(c.model_copy(update={"compiled_at": known.get(c.id, now)}))
+        return out
+
+    def _entry_times(self) -> dict[str, datetime]:
+        """Already-recorded entry times, read straight from the claims file."""
+        out: dict[str, datetime] = {}
+        for ln in self._read_jsonl(self.claims_path):
+            row = json.loads(ln)
+            if stamp := row.get("compiled_at"):
+                out[row["id"]] = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        return out
 
     def _write_usage(self, claims: list[Claim]) -> None:
         # Only persist non-default usage, keyed by claim id, to keep the sidecar small.

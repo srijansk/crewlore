@@ -25,6 +25,7 @@ def build_server(store: LoreStore) -> FastMCP:
             {
                 "statement": c.statement,
                 "kind": c.kind,
+                "adoption": c.adoption,
                 "scope": c.scope,
                 "action": c.action,
                 "anchors": [{"ref": a.ref, "quote": a.quote} for a in c.anchors],

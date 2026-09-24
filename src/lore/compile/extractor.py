@@ -22,15 +22,35 @@ from lore.schemas import Anchor, Claim, NSFEvent, Provenance
 
 Complete = Callable[[str], str]
 
+
+class FatalExtractionError(RuntimeError):
+    """A failure that will recur on every session, so retrying is pointless.
+
+    The compiler deliberately swallows per-session extraction errors — one
+    oversized context or transient 429 must not abort a whole pass. Bad
+    credentials look identical at the call site but are true of every session,
+    and swallowing them turns a misconfigured key into a silent no-op: the run
+    reports success, ingests sessions, and compiles nothing. This class marks the
+    difference so the compiler can stop and say what is wrong.
+    """
+
 _PROMPT_HEADER = """You extract reusable team tribal-knowledge claims from one coding-agent session.
 Return ONLY a JSON array. Each item:
   {"statement": str, "kind": "decision"|"procedure"|"gotcha"|"style",
+   "adoption": "current"|"not_adopted",
    "scope": str (repo path or area), "topic": str|null (short key grouping claims
    that answer the same question), "action": str|null (what a future session should DO),
    "anchors": [{"source_kind":"transcript","ref":str,"quote":str (VERBATIM excerpt)}]}
 Rules: quotes must be copied verbatim from the transcript. Only emit claims that
-would change a future session. If nothing is worth keeping, return [].
+would change a future session.
+Set "adoption" to "not_adopted" when the session shows the described approach was
+declined, reverted, or otherwise not accepted; in that case phrase "statement" so
+it records that the approach was tried and not adopted, and phrase "action" as
+what a future session should do INSTEAD. Otherwise set "adoption" to "current".
+If nothing is worth keeping, return [].
 """
+
+_ADOPTION_VALUES = frozenset({"current", "not_adopted"})
 
 _TOPIC_REUSE = """When a claim concerns the same question as an existing topic below, REUSE that
 exact topic key (so disagreements about the same question can be detected). Existing topics:
@@ -85,6 +105,71 @@ def _canonical_form(text: str) -> str:
     return text.strip().lower()
 
 
+_LOCATOR_PROBE_CHARS = 40
+
+
+class _LocatorIndex:
+    """Resolves a verified quote to an addressable location in the session.
+
+    Verbatim verification and addressability are different properties, and the
+    fidelity gate only establishes the first: it proves the quote was really
+    said, not where. Deriving the ref from the match closes that gap, so an
+    anchor is something a reader can navigate to rather than a claim about
+    provenance.
+
+    Preference order for the ref, most navigable first:
+
+    1. a file locator the event already carries (`path:line` on an inline review
+       comment is the best pointer any source gives us),
+    2. `<session>#event-<n>`, which resolves against the stored session file.
+    """
+
+    def __init__(self, events: list[NSFEvent], session_id: str):
+        self._session = session_id
+        self._events = events
+        self._canonical = [_canonical_form(e.content) for e in events]
+
+    def locate(self, quote: str) -> tuple[str, str]:
+        canonical = _canonical_form(quote)
+        position = self._find(canonical)
+        if position is None:
+            # The quote validated against the joined transcript but sits in no
+            # single event — it spans a reply split by tool calls. The session
+            # is still a true, resolvable location, so degrade to it rather than
+            # inventing a pointer.
+            return self._session, "transcript"
+        event = self._events[position]
+        if file_ref := self._file_ref(event):
+            return file_ref, "file"
+        return f"{self._session}#event-{position}", self._source_kind(event)
+
+    def _find(self, canonical: str) -> int | None:
+        for i, text in enumerate(self._canonical):
+            if canonical and canonical in text:
+                return i
+        # A quote may straddle two events; fall back to whichever event opens it
+        # so the reader still lands at the right place.
+        probe = canonical[:_LOCATOR_PROBE_CHARS]
+        if len(probe) < _LOCATOR_PROBE_CHARS:
+            return None
+        for i, text in enumerate(self._canonical):
+            if probe in text:
+                return i
+        return None
+
+    @staticmethod
+    def _file_ref(event: NSFEvent) -> str | None:
+        """The first ref that names a line in a file — the most precise pointer."""
+        for ref in event.refs:
+            if ":" in ref and not ref.startswith(("http://", "https://")):
+                return ref
+        return None
+
+    @staticmethod
+    def _source_kind(event: NSFEvent) -> str:
+        return "diff" if event.kind == "diff" else "transcript"
+
+
 class LLMExtractor:
     def __init__(
         self, complete: Complete, *, author: str = "unknown", harness: str = "claude-code"
@@ -122,10 +207,11 @@ class LLMExtractor:
             "\n".join(e.content for e in events if e.kind != "tool_call")
         )
         provenance = Provenance(session=session_id, author=self._author, harness=self._harness)
+        index = _LocatorIndex(events, session_id)
 
         claims: list[Claim] = []
         for item in items:
-            claim = self._build_claim(item, provenance, observed_at, haystack)
+            claim = self._build_claim(item, provenance, observed_at, haystack, index)
             if claim is not None:
                 claims.append(claim)
         return claims
@@ -140,22 +226,31 @@ class LLMExtractor:
         stamps = [e.timestamp for e in events if e.timestamp is not None]
         return max(stamps) if stamps else None
 
-    def _build_claim(self, item, provenance, observed_at, haystack) -> Claim | None:
-        verified = [
-            Anchor(
-                source_kind=a.get("source_kind", "transcript"),
-                ref=a.get("ref", ""),
-                quote=a["quote"],
-            )
-            for a in item.get("anchors", [])
-            if a.get("quote") and _canonical_form(a["quote"]) in haystack
-        ]
+    def _build_claim(self, item, provenance, observed_at, haystack, index) -> Claim | None:
+        verified = []
+        for a in item.get("anchors", []):
+            quote = a.get("quote")
+            if not quote or _canonical_form(quote) not in haystack:
+                continue  # fidelity gate: the quote must appear verbatim
+            # The ref is derived from where the quote actually resolved, never
+            # taken from the model. A model-stated ref is unverified prose: it
+            # produced things like "agent/agent_message" and section headings,
+            # which read as provenance while pointing nowhere a reader can go.
+            ref, source_kind = index.locate(quote)
+            verified.append(Anchor(source_kind=source_kind, ref=ref, quote=quote))
         if not verified:  # fidelity gate: no verbatim anchor -> reject
+            return None
+        adoption = item.get("adoption", "current")
+        if adoption not in _ADOPTION_VALUES:
+            # Never coerce an unrecognised value to "current": turning a negative
+            # the model tried to express into an affirmative is the exact
+            # inversion the field exists to prevent. Losing the claim is safer.
             return None
         try:
             return Claim(
                 statement=item["statement"],
                 kind=item["kind"],
+                adoption=adoption,
                 scope=item.get("scope", "."),
                 topic=item.get("topic"),
                 action=item.get("action"),

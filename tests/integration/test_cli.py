@@ -78,3 +78,24 @@ def test_watch_once_without_credentials_errors_clearly(tmp_path, monkeypatch):
     )
     assert result.exit_code != 0
     assert "key" in result.stdout.lower() or "key" in str(result.exception).lower()
+
+
+def test_query_marks_claims_the_team_did_not_adopt(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims(
+        [
+            Claim(
+                statement="Redis for the webhook idempotency key was proposed and not adopted",
+                kind="decision", scope="services/billing", adoption="not_adopted",
+                action="keep the key inside the database transaction",
+                provenance=Provenance(session="s", author="a", harness="claude-code"),
+                anchors=[Anchor(source_kind="transcript", ref="s#1", quote="not in Redis")],
+                observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            )
+        ]
+    )
+    result = runner.invoke(app, ["query", "webhook idempotency key", "--repo", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "[decision · not adopted]" in result.stdout
+    assert "-> instead: keep the key" in result.stdout
