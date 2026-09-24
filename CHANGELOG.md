@@ -1,8 +1,40 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
-- Add `[project.urls]` (Homepage / Repository / Issues / Changelog) so the PyPI project page links back to the repo. Takes effect on the next published release.
+Every claim now says whether the team adopted it; pull-request threads are a second capture source; and a decay bug that emptied the knowledge layer on any historical import is fixed. This is the first release since 0.1.1, so it also carries the CI fix that had `main` red since July.
+
+### Added — adoption polarity
+
+- **`adoption: current | not_adopted` on every claim.** A schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X: the compiled claim reads fluently, cites a real line, and is wrong about the world. Measured on agent-authored pull requests that were closed without merging (see [`studies/palm/`](studies/palm/)), crewlore's own extractor stored the declined approach as current practice in roughly half of those threads, and so did a schema-free summarizer, so this is not one prompt's fault. Stating the outcome in the transcript helps; giving the schema a field for it, plus an instruction to use it, is what makes the extractor actually *record* the rejection in the claim's text. Across every arm without such a field it never once did. The field is excluded from the content-addressed id, like `topic`, and defaults to `current`, so existing `claims.jsonl` files load unchanged.
+- **The extractor is instructed to use it.** When a session shows an approach was declined, reverted or not accepted, the statement records that it was tried and not adopted and `action` says what to do instead. An unrecognised value is never coerced to `current` (that would be the exact inversion the field prevents); the claim is dropped.
+- **Declined claims are visible everywhere a claim is shown.** The book and `lore query` tag them `[kind · not adopted]` and label the action *Instead*; the MCP tool returns the field.
+
+- **Existing stores:** claims compiled before this release load with `adoption: current`. Extraction is cached per session, so run `lore compile --rebuild` once to re-extract existing sessions under the new schema.
+
+### Tooling
+
+- CI runs on Python 3.10 through 3.14.
+- Tag-driven releases: pushing `vX.Y.Z` builds the distribution, publishes to PyPI through trusted publishing, and creates the GitHub release from this file's matching section.
+- `CITATION.cff` for citing the software; `studies/` for the measurement studies behind product decisions, each with its reproduction recipe.
+
+### Added
+
+- **`lore import-prs OWNER/REPO`** — compile a GitHub repository's pull-request threads into knowledge. Coding agents now author much of the reasoning text in PR threads: an agent-written PR body states the intent, the alternatives weighed and the constraint hit, which human authors historically never wrote down. This means a repo you have never run an agent in still has a usable knowledge layer — no local transcript directory, no waiting for sessions to accumulate.
+- **GitHub PR adapter** (`github-pr`) — one pull request is one session. Two properties make PR threads a better fit for the session format than transcripts: merge/close and approval/change-request are ground-truth outcomes, so the `accept`/`reject` event kinds finally carry real verdicts; and inline review comments already name a `path` and `line`, so anchor provenance arrives rather than being reconstructed.
+- **Multi-method agent attribution** — author login, commit trailers, and PR-body markers, with the deciding signal recorded on each record so a disagreement can be audited. Author metadata alone is not enough: agents that commit under a human account are invisible to it. Projects that mandate AI-assistance disclosure are also detected (reported as `unspecified`, since the wording names the practice and not the product), and `extra_markers` accepts repo-specific conventions. An unrecognised author is reported as human — under-claiming shrinks the corpus rather than contaminating it.
+
+### Fixed
+
+- **Claims compiled from historical sessions were archived before they could ever be served.** The unused-decay lifecycle measured staleness from `observed_at` (when the knowledge was seen in the source) instead of from when the claim entered the store. Those two clocks coincide for transcripts compiled as they happen, which is why this shipped, and diverge completely for any imported or backfilled corpus — where every claim aged out on the very first compile pass, leaving a store full of claims with an empty book and empty retrieval. Claims now carry a separate `compiled_at`, set once by the store on first persist, and decay is measured against it; `observed_at` keeps its existing role in conflict recency. A claim with no entry stamp (written by an earlier version) is left alone rather than retired on a clock we do not have.
+- **Anchor refs are now derived from where the quote resolved, instead of being copied from the model.** The fidelity gate proves a quote was really said, not *where* — and the ref was whatever the model claimed, which in real runs came out as `agent/agent_message` or a PR-body section heading. Those read as provenance while pointing nowhere a reader can navigate to. Refs are now computed from the matching event: a `path:line` the event already carries is preferred (an inline review comment is the most precise pointer a source gives us), otherwise `<session>#event-<n>`, which resolves against the stored session. A quote spanning several events — legal, since the gate matches the joined transcript — degrades to the session id rather than inventing a pointer.
+- **An invalid API key reported a successful run that compiled nothing.** The compiler deliberately swallows per-session extraction errors so one oversized context or transient 429 cannot abort a whole pass — but rejected credentials fail identically on *every* session, so a bad key silently skipped all of them and printed `0 active claims` with no error. Provider auth rejections (401/403) are now raised as a fatal `CredentialsError` that stops the run with an actionable message and a non-zero exit, while rate limits and server errors stay retryable. Sessions skipped by genuinely transient failures are now counted and reported instead of hidden.
+- `discover` no longer auto-paginates a repository's entire pull-request history before applying `--limit`; on a large repo that was thousands of API calls to fetch the first page's worth, and it hung rather than erroring.
+- Changed-file lists are read at PR level, because the commits endpoint omits per-commit files — previously every `diff` event was captured with no file refs at all.
+
+### Changed
+
+- Add `[project.urls]` (Homepage / Repository / Issues / Changelog) so the PyPI project page links back to the repo.
 
 ## 0.1.1
 

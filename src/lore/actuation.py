@@ -48,11 +48,17 @@ def _step(c: Claim, now: datetime, max_unused_age: timedelta, override_threshold
     if u.times_overridden >= override_threshold and u.times_overridden > u.times_influential:
         return c.model_copy(update={"status": "archived"})
 
-    # Never used and stale -> decay out of the active set.
+    # Never used and stale -> decay out of the active set. The clock is
+    # store-entry time, not source-observation time: the question this asks is
+    # "has this claim sat here unused long enough to be noise?", which starts
+    # when the claim entered the store. Measuring it from `observed_at` would
+    # archive every claim compiled from a historical corpus on the first pass,
+    # before it ever had the chance to be served. A claim with no entry stamp is
+    # left alone rather than archived on a clock we do not have.
     if (
         u.times_served == 0
-        and c.observed_at is not None
-        and (_as_utc(now) - _as_utc(c.observed_at)) > max_unused_age
+        and c.compiled_at is not None
+        and (_as_utc(now) - _as_utc(c.compiled_at)) > max_unused_age
     ):
         return c.model_copy(update={"status": "archived"})
 

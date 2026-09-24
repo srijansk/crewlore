@@ -192,3 +192,61 @@ def test_merge_keeps_latest_observed_at():
     extractor = DictExtractor({"ses_1": [early], "ses_2": [late]})
     result = compile_sessions(sessions, extractor)
     assert result.claims[0].observed_at == datetime(2026, 5, 20, tzinfo=timezone.utc)
+
+
+# GUARDS: corroboration is not usage. Re-observing a claim in a later session
+# must not reset its unused-decay clock, or a claim nobody ever reads stays
+# active forever just by being rediscovered.
+def test_merge_keeps_earliest_compiled_at():
+    early = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    late = datetime(2026, 5, 20, tzinfo=timezone.utc)
+    a = _claim("webhook double-fires", "ses_1", when=19).model_copy(
+        update={"compiled_at": early}
+    )
+    b = _claim("webhook double-fires", "ses_2", when=20).model_copy(
+        update={"compiled_at": late}
+    )
+
+    result = compile_sessions({}, DictExtractor({}), prior_claims=[a, b])
+    assert len(result.claims) == 1
+    assert result.claims[0].compiled_at == early
+
+
+class _FailingExtractor:
+    """Raises a chosen exception for every session."""
+
+    def __init__(self, exc):
+        self.exc = exc
+        self.calls = 0
+
+    def extract(self, events, session_id, known_topics=None):
+        self.calls += 1
+        raise self.exc
+
+
+# GUARDS: bad credentials fail identically on every session. Swallowing them
+# turns a misconfigured key into a run that reports success, ingests sessions
+# and compiles nothing — the worst possible first-run experience.
+def test_fatal_extraction_error_aborts_instead_of_compiling_nothing():
+    import pytest
+
+    from lore.compile.extractor import FatalExtractionError
+
+    extractor = _FailingExtractor(FatalExtractionError("API key is invalid"))
+    sessions = {"s1": _signal_events("s1"), "s2": _signal_events("s2")}
+
+    with pytest.raises(FatalExtractionError):
+        compile_sessions(sessions, extractor)
+    assert extractor.calls == 1  # stopped on the first failure, did not retry every session
+
+
+# GUARDS: a transient per-session failure must still be survivable, and must be
+# reported rather than hidden behind a zero-claim success.
+def test_transient_failures_are_survived_but_counted():
+    extractor = _FailingExtractor(RuntimeError("transient 429"))
+    sessions = {"s1": _signal_events("s1"), "s2": _signal_events("s2")}
+
+    result = compile_sessions(sessions, extractor)
+    assert extractor.calls == 2  # kept going
+    assert result.claims == []
+    assert result.failed_sessions == 2

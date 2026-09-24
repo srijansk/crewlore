@@ -48,6 +48,13 @@ def rank_claims(claims: list[Claim], query: str, limit: int = 5) -> list[Claim]:
     return [c for _, _, c in scored[:limit]]
 
 
+def claim_label(c: Claim) -> str:
+    """The bracketed tag a reader sees: the kind, plus a marker when the team
+    declined what the claim describes, so a rejected approach is never mistaken
+    for current practice at a glance."""
+    return c.kind if c.adoption == "current" else f"{c.kind} · not adopted"
+
+
 def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
     """Render compiled claims as a human+agent-readable markdown book."""
     lines = ["# Team knowledge (compiled by crewlore)", ""]
@@ -60,9 +67,10 @@ def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
         lines.append(f"## {scope}")
         lines.append("")
         for c in sorted(by_scope[scope], key=lambda x: x.id):
-            lines.append(f"- **[{c.kind}]** {c.statement}")
+            lines.append(f"- **[{claim_label(c)}]** {c.statement}")
             if c.action:
-                lines.append(f"  - *Do:* {c.action}")
+                verb = "Do" if c.adoption == "current" else "Instead"
+                lines.append(f"  - *{verb}:* {c.action}")
             for a in c.anchors:
                 lines.append(f"  - _anchor_ `{a.ref}`: \"{a.quote}\"")
         lines.append("")

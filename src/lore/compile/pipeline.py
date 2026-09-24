@@ -13,6 +13,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from lore.capture.signals import session_has_signal
+from lore.compile.extractor import FatalExtractionError
 from lore.schemas import Anchor, Claim, Conflict, NSFEvent
 
 # Authority rises with the number of independent sessions that support a claim.
@@ -33,6 +34,10 @@ class Extractor(Protocol):
 class CompileResult(BaseModel):
     claims: list[Claim] = []
     conflicts: list[Conflict] = []
+    # Sessions whose extraction raised and were skipped. Reported rather than
+    # hidden: "compiled nothing" and "compiled nothing because every session
+    # failed" look identical to a user otherwise.
+    failed_sessions: int = 0
 
 
 def compile_sessions(
@@ -41,6 +46,7 @@ def compile_sessions(
     prior_claims: list[Claim] | None = None,
 ) -> CompileResult:
     candidates: list[Claim] = list(prior_claims or [])
+    failed = 0
     # Feed the existing topic vocabulary to the extractor so it reuses keys across
     # sessions; without this, the model invents a fresh topic per session and
     # genuinely-conflicting claims never group. Seed from prior claims, then grow.
@@ -50,18 +56,24 @@ def compile_sessions(
             continue
         try:
             extracted = extractor.extract(events, session_id, sorted(known_topics))
+        except FatalExtractionError:
+            # Bad credentials or a misconfigured provider will fail identically on
+            # every remaining session. Continuing would report a successful run
+            # that compiled nothing, so stop and let the caller explain why.
+            raise
         except Exception:
             # One problematic session (oversized context, transient 429/500) must
             # not abort the whole compile — skip it and continue. Nothing is cached
             # on failure, so the next pass retries it. Mirrors ingest's defensive
             # per-file posture.
+            failed += 1
             continue
         candidates.extend(extracted)
         known_topics.update(c.topic for c in extracted if c.topic)
 
     claims = _dedup_and_score(candidates)
     conflicts = _detect_conflicts(claims)
-    return CompileResult(claims=claims, conflicts=conflicts)
+    return CompileResult(claims=claims, conflicts=conflicts, failed_sessions=failed)
 
 
 def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
@@ -85,6 +97,7 @@ def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
                 update={
                     "anchors": _merge_anchors(members),
                     "observed_at": _latest_observed(members),
+                    "compiled_at": _earliest_compiled(members),
                     "authority": min(
                         _AUTHORITY_CAP,
                         _AUTHORITY_BASE + _AUTHORITY_PER_SUPPORT * (support - 1),
@@ -111,6 +124,17 @@ def _merge_anchors(members: list[Claim]) -> list[Anchor]:
 def _latest_observed(members: list[Claim]):
     stamps = [m.observed_at for m in members if m.observed_at is not None]
     return max(stamps) if stamps else None
+
+
+def _earliest_compiled(members: list[Claim]):
+    """Keep the first time this claim entered the store.
+
+    Re-observing a claim in a later session is corroboration, not usage, so it
+    must not reset the unused-decay clock — otherwise a claim nobody ever reads
+    stays active forever simply because it keeps being rediscovered.
+    """
+    stamps = [m.compiled_at for m in members if m.compiled_at is not None]
+    return min(stamps) if stamps else None
 
 
 def _detect_conflicts(claims: list[Claim]) -> list[Conflict]:

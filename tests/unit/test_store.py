@@ -107,3 +107,44 @@ def test_session_capture_round_trips_as_nsf(tmp_path):
     loaded = store.load_session("ses_7")
     assert loaded == events
     assert (tmp_path / ".lore" / "sessions" / "ses_7.jsonl").is_file()
+
+
+# GUARDS: the store is where a claim's unused-decay clock starts. Stamping here
+# (rather than during extraction) keeps extraction deterministic and cacheable
+# while guaranteeing every persisted claim has an entry time.
+def test_write_stamps_entry_time_on_first_persist(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    claim = _claim("webhook fires twice")
+    assert claim.compiled_at is None
+
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    store.write_claims([claim], now=now)
+    assert store.load_claims()[0].compiled_at == now
+
+
+# GUARDS: re-persisting must not reset the clock, or a claim rewritten on every
+# compile pass would never age out and the active set would grow without bound.
+def test_rewriting_a_claim_preserves_its_original_entry_time(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    first = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    store.write_claims([_claim("webhook fires twice")], now=first)
+
+    reloaded = store.load_claims()
+    store.write_claims(reloaded, now=datetime(2026, 8, 18, tzinfo=timezone.utc))
+    assert store.load_claims()[0].compiled_at == first
+
+
+# GUARDS: source time and store-entry time are different questions. Importing a
+# months-old pull request must leave observed_at in the past while starting the
+# decay clock now.
+def test_entry_time_is_independent_of_source_observation_time(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    store.write_claims([_claim("webhook fires twice")], now=now)
+
+    stored = store.load_claims()[0]
+    assert stored.observed_at == datetime(2026, 5, 19, tzinfo=timezone.utc)
+    assert stored.compiled_at == now

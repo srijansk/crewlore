@@ -23,6 +23,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ClaimKind = Literal["decision", "procedure", "gotcha", "style"]
 ClaimStatus = Literal["active", "archived"]
+# Whether the team adopted what a claim describes. Distinct from `status`, which
+# is the store lifecycle (active/archived) and says nothing about the world.
+Adoption = Literal["current", "not_adopted"]
 Actor = Literal["user", "agent", "system"]
 
 
@@ -95,11 +98,25 @@ class Claim(BaseModel):
     # The actionable form — what a future session should *do*. A claim that cannot
     # be made actionable is dumpyard material and should be down-ranked or dropped.
     action: str | None = None
+    # A schema that can only say "X" turns "we tried X and declined it" into a
+    # confident assertion of X: the claim reads fluently, cites a real line, and
+    # is wrong about the world. `not_adopted` gives the extractor somewhere to
+    # record the rejection; `action` then says what to do instead. Excluded from
+    # the content-addressed id, like `topic`.
+    adoption: Adoption = "current"
     provenance: Provenance
     anchors: list[Anchor] = Field(default_factory=list)
     authority: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Two distinct clocks, deliberately separate. `observed_at` is *source* time:
+    # when the knowledge was seen in the session, used to decide which of two
+    # conflicting claims is more recent. `compiled_at` is *store-entry* time, set
+    # once on first write and used by the unused-decay lifecycle. They coincide
+    # for transcripts compiled as they happen and diverge for any historical
+    # corpus (an imported pull-request archive, a backfill), where conflating
+    # them archives every claim before it can ever be served.
     observed_at: datetime | None = None
+    compiled_at: datetime | None = None
     status: ClaimStatus = "active"
     usage: UsageStats = Field(default_factory=UsageStats)
 

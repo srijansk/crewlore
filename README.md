@@ -1,12 +1,13 @@
 # crewlore
 
 [![CI](https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg)](https://github.com/srijansk/crewlore/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/crewlore.svg)](https://pypi.org/project/crewlore/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![fidelity 100%](https://img.shields.io/badge/fidelity-100%25-success.svg)](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
 [![claims compiled 18](https://img.shields.io/badge/claims_compiled-18-informational.svg)](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
 
 > **Your coding agents keep relearning what your team already figured out.**
-> `crewlore` compiles agent sessions into a citable, plaintext team-knowledge layer that lives in your git repo. Local-first.
+> `crewlore` compiles agent sessions and agent-authored pull requests into a citable, plaintext team-knowledge layer that lives in your git repo. It records what the team adopted *and* what it tried and declined. Local-first.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/demo.gif" alt="crewlore in action — sessions compiled into a citable team knowledge book" />
@@ -20,6 +21,10 @@ pipx install crewlore
 
 ## Quickstart
 
+Two ways in, depending on where your team's knowledge currently lives.
+
+**You already use a coding agent.** Point `lore` at the transcripts it writes to disk:
+
 ```bash
 cd my-repo
 lore init                      # create .lore/ in your repo
@@ -28,12 +33,21 @@ lore watch                     # automatic: read agent transcripts, scrub secret
 lore query "billing webhook"   # ask the knowledge layer anything, anytime
 ```
 
-That's it — engineers keep working in whatever agent they use; `lore` keeps the knowledge layer fresh in the background. Commit `.lore/knowledge` and `.lore/claims` and your teammates inherit it on the next `git pull`.
+**You have a repo but no sessions yet.** Compile its pull-request threads instead. Coding agents now write much of the reasoning in PR bodies and reviews — the intent, the alternatives weighed, the constraint hit — so a repo you have never run an agent in already has a knowledge layer waiting:
+
+```bash
+cd my-repo
+lore init
+lore import-prs owner/repo     # uses your existing `gh auth`; agent-authored PRs by default
+lore query "billing webhook"
+```
+
+Either way, commit `.lore/knowledge` and `.lore/claims` and your teammates inherit it on the next `git pull`. Engineers keep working in whatever agent they use; `lore watch` keeps the layer fresh in the background.
 
 <details>
 <summary>Trouble installing?</summary>
 
-If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python 3.14 builds). This is about the interpreter pipx uses, not the package — pin a known-working one:
+If `pipx` fails with `Broken Python installation, platform.mac_ver() returned an empty value`, your default Python is a broken install (sometimes seen with very recent Homebrew Python builds). This is about the interpreter pipx uses, not the package — pin a known-working one:
 
 ```bash
 pipx install --python python3.13 crewlore
@@ -78,7 +92,21 @@ Raw, messy sessions go in. Out comes a structured, citable **compiled claim** �
 >
 > > *anchor* — "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
 
-A human can verify it (the anchor points back to the exact session line); an agent can trust it (the citation is real, not hallucinated). Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by area and committed to your repo alongside your code:
+A human can verify it (the anchor points back to the exact session line); an agent can trust it (the citation is real, not hallucinated).
+
+**Declined work is recorded as declined.** When a session or pull request shows an approach was tried and not adopted, the claim says so, and its action says what to do instead:
+
+> **`[decision · not adopted]`** · *services/billing*
+>
+> Storing the Stripe idempotency key in Redis was proposed and rejected in review because the check has to run inside the database transaction.
+>
+> **Instead** — keep the key in the same transaction as the charge.
+>
+> > *anchor* — "Don't put the key in Redis. Must be inside the transaction."
+
+This matters more than it looks. A memory schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X — fluent, correctly cited, and wrong about the world. Every `crewlore` claim carries an `adoption` field and the extractor is instructed to use it; the [study behind that decision](https://github.com/srijansk/crewlore/tree/main/studies/palm/) is in the repo.
+
+Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by area and committed to your repo alongside your code:
 
 ```markdown
 # Team knowledge (compiled by crewlore)
@@ -87,7 +115,10 @@ A human can verify it (the anchor points back to the exact session line); an age
 
 - **[gotcha]** Billing webhook handler lacks an idempotency check; dedupe on the Stripe key.
   - *Do:* Dedupe on the Stripe idempotency key before processing.
-  - _anchor_ `ses_1#1`: "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
+  - _anchor_ `services/billing/webhook.py:88`: "the handler has no idempotency check, so when Stripe retries a webhook the charge is processed again."
+- **[decision · not adopted]** Storing the idempotency key in Redis was proposed and rejected in review.
+  - *Instead:* Keep the key in the same transaction as the charge.
+  - _anchor_ `pr_acme__billing__42#event-6`: "Don't put the key in Redis. Must be inside the transaction."
 
 ## deployment
 
@@ -99,8 +130,9 @@ A human can verify it (the anchor points back to the exact session line); an age
 
 ```mermaid
 flowchart LR
-    S["coding agent<br/>sessions"] --> I["ingest + scrub<br/>(transcripts → NSF,<br/>secrets redacted)"]
-    I --> C["compile<br/>(NSF → claims,<br/>verbatim anchors)"]
+    S["coding-agent<br/>sessions"] --> I
+    P["agent-authored<br/>pull requests"] --> I["ingest + scrub<br/>(→ one session format,<br/>secrets redacted)"]
+    I --> C["compile<br/>(→ claims with verbatim<br/>anchors + adoption)"]
     C --> R["<b>.lore/</b> in your repo<br/>(knowledge book + claims,<br/>plaintext, git-versioned)"]
     R --> SV["serve<br/>(files + MCP query)"]
     SV --> N["next agent session<br/>inherits the knowledge"]
@@ -114,21 +146,21 @@ flowchart LR
     class R artifact
 ```
 
-> `lore watch` runs ingest → compile → prune automatically, on an interval.
+> `lore watch` runs ingest → compile → prune automatically, on an interval. `lore import-prs` runs the same pipeline over a repository's pull-request threads.
 
-- **Ingest + scrub** — reads the coding agent's existing on-disk transcripts and redacts a curated set of secret patterns (Anthropic / OpenAI / generic `sk-*` API keys, AWS keys, GitHub classic + fine-grained PATs, Google API keys, Slack tokens, HuggingFace tokens, JWTs, connection-string passwords, private-key blocks, and `password=…` assignment shapes) *before* anything is stored or sent to a model. The pattern set is documented in [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md).
-- **Compile** — extracts atomic claims, deduplicates them, records disagreements instead of silently overwriting, scores authority by how often a claim recurs, and drops any claim whose citation doesn't resolve verbatim.
+- **Ingest + scrub** — two capture sources feed one session format. *Transcripts:* the coding agent's existing on-disk session files. *Pull requests:* fetched through the `gh` CLI, one PR thread per session, with merge/close and approve/request-changes carried as real outcome events and inline review comments already anchored to a `path:line`. Both are scrubbed of a curated set of secret patterns (Anthropic / OpenAI / generic `sk-*` API keys, AWS keys, GitHub classic + fine-grained PATs, Google API keys, Slack tokens, HuggingFace tokens, JWTs, connection-string passwords, private-key blocks, and `password=…` assignment shapes) *before* anything is stored or sent to a model. The pattern set is documented in [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md).
+- **Compile** — extracts atomic claims with an adoption status, deduplicates them, records disagreements instead of silently overwriting, scores authority by how often a claim recurs, and drops any claim whose citation doesn't resolve verbatim. An anchor's `ref` is derived from where the quote actually resolved — a `path:line` when the source carries one, otherwise `<session>#event-<n>` — never copied from the model, so every anchor is somewhere a reader can go.
 - **Serve** — writes a human- and agent-readable knowledge book to `.lore/knowledge/`, and exposes a query tool (including an optional MCP server) so any agent can pull the relevant slice on demand.
 - **Actuation loop** — every retrieval is recorded, and that usage drives a lifecycle: unused claims decay and archive, contradicted claims are retired, useful claims are reinforced. The store stays small and fresh instead of growing into a pile nobody reads.
 
-The intelligence is in **compile**; ingest and serve are deliberately thin, so supporting another coding agent is a small adapter, not a rewrite. To be precise about the word "compile": extraction is an LLM step (the only non-deterministic part), wrapped in deterministic stages — verbatim-anchor verification, content-addressed dedup, conflict recording, and authority scoring. "Compile" means the repeatable session → claims transform, not that an LLM is absent.
+The intelligence is in **compile**; ingest and serve are deliberately thin, so supporting another coding agent or another source is a small adapter, not a rewrite. To be precise about the word "compile": extraction is an LLM step (the only non-deterministic part), wrapped in deterministic stages — verbatim-anchor verification, anchor-ref derivation, content-addressed dedup, conflict recording, and authority scoring. "Compile" means the repeatable session → claims transform, not that an LLM is absent.
 
 ## How it differs
 
 - **vs. hosted memory (Letta, mem0)** — their store lives in someone else's cloud and you can't `git log` it; `crewlore`'s lives in your repo as plaintext.
 - **vs. per-IDE memory (Cursor rules, Claude memory, Continue, Cody)** — tied to one developer, one IDE; `crewlore` is a *team* artifact, committed and reviewed like code.
 - **vs. hand-curated `CLAUDE.md` / `.cursorrules`** — humans write those by hand and they go stale; `crewlore` compiles + reinforces from real sessions and retires what stops being used.
-- **vs. RAG over a vector DB** — RAG retrieves *document chunks*; `crewlore` compiles atomic, citable *claims* with verbatim anchors, so a human or agent can verify the cited source in seconds. (Retrieval today is deterministic lexical overlap, not embeddings — simpler and dependency-free; semantic ranking is on the roadmap.)
+- **vs. RAG over a vector DB** — RAG retrieves *document chunks*; `crewlore` compiles atomic, citable *claims* with verbatim anchors and an adoption status, so a human or agent can verify the cited source in seconds and can tell a decision from a rejected alternative. (Retrieval today is deterministic lexical overlap, not embeddings — simpler and dependency-free; semantic ranking is on the roadmap.)
 
 ## Why this exists
 
@@ -136,7 +168,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 
 `crewlore` makes that knowledge a first-class, versioned artifact in the place your team already trusts: your git repo.
 
-**What it is:** a compiler that turns sessions into accurate, deduplicated, conflict-aware, provenance-carrying team knowledge, served back to any agent.
+**What it is:** a compiler that turns sessions and pull requests into accurate, deduplicated, conflict-aware, provenance-carrying team knowledge, served back to any agent.
 
 **What it isn't:** a hosted service, a vector database, or a personal-memory layer for a single IDE. There's no account, no cloud, and no proprietary store — the compiled knowledge is plaintext you own.
 
@@ -145,6 +177,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 - **Local-first.** Capture, compile, and serve all run on infrastructure you control. Point the compiler at your own model provider or a local OpenAI-compatible model (Ollama, LM Studio, vLLM) via `provider: local` — nothing routes through any `crewlore`-operated service, because there is none.
 - **Plaintext, in your repo.** The knowledge layer is human-readable Markdown and JSONL under `.lore/`, versioned by git. `git log .lore/` is your audit trail.
 - **Secrets never travel.** Scrubbing — of both message content and tool-call arguments — happens at ingest, before storage or any model call. It's a high-precision pattern set (a floor, not a DLP guarantee; see [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md)), and raw session captures are git-ignored by default regardless.
+- **No tokens to store.** Pull-request import goes through the `gh` CLI you already authenticated; `crewlore` never sees or stores a GitHub token.
 
 ## CLI
 
@@ -152,7 +185,8 @@ Knowledge discovered inside an agent session is private by default and lost by d
 |---|---|
 | `lore init` | Create the `.lore/` layout in your repo. |
 | `lore watch` | Automatically ingest → compile → prune on an interval (`--once` for cron/CI). |
-| `lore compile` | Run a single ingest-and-compile pass manually. |
+| `lore compile` | Run a single ingest-and-compile pass manually (`--rebuild` to re-extract everything). |
+| `lore import-prs OWNER/REPO` | Compile a GitHub repository's pull-request threads into knowledge. Agent-authored PRs by default; `--all-authors` for every PR; `--limit N` to scan more. Needs the `gh` CLI. |
 | `lore query "<task>"` | Retrieve the claims most relevant to a task (records usage). |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being used. |
 | `lore serve --mcp` | Start an MCP server exposing query-time retrieval to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires `pip install 'crewlore[serve]'`. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md) for wiring snippets. |
@@ -174,20 +208,24 @@ compile:
   watch_interval_seconds: 300
 ```
 
-Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere. The default Anthropic provider works out of the box. For OpenAI or a local OpenAI-compatible model, add the SDK: `pipx inject crewlore openai` (or `pip install 'crewlore[openai]'`). With `provider: local` nothing leaves your machine at all — the compile call hits your own endpoint.
+Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never ships keys anywhere. The default Anthropic provider works out of the box. For OpenAI or a local OpenAI-compatible model, add the SDK: `pipx inject crewlore openai` (or `pip install 'crewlore[openai]'`). With `provider: local` nothing leaves your machine at all — the compile call hits your own endpoint. A rejected key stops the run with a clear error instead of reporting a successful compile of nothing.
+
+## Research
+
+Product decisions here are measured, and the measurements live in the repo. [`studies/`](https://github.com/srijansk/crewlore/tree/main/studies/) holds each study's code and reproduction recipe. The first, [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/), asks what a memory system stores when it compiles work a team declined — using agent-authored pull requests that were closed without merging, with merged controls — and is the reason every claim now carries an `adoption` field. If `crewlore` is useful in your research, [`CITATION.cff`](https://github.com/srijansk/crewlore/blob/main/CITATION.cff) has the citation.
 
 ## Roadmap & limitations
 
 > [!NOTE]
-> **Status: alpha.** The core is stable and tested end to end. The on-disk schema may change before 1.0 — and because everything is plaintext and git-versioned, breaking format changes will ship with migrations.
+> **Status: alpha.** The core is stable and tested end to end on Python 3.10–3.14. The on-disk schema may change before 1.0 — and because everything is plaintext and git-versioned, breaking format changes will ship with migrations.
 
-- **Stable today:** capture, secret scrubbing, the compile pipeline, retrieval, the actuation loop, and the `.lore/` plaintext format.
+- **Stable today:** capture from Claude Code transcripts and GitHub pull-request threads, secret scrubbing, the compile pipeline (verbatim-anchor fidelity gate, anchor-ref derivation, adoption status, conflict recording), retrieval, the actuation loop, and the `.lore/` plaintext format.
 - **In flight:** cross-session conflict alignment — real disagreements are surfaced today, but reliably aligning claims about the same question across independently-compiled sessions is an active area of work.
-- **Planned:** an explicit human approve-before-serve gate (secret scrubbing is already automated), more capture adapters beyond Claude Code, and a real-time capture hook.
+- **Planned:** an explicit human approve-before-serve gate (secret scrubbing is already automated), transcript adapters for Cursor / Codex / Copilot, embedding-based retrieval, and a real-time capture hook.
 
 ## Contributing
 
-Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/crewlore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small. See [CONTRIBUTING.md](https://github.com/srijansk/crewlore/blob/main/CONTRIBUTING.md) for local setup and the dev loop.
+Issues, discussions, and PRs welcome. New here? Start a [discussion](https://github.com/srijansk/crewlore/discussions) — adding a capture adapter for another coding agent is the most valuable first contribution and is intentionally small (the Claude Code and GitHub PR adapters are the two worked examples). See [CONTRIBUTING.md](https://github.com/srijansk/crewlore/blob/main/CONTRIBUTING.md) for local setup and the dev loop.
 
 Tests are fully deterministic — no real API calls during `pytest`.
 

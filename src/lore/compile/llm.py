@@ -13,11 +13,28 @@ from __future__ import annotations
 
 import os
 
-from lore.compile.extractor import Complete
+from lore.compile.extractor import Complete, FatalExtractionError
+
+# Provider status codes that mean "your credentials are wrong", not "try again".
+_AUTH_STATUS = {401, 403}
 
 
-class CredentialsError(RuntimeError):
-    """Raised when model credentials / config are missing or a provider is unknown."""
+class CredentialsError(FatalExtractionError):
+    """Raised when model credentials / config are missing, invalid, or a provider is unknown."""
+
+
+def _reraise_auth_errors(exc: Exception, provider_hint: str) -> None:
+    """Translate a provider auth rejection into a fatal, actionable error.
+
+    A key that is present but rejected is otherwise indistinguishable from a
+    transient per-session failure, and the compiler would skip every session and
+    report a successful run that produced nothing.
+    """
+    if getattr(exc, "status_code", None) in _AUTH_STATUS:
+        raise CredentialsError(
+            f"{provider_hint} rejected the API key ({exc.__class__.__name__}). "
+            "Check the key is current and has access to the configured model."
+        ) from exc
 
 
 def build_complete(config: dict) -> Complete:
@@ -62,12 +79,16 @@ def _anthropic_complete(model: str) -> Complete:
             ) from exc
 
         client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model=model,
-            max_tokens=8192,
-            temperature=0,  # deterministic — extraction is a structured-output task, not creative
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            msg = client.messages.create(
+                model=model,
+                max_tokens=8192,
+                temperature=0,  # deterministic — extraction is structured-output, not creative
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            _reraise_auth_errors(exc, "Anthropic")
+            raise
         return "".join(block.text for block in msg.content if block.type == "text")
 
     return complete
@@ -99,11 +120,15 @@ def _openai_complete(model: str, *, base_url: str | None = None) -> Complete:
             )
         else:
             client = openai.OpenAI()
-        resp = client.chat.completions.create(
-            model=model,
-            temperature=0,  # deterministic — extraction is structured-output, not creative
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                temperature=0,  # deterministic — extraction is structured-output, not creative
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            _reraise_auth_errors(exc, "OpenAI" if not base_url else base_url)
+            raise
         return resp.choices[0].message.content or ""
 
     return complete

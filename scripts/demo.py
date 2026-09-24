@@ -29,7 +29,7 @@ try:
     from lore.compile.run import run_compile
     from lore.replay import fidelity_report, replay_report
     from lore.schemas import Anchor, Claim, Provenance
-    from lore.serve.server import KnowledgeServer
+    from lore.serve.server import KnowledgeServer, claim_label
     from lore.store import LoreStore
 except ModuleNotFoundError as exc:  # missing third-party deps (pydantic/typer/…)
     sys.exit(
@@ -43,28 +43,37 @@ class DemoExtractor:
     """Deterministic stand-in for the LLM extractor. Anchors are pulled verbatim
     from event content, so the fidelity gate passes by construction."""
 
+    # (needle, kind, statement, topic, action, adoption)
     RULES = [
         ("fires twice", "gotcha",
          "Billing webhook double-fires in staging; dedupe on idempotency key.",
-         "webhook-dedupe", "Dedupe on the idempotency key before processing the webhook."),
+         "webhook-dedupe", "Dedupe on the idempotency key before processing the webhook.",
+         "current"),
         ("postgres", "decision", "Use Postgres for the ledger.", "ledger-db",
-         "Default new ledger storage to Postgres unless a decision says otherwise."),
-        ("dynamo", "decision", "Use DynamoDB for the ledger.", "ledger-db", None),
+         "Default new ledger storage to Postgres unless a decision says otherwise.", "current"),
+        ("dynamo", "decision", "Use DynamoDB for the ledger.", "ledger-db", None, "current"),
         ("migration", "procedure",
          "Run migrations before deploy; never edit generated files.",
-         "migrations", "Run `make migrate` before deploy; do not hand-edit migration files."),
+         "migrations", "Run `make migrate` before deploy; do not hand-edit migration files.",
+         "current"),
+        # Declined work is recorded as declined, with what to do instead — not
+        # as a plain claim that reads like current practice.
+        ("redis", "decision",
+         "Caching the idempotency key in Redis was tried and reverted.",
+         "idempotency-store", "Keep the idempotency check inside the database transaction.",
+         "not_adopted"),
     ]
 
     def extract(self, events, session_id, known_topics=None):
         out = []
         for ev in events:
             low = ev.content.lower()
-            for needle, kind, statement, topic, action in self.RULES:
+            for needle, kind, statement, topic, action, adoption in self.RULES:
                 if needle in low:
                     out.append(
                         Claim(
                             statement=statement, kind=kind, scope="services/billing",
-                            topic=topic, action=action,
+                            topic=topic, action=action, adoption=adoption,
                             provenance=Provenance(
                                 session=session_id, author="dev", harness="claude-code"
                             ),
@@ -98,6 +107,11 @@ PRIOR_SESSIONS = {
     "ses_3": [
         _raw("ses_3", "2026-05-13T09:00:00Z", "user",
              "Actually no — we decided to use DynamoDB for the ledger instead."),
+    ],
+    "ses_4": [
+        _raw("ses_4", "2026-05-14T15:00:00Z", "user",
+             "No — we tried caching the idempotency key in Redis and reverted it; "
+             "the check has to run inside the database transaction."),
     ],
     # A trivial one-shot session: should be gated out (no claims).
     "ses_trivial": [
@@ -142,9 +156,10 @@ def main() -> None:
 
         console.rule("[bold cyan]QUERY: 'billing webhook firing twice'[/bold cyan]")
         for c in KnowledgeServer(store).query("billing webhook firing twice"):
-            console.print(f"  [bold magenta]\\[{c.kind}][/bold magenta] {c.statement}")
+            console.print(f"  [bold magenta]\\[{claim_label(c)}][/bold magenta] {c.statement}")
             if c.action:
-                console.print(f"      [dim]->[/dim] [italic]{c.action}[/italic]")
+                verb = "" if c.adoption == "current" else "instead: "
+                console.print(f"      [dim]->[/dim] [italic]{verb}{c.action}[/italic]")
 
         transcript = "\n".join(
             e.content for sid in store.list_sessions() for e in store.load_session(sid)

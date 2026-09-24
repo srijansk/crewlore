@@ -81,4 +81,10 @@ def auto_compile(
     store.write_claims(pruned)
     KnowledgeServer(store).write_book()  # reflect pruning
     active = sum(c.status == "active" for c in pruned)
-    return {**stats, "claims": len(pruned), "active": active, "conflicts": len(result.conflicts)}
+    return {
+        **stats,
+        "claims": len(pruned),
+        "active": active,
+        "conflicts": len(result.conflicts),
+        "failed": result.failed_sessions,
+    }

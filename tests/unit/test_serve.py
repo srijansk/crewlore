@@ -117,3 +117,19 @@ def test_render_book_includes_statements_actions_and_conflicts():
     assert "dedupe billing webhook" in book
     assert "dedupe on idempotency key" in book
     assert "Conflicts" in book
+
+
+def test_render_book_marks_claims_the_team_did_not_adopt():
+    declined = Claim(
+        statement="Redis for the idempotency key was proposed and not adopted.",
+        kind="decision", scope="services/billing", adoption="not_adopted",
+        action="Keep the key inside the database transaction.",
+        provenance=Provenance(session="s", author="a", harness="claude-code"),
+        anchors=[Anchor(source_kind="transcript", ref="s#1", quote="not in Redis")],
+    )
+    adopted = _claim("dedupe billing webhook", "services/billing", action="dedupe on the key")
+    book = render_book([declined, adopted], [])
+    assert "**[decision · not adopted]**" in book
+    assert "*Instead:* Keep the key inside the database transaction." in book
+    assert "**[gotcha]** dedupe billing webhook" in book
+    assert "*Do:* dedupe on the key" in book

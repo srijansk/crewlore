@@ -248,3 +248,117 @@ def test_prompt_carries_the_transcript_text():
     LLMExtractor(recording_complete).extract(EVENTS, "ses_1")
     assert "fires twice in staging" in captured["prompt"]
     assert "idempotency key" in captured["prompt"]
+
+
+# GUARDS: the ref must be derived from where the quote actually resolved, never
+# copied from the model. Model-stated refs are unverified prose — in a real run
+# they came out as "agent/agent_message" and PR-body section headings, which read
+# as provenance while pointing nowhere a reader can navigate to.
+def test_anchor_ref_is_derived_from_the_match_not_the_model():
+    extractor = LLMExtractor(lambda p: _one_claim_response("dedupe on the idempotency key"))
+    anchor = extractor.extract(EVENTS, "ses_1")[0].anchors[0]
+    assert anchor.ref != "ses_1#t1"  # the model said this; it is not evidence
+    assert anchor.ref == "ses_1#event-1"  # the agent message is index 1
+
+
+def test_anchor_ref_points_at_the_event_that_actually_contains_the_quote():
+    extractor = LLMExtractor(lambda p: _one_claim_response("fires twice in staging"))
+    anchor = extractor.extract(EVENTS, "ses_1")[0].anchors[0]
+    assert anchor.ref == "ses_1#event-0"  # the user message is index 0
+    assert anchor.source_kind == "transcript"
+
+
+# GUARDS: an inline review comment already names a path and line, which is the
+# most navigable pointer any source gives us. Falling back to an event index
+# there would discard precision the source handed us for free.
+def test_file_locator_is_preferred_when_the_event_carries_one():
+    events = [
+        NSFEvent(
+            session="pr_1", actor="user", kind="user_message",
+            timestamp=datetime(2026, 5, 19, 11, 2, tzinfo=timezone.utc),
+            content="This must be inside the transaction.",
+            refs=["services/billing/webhook.py:88"],
+        )
+    ]
+    extractor = LLMExtractor(lambda p: _one_claim_response("must be inside the transaction"))
+    anchor = extractor.extract(events, "pr_1")[0].anchors[0]
+    assert anchor.ref == "services/billing/webhook.py:88"
+    assert anchor.source_kind == "file"
+
+
+# GUARDS: a quote spanning a reply split by tool calls still passes the fidelity
+# gate but sits in no single event. It must degrade to the session — a true
+# location — rather than inventing a pointer that resolves to nothing.
+def test_quote_spanning_events_degrades_to_the_session_ref():
+    events = [
+        NSFEvent(session="ses_2", actor="agent", kind="agent_message",
+                 timestamp=datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc),
+                 content="the webhook fires twice"),
+        NSFEvent(session="ses_2", actor="agent", kind="agent_message",
+                 timestamp=datetime(2026, 5, 19, 10, 1, tzinfo=timezone.utc),
+                 content="because retries are not deduped"),
+    ]
+    extractor = LLMExtractor(
+        lambda p: _one_claim_response("the webhook fires twice because retries are not deduped")
+    )
+    anchor = extractor.extract(events, "ses_2")[0].anchors[0]
+    assert anchor.ref == "ses_2"
+
+
+def test_diff_events_are_reported_as_diff_source_kind():
+    events = [
+        NSFEvent(session="pr_1", actor="agent", kind="diff",
+                 timestamp=datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc),
+                 content="Persist idempotency key before charging", refs=["webhook.py"]),
+    ]
+    extractor = LLMExtractor(lambda p: _one_claim_response("persist idempotency key"))
+    anchor = extractor.extract(events, "pr_1")[0].anchors[0]
+    assert anchor.source_kind == "diff"
+    assert anchor.ref == "pr_1#event-0"  # a bare filename is not a line locator
+
+
+def _declined_claim_response(adoption):
+    item = {
+        "statement": "Storing the idempotency key in Redis was proposed and not adopted.",
+        "kind": "decision",
+        "scope": "services/billing",
+        "action": "Keep the key inside the database transaction.",
+        "anchors": [{"source_kind": "transcript", "ref": "x", "quote": "fires twice in staging"}],
+    }
+    if adoption is not None:
+        item["adoption"] = adoption
+    return json.dumps([item])
+
+
+def test_prompt_asks_for_adoption_and_says_what_not_adopted_means():
+    seen = {}
+
+    def complete(prompt):
+        seen["prompt"] = prompt
+        return "[]"
+
+    LLMExtractor(complete).extract(EVENTS, "ses_1")
+    assert '"adoption": "current"|"not_adopted"' in seen["prompt"]
+    assert "not adopted" in seen["prompt"]
+    assert "INSTEAD" in seen["prompt"]
+
+
+def test_not_adopted_is_recorded_on_the_claim():
+    extractor = LLMExtractor(lambda prompt: _declined_claim_response("not_adopted"))
+    claims = extractor.extract(EVENTS, "ses_1")
+    assert len(claims) == 1
+    assert claims[0].adoption == "not_adopted"
+    assert claims[0].action == "Keep the key inside the database transaction."
+
+
+def test_missing_adoption_defaults_to_current():
+    extractor = LLMExtractor(lambda prompt: _declined_claim_response(None))
+    assert extractor.extract(EVENTS, "ses_1")[0].adoption == "current"
+
+
+def test_unrecognised_adoption_drops_the_claim_rather_than_inverting_it():
+    # "rejected" is a negative the model tried to express. Coercing it to
+    # "current" would store the declined approach as practice — the exact
+    # failure the field exists to prevent — so the claim is dropped instead.
+    extractor = LLMExtractor(lambda prompt: _declined_claim_response("rejected"))
+    assert extractor.extract(EVENTS, "ses_1") == []
