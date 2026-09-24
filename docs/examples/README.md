@@ -10,4 +10,4 @@ The numbers in the repo's main README come from these examples. The anchors are 
 |---|---|---|---|---|
 | [`pydantic-ai/`](pydantic-ai/) | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) (17.3k ⭐) | 3 | 18 | 100% |
 
-More examples land as we validate `crewlore` on additional repos. Contribute one: follow [`docs/evaluating-on-your-codebase.md`](../evaluating-on-your-codebase.md), then open a PR adding your `docs/examples/<repo-name>/` snapshot with the same file shape (`book.md`, `claims.jsonl`, `provenance.md`, `README.md`).
+Snapshots compiled with `lore import-prs` from a repository's pull-request threads are welcome too — note the source and the `--limit` used in `provenance.md`. More examples land as we validate `crewlore` on additional repos. Contribute one: follow [`docs/evaluating-on-your-codebase.md`](../evaluating-on-your-codebase.md), then open a PR adding your `docs/examples/<repo-name>/` snapshot with the same file shape (`book.md`, `claims.jsonl`, `provenance.md`, `README.md`).

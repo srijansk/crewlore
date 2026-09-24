@@ -6,16 +6,15 @@ Before substantial changes, please open a discussion or an issue so we can agree
 
 ## The highest-leverage contribution
 
-**Add a capture adapter for another coding agent.** The architecture is harness-neutral by design; the moat is in compile, and capture is deliberately thin. A new adapter is one self-contained module that maps a harness's session artifacts into the Normalized Session Format (NSF). Look at `src/lore/capture/adapters/claude_code.py` and the tests in `tests/unit/test_claude_code_adapter.py` for the shape — that's the entire surface area.
+**Add a capture adapter for another coding agent.** The architecture is harness-neutral by design; the moat is in compile, and capture is deliberately thin. A new adapter is one self-contained module that maps a harness's session artifacts into the Normalized Session Format (NSF). Look at `src/lore/capture/adapters/claude_code.py` (transcripts) and `src/lore/capture/adapters/github_pr.py` (pull-request threads), with their tests in `tests/unit/`, for the shape — that's the entire surface area. If your source needs fetching rather than reading files off disk, keep the fetch in `src/lore/capture/sources/` and the mapping in the adapter, as the GitHub source does, so the adapter stays testable without a network.
 
 ## Local setup
 
 ```bash
 git clone https://github.com/srijansk/crewlore.git
 cd crewlore
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
-pytest
+uv sync --all-extras --dev
+uv run pytest
 ```
 
 You should see all tests green. If anything's off, that's a bug — please open an issue.

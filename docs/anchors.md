@@ -78,3 +78,7 @@ The current "model emits a free-form quote, we verify it appears" architecture h
 This eliminates the fidelity gate entirely: the anchor IS a reference into real session content, not a guess the model has to make and we have to verify. The current canonical-form contract becomes unnecessary once anchors are pointers, not strings.
 
 Tracked in the project strategy doc; not in v0.1 scope.
+
+### What has shipped toward this (0.2.0)
+
+The **ref half** of the pointer design is in: an anchor's `ref` is now derived from where the quote resolved in the session — a `path:line` when the event carries one (an inline review comment), otherwise `<session>#event-<n>` — and is never taken from the model. Verbatim verification and addressability are different properties; the gate proved the first, and derived refs close the second. The quote itself is still model-authored and still passes through the canonical-form gate above, so the redesign's remaining step is to replace the authored quote with computed content at the located position.

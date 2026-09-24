@@ -6,6 +6,22 @@ How to capture a meaningful set of Claude Code sessions on a real repo, compile 
 
 By the end of this guide, you have a real `.lore/knowledge/` book compiled from ~4–6 of your own Claude Code sessions on a real codebase, every claim with a verifiable anchor, and a clear personal answer to "is this worth committing to in our team's workflow."
 
+## No sessions yet? Start from pull requests
+
+If the repo already has agent-authored pull requests, you can evaluate `crewlore` before capturing a single session:
+
+```bash
+cd path/to/your-repo
+lore init
+export ANTHROPIC_API_KEY=...
+lore import-prs owner/repo --limit 50
+cat .lore/knowledge/README.md
+```
+
+`import-prs` uses the `gh` CLI's existing authentication, exports each agent-authored PR thread as one session (PR body, commits, review comments with their `path:line`, review verdicts, CI results, and the merge/close outcome), and compiles them through the same pipeline. Merged and declined PRs are both worth importing: a declined thread is exactly where the `· not adopted` marker earns its keep. Add `--all-authors` to include human-authored PRs.
+
+The rest of this guide covers the session-capture path; the evaluation checks at the end apply to both.
+
 ## Pick a target repo
 
 The cleanest evaluation runs on a codebase where:
@@ -83,6 +99,7 @@ Walk through these on the compiled output. Each maps to a yes/no decision about 
 | **Precision** | Are the claims it produced actually useful, or noisy/hallucinated? Click into anchors — each should resolve verbatim against the source session (subject to the canonical-form contract in [`anchors.md`](anchors.md)). |
 | **Scope grouping** | Does the book's `## scope` structure match how you mentally organize the codebase? If yes, the topic-reuse is working. |
 | **Conflicts** | If two sessions disagreed about something, is it visible as a recorded conflict? If they agreed but came at it differently, do the related claims cluster under the same topic? |
+| **Adoption** | Did any approach the team declined get recorded as declined (`· not adopted`, with an *Instead* action) rather than as current practice? A declined approach stored as a plain claim is the most misleading output a knowledge layer can produce. |
 | **Noise** | Are there low-value claims that just take up space? These motivate the human review gate (planned; for now lean on git PR-review of the `.lore/claims` diff). |
 | **Day-2 inheritance** | Open a fresh Claude Code session on a related topic. Run `lore query` for that topic. Do the relevant claims surface? Paste them into the agent's context — does it act on them on its first turn? This is the actual product value. |
 
