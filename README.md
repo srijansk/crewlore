@@ -130,9 +130,9 @@ Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by 
 
 ```mermaid
 flowchart LR
-    S["coding-agent<br/>sessions"] --> I
-    P["agent-authored<br/>pull requests"] --> I["ingest + scrub<br/>(→ one session format,<br/>secrets redacted)"]
-    I --> C["compile<br/>(→ claims with verbatim<br/>anchors + adoption)"]
+    S["coding-agent<br/>sessions"] --> I["ingest + scrub<br/>(one session format,<br/>secrets redacted)"]
+    P["agent-authored<br/>pull requests"] --> I
+    I --> C["compile<br/>(claims with verbatim<br/>anchors + adoption)"]
     C --> R["<b>.lore/</b> in your repo<br/>(knowledge book + claims,<br/>plaintext, git-versioned)"]
     R --> SV["serve<br/>(files + MCP query)"]
     SV --> N["next agent session<br/>inherits the knowledge"]
