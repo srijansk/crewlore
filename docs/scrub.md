@@ -52,7 +52,7 @@ If your pattern is rare / domain-specific (e.g. an internal-only token shape), k
 
 ## Roadmap
 
-- **Approve-before-push gate** — a `lore review` command that surfaces the diff in `.lore/claims/` since the last commit and asks the developer to acknowledge before staging. Tracked as the strong complement to automated scrubbing; not in v0.1 scope.
+- **Approve-before-push gate** — a `lore review` command that surfaces the diff in `.lore/claims/` since the last commit and asks the developer to acknowledge before staging. The strong complement to automated scrubbing; planned, not yet implemented.
 - **Pattern-coverage badge** — a small CI job that fuzzes random strings against the pattern set and reports any new secret shapes that snuck through.
 - **Pluggable scrubbers** — projects with their own DLP tooling could chain `crewlore`'s scrubber with theirs.
 

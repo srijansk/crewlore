@@ -6,7 +6,7 @@ Real-data evidence of `crewlore` working on a public codebase. Every claim in `b
 
 | | |
 |---|---|
-| **Target repo** | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) (17.3k ⭐, MIT) |
+| **Target repo** | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) (20k+ ⭐, MIT) |
 | **Sessions captured** | 3 Claude Code sessions on real open issues ([#5679](https://github.com/pydantic/pydantic-ai/issues/5679), [#5358](https://github.com/pydantic/pydantic-ai/issues/5358), [#5536](https://github.com/pydantic/pydantic-ai/issues/5536)) |
 | **Compiled claims** | **18** (7 gotchas · 7 decisions · 3 procedures · 1 style) |
 | **Distinct scopes** | **9 groupings** spanning UI adapters, decorator introspection, durable execution, toolsets, tests, and the version policy |

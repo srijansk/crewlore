@@ -19,7 +19,10 @@ from lore import __version__
 from lore.serve.server import KnowledgeServer, claim_label
 from lore.store import LoreStore
 
-app = typer.Typer(help="Compile coding-agent sessions into team tribal knowledge, locally.")
+app = typer.Typer(help=(
+        "Compile coding-agent sessions and pull requests into a citable "
+        "team-knowledge layer in your repo. Local-first."
+    ))
 
 RepoOpt = typer.Option(Path("."), "--repo", help="Path to the team repo root.")
 TranscriptsOpt = typer.Option(None, "--transcripts", help="Override the transcripts dir.")

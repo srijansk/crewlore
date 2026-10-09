@@ -17,7 +17,7 @@
 pipx install crewlore
 ```
 
-> **Validated on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)** (17.3k ⭐) · 3 sessions · 18 claims · 100% fidelity · [see receipts →](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
+> **Validated on [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai)** (20k+ ⭐) · 3 sessions · 18 claims · 100% fidelity · [see receipts →](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/)
 
 ## Quickstart
 
@@ -71,7 +71,7 @@ The demo runs the full loop on bundled public-safe sessions and prints what it f
 > **Conflicts surfaced — 1.** A real disagreement kept with both provenances, not silently merged.
 > **Preventable rediscovery — 2 of 3.** Two of the three held-out follow-up sessions re-derived knowledge the layer already had. (Illustrative demo data — n=3, not a benchmark.)
 
-## See it run on a real codebase: pydantic-ai (17.3k ⭐)
+## See it run on a real codebase: pydantic-ai (20k+ ⭐)
 
 [`docs/examples/pydantic-ai/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/) is a committed snapshot of `crewlore` compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo — 3 Claude Code sessions on real issues, no synthetic data.
 

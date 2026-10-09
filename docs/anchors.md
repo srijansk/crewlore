@@ -77,7 +77,7 @@ The current "model emits a free-form quote, we verify it appears" architecture h
 
 This eliminates the fidelity gate entirely: the anchor IS a reference into real session content, not a guess the model has to make and we have to verify. The current canonical-form contract becomes unnecessary once anchors are pointers, not strings.
 
-Tracked in the project strategy doc; not in v0.1 scope.
+Planned; not yet implemented.
 
 ### What has shipped toward this (0.2.0)
 
