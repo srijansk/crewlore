@@ -69,7 +69,7 @@ The spec is pinned down by tests in `tests/unit/test_extractor.py`. Each test pa
 
 Adding a new accepted/rejected case starts with an adversarial test. Changing the canonical form requires changing the docstring and the corresponding tests in lockstep.
 
-## Roadmap — anchor schema redesign (v0.2)
+## Roadmap — anchor schema redesign (planned)
 
 The current "model emits a free-form quote, we verify it appears" architecture has an inherent fragility: every new model behavior is a potential new failure mode. The intended v0.2 redesign:
 
@@ -79,6 +79,6 @@ This eliminates the fidelity gate entirely: the anchor IS a reference into real 
 
 Planned; not yet implemented.
 
-### What has shipped toward this (0.2.0)
+### What has shipped toward this (since 0.2.0)
 
 The **ref half** of the pointer design is in: an anchor's `ref` is now derived from where the quote resolved in the session — a `path:line` when the event carries one (an inline review comment), otherwise `<session>#event-<n>` — and is never taken from the model. Verbatim verification and addressability are different properties; the gate proved the first, and derived refs close the second. The quote itself is still model-authored and still passes through the canonical-form gate above, so the redesign's remaining step is to replace the authored quote with computed content at the located position.

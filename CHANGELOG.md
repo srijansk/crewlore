@@ -1,12 +1,38 @@
 # Changelog
 
+## 0.3.0 — 2026-10-09
+
+A launch-readiness release. Two defaults change, one surface is added, and the docs stop claiming more than the code does.
+
+### Changed
+
+- **`lore compile` / `lore watch` read only this repo's own Claude Code transcripts.** The previous default was the whole `~/.claude/projects` tree, which copied every project on the machine into one repo's `.lore/sessions/` and sent all of them to the model. The default is now the one directory Claude Code keeps for this repo (`capture.transcripts: auto`); an existing config that still names the whole tree is treated the same way. Pass `--transcripts DIR` or set a directory in the config to read anything else.
+- **No sampling parameters are sent unless configured.** The hard-coded `temperature=0` is gone: current Claude models reject non-default sampling parameters, so any model newer than the 4.6 generation failed on every session, and a fixed temperature never made extraction deterministic anyway. Set `model.temperature` in config to pass one to a provider that accepts it.
+- **Requests a model refuses outright are fatal.** A 400 (unsupported parameter) or 404 (unknown model name) now stops the run with a message naming the config to fix, like a rejected key already did, instead of being retried silently on every session.
+- **Config keys that nothing read are gone** (`harness`, `scopes`, `compile.cadence`); `compile.watch_interval_seconds` is now actually the `lore watch` default and `compile.max_unused_days` sets the decay window.
+- **A recompile never lowers a claim's authority.** A teammate compiling with no local sessions used to reset every inherited claim to base authority, churning the committed `claims.jsonl` on each pull.
+- **Claims compiled from pull requests record `harness: github-pr`** instead of `claude-code`.
+
+### Added
+
+- **`lore feedback <id>… --influential|--overridden`** and an MCP tool **`lore_feedback`**, so the influence/override half of the lifecycle is reachable. `lore query` and `lore_query` now return claim ids.
+- **`lore import-prs --state closed|open|all`.** The default is still closed PRs, which is now documented.
+- **Fidelity-gate statistics.** `lore compile` prints how many proposed anchors and claims the gate dropped each pass — the number that says how the model behaved, since a store's after-the-fact fidelity is 100% by construction.
+- **`scripts/demo.py --step`** pauses between sections; the README GIF is re-recorded and `docs/social-video.tape` renders a 1080p explainer.
+
+### Fixed
+
+- **Raw captures could be committed.** `.lore/.gitignore` was written only by `lore init`; a store written to by `lore compile` without a prior init had none. It is now written on every store write, and it also covers `.lore/sources/`, where raw pull-request exports land before scrubbing — that directory was not ignored at all.
+- `lore status` and `lore query` outside an initialised repo say so instead of printing zeros; `lore init` twice says "already initialised"; `lore serve` no longer advertises a `--no-mcp` option that did not exist.
+- Docs: the example snapshot is labelled as the 0.1.0 artifact it is; the Claude Desktop MCP snippet uses the real config file and passes `--repo` instead of a `cwd` key the client ignores; the PyPI summary and `lore --help` describe the current product; the pydantic-ai star count is current; "not in v0.1 scope" wording removed.
+
 ## 0.2.0
 
-Every claim now says whether the team adopted it; pull-request threads are a second capture source; and a decay bug that emptied the knowledge layer on any historical import is fixed. This is the first release since 0.1.1, so it also carries the CI fix that had `main` red since July.
+Every claim now says whether the team adopted it; pull-request threads are a second capture source; and a decay bug that emptied the knowledge layer on any historical import is fixed. This is the first release since 0.1.1 and includes the fix for a test fixture that had aged past the decay window.
 
 ### Added — adoption polarity
 
-- **`adoption: current | not_adopted` on every claim.** A schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X: the compiled claim reads fluently, cites a real line, and is wrong about the world. Measured on agent-authored pull requests that were closed without merging (see [`studies/palm/`](studies/palm/)), crewlore's own extractor stored the declined approach as current practice in roughly half of those threads, and so did a schema-free summarizer, so this is not one prompt's fault. Stating the outcome in the transcript helps; giving the schema a field for it, plus an instruction to use it, is what makes the extractor actually *record* the rejection in the claim's text. Across every arm without such a field it never once did. The field is excluded from the content-addressed id, like `topic`, and defaults to `current`, so existing `claims.jsonl` files load unchanged.
+- **`adoption: current | not_adopted` on every claim.** A schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X: the compiled claim reads fluently, cites a real line, and is wrong about the world. Measured on agent-authored pull requests that were closed without merging (see [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/)), crewlore's own extractor stored the declined approach as current practice in roughly half of those threads, and so did a schema-free summarizer, so this is not one prompt's fault. Stating the outcome in the transcript helps; giving the schema a field for it, plus an instruction to use it, is what makes the extractor actually *record* the rejection in the claim's text. Across every arm without such a field it never once did. The field is excluded from the content-addressed id, like `topic`, and defaults to `current`, so existing `claims.jsonl` files load unchanged.
 - **The extractor is instructed to use it.** When a session shows an approach was declined, reverted or not accepted, the statement records that it was tried and not adopted and `action` says what to do instead. An unrecognised value is never coerced to `current` (that would be the exact inversion the field prevents); the claim is dropped.
 - **Declined claims are visible everywhere a claim is shown.** The book and `lore query` tag them `[kind · not adopted]` and label the action *Instead*; the MCP tool returns the field.
 
@@ -84,7 +110,7 @@ Ran the real extraction path end-to-end and fixed what it surfaced:
 - Conflicts require matching `kind` (a gotcha and its fix-decision shared a topic and were falsely flagged).
 - Feed existing topic vocabulary back to the extractor so it reuses keys across sessions.
 
-Confirmed working live: extraction returns well-formed claims, the verbatim-anchor fidelity gate holds at 100%, trivial sessions are gated out, and retrieval returns relevant claims. See README "Known limitations" for the residual conflict-coordinate-consistency gap.
+Confirmed working live: extraction returns well-formed claims, the verbatim-anchor fidelity gate holds at 100%, trivial sessions are gated out, and retrieval returns relevant claims. See the README's limits section for the residual conflict-coordinate-consistency gap.
 
 ### Automatic compilation + secret scrubbing
 

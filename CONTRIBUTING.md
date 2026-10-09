@@ -6,14 +6,14 @@ Before substantial changes, please open a discussion or an issue so we can agree
 
 ## The highest-leverage contribution
 
-**Add a capture adapter for another coding agent.** The architecture is harness-neutral by design; the moat is in compile, and capture is deliberately thin. A new adapter is one self-contained module that maps a harness's session artifacts into the Normalized Session Format (NSF). Look at `src/lore/capture/adapters/claude_code.py` (transcripts) and `src/lore/capture/adapters/github_pr.py` (pull-request threads), with their tests in `tests/unit/`, for the shape — that's the entire surface area. If your source needs fetching rather than reading files off disk, keep the fetch in `src/lore/capture/sources/` and the mapping in the adapter, as the GitHub source does, so the adapter stays testable without a network.
+**Add a capture adapter for another coding agent.** The architecture is deliberately split: all the intelligence is in compile, and capture is a thin mapping from one coding agent's session artifacts into a shared event format. A new adapter is one self-contained module that maps a harness's session artifacts into the Normalized Session Format (NSF). Look at `src/lore/capture/adapters/claude_code.py` (transcripts) and `src/lore/capture/adapters/github_pr.py` (pull-request threads), with their tests in `tests/unit/`, for the shape — that's the entire surface area. If your source needs fetching rather than reading files off disk, keep the fetch in `src/lore/capture/sources/` and the mapping in the adapter, as the GitHub source does, so the adapter stays testable without a network.
 
 ## Local setup
 
 ```bash
 git clone https://github.com/srijansk/crewlore.git
 cd crewlore
-uv sync --all-extras --dev
+uv sync --all-extras
 uv run pytest
 ```
 
@@ -22,17 +22,17 @@ You should see all tests green. If anything's off, that's a bug — please open 
 ## Running the tests
 
 ```bash
-pytest                          # full suite
-pytest tests/unit               # fast feedback loop
-pytest tests/integration        # store/compile orchestration
-pytest tests/e2e                # the whole vertical, deterministic
+uv run pytest                   # full suite
+uv run pytest tests/unit        # fast feedback loop
+uv run pytest tests/integration # store/compile orchestration
+uv run pytest tests/e2e         # the whole vertical, deterministic
 ```
 
 The suite is fully deterministic. **No real API calls happen during `pytest`** — LLM extraction is exercised behind an injected `complete(prompt) -> str` callable so tests are fast, hermetic, and free. To exercise the live extraction path, set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) and run `lore compile` against a real repo's transcripts.
 
 ## Code style
 
-- Linting and formatting: `ruff check src tests scripts` and `ruff check --fix` for autofixes. Line length 100.
+- Linting: `uv run ruff check .` (what CI runs) and `uv run ruff check --fix .` for autofixes. Line length 100.
 - Type hints throughout (`from __future__ import annotations` at the top of every module).
 - Pydantic models for any data that crosses a module boundary.
 
@@ -46,14 +46,14 @@ If you're fixing a bug, please include a regression test that fails on `main` an
 
 - Branch from `main`; keep PRs focused on one thing.
 - Include the test that proves the change works (red → green in the same PR).
-- Run `pytest` and `ruff check src tests scripts` before pushing.
+- Run `uv run pytest` and `uv run ruff check .` before pushing.
 - Reference the issue or discussion the PR addresses.
 
 ## Reporting issues
 
 For bugs: please include the command you ran, the observed output, the expected output, and your Python version + OS. If the bug involves real transcripts, **don't paste their contents** — describe the shape (kinds of events, rough size) instead.
 
-For security issues, please email rather than filing publicly.
+For security issues, use the private reporting path in [SECURITY.md](.github/SECURITY.md) rather than filing publicly.
 
 ## Code of conduct
 

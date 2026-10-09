@@ -20,7 +20,7 @@ Minimal steps, ideally runnable:
 # commands
 ```
 
-If the issue is with a specific session/transcript, please *do not* paste sensitive content. A reduced synthetic example is best; otherwise describe the shape (which `kind` events, roughly how many, what triggered the bug).
+If the issue is with a specific session/transcript, please *do not* paste sensitive content. A reduced synthetic example is best; otherwise describe the shape (a Claude Code transcript or a PR thread, roughly how long, what triggered the bug).
 
 **Environment**
 

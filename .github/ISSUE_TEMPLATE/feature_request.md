@@ -18,4 +18,4 @@ What did you think about and rule out, and why?
 
 **Scope check**
 
-`crewlore`'s job is to compile agent session transcripts into a versioned, plaintext, citable knowledge layer. It is intentionally *not* a coding agent, a vector DB, or a personal-memory store. If your request fits comfortably inside that scope, say so; if it's a stretch, that's fine — just call it out so the discussion can be honest about whether it belongs here or somewhere else.
+`crewlore`'s job is to compile coding-agent sessions and pull-request threads into a versioned, plaintext, citable knowledge layer. It is intentionally *not* a coding agent, a vector DB, or a personal-memory store. If your request fits comfortably inside that scope, say so; if it's a stretch, that's fine — just call it out so the discussion can be honest about whether it belongs here or somewhere else.

@@ -57,7 +57,7 @@ cd path/to/your-repo
 lore init
 ```
 
-This creates `.lore/` in the repo. Claude Code automatically writes session transcripts to `~/.claude/projects/<encoded-path>/` whenever you work in this directory — no hook needed.
+This creates `.lore/` in the repo. Claude Code automatically writes session transcripts to `~/.claude/projects/<encoded-path>/` whenever you work in this directory, and that one directory is all `lore compile` reads by default — no hook needed, and no other project's sessions are touched.
 
 ### Days 2–N — work (≈ 30–60 min per session)
 
@@ -101,7 +101,7 @@ Walk through these on the compiled output. Each maps to a yes/no decision about 
 | **Conflicts** | If two sessions disagreed about something, is it visible as a recorded conflict? If they agreed but came at it differently, do the related claims cluster under the same topic? |
 | **Adoption** | Did any approach the team declined get recorded as declined (`· not adopted`, with an *Instead* action) rather than as current practice? A declined approach stored as a plain claim is the most misleading output a knowledge layer can produce. |
 | **Noise** | Are there low-value claims that just take up space? These motivate the human review gate (planned; for now lean on git PR-review of the `.lore/claims` diff). |
-| **Day-2 inheritance** | Open a fresh Claude Code session on a related topic. Run `lore query` for that topic. Do the relevant claims surface? Paste them into the agent's context — does it act on them on its first turn? This is the actual product value. |
+| **Day-2 inheritance** | Open a fresh Claude Code session on a related topic. Run `lore query` for that topic. Do the relevant claims surface? Paste them into the agent's context — does it act on them on its first turn? This is the actual product value. Afterwards, `lore feedback <id> --influential` (or `--overridden`) on the claims that mattered; that signal drives the lifecycle. |
 
 ## What surprises to expect (and what they tell you)
 

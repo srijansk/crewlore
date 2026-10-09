@@ -15,7 +15,7 @@ Full reproducibility detail for the `pydantic-ai` example.
 
 All three sessions ran in Claude Code, in the cloned target repo directory.
 
-### Session 1 — Issue #5679 (G1)
+### Session 1 — Issue #5679
 
 | | |
 |---|---|
@@ -27,7 +27,7 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 | Signal-gate reasons fired | `correction · error · gotcha · convention` |
 | Claims contributed | 8 |
 
-### Session 2 — Issue #5358 (G3)
+### Session 2 — Issue #5358
 
 | | |
 |---|---|
@@ -38,7 +38,7 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 | Signal-gate reasons fired | `correction · error · gotcha · convention` |
 | Claims contributed | 4 |
 
-### Session 3 — Issue #5536 (D1)
+### Session 3 — Issue #5536
 
 | | |
 |---|---|
@@ -65,7 +65,8 @@ All three sessions ran in Claude Code, in the cloned target repo directory.
 ## Result stats
 
 - **18 active claims** across **9 scope groupings** and **6 distinct topics**.
-- **100% fidelity** under the canonical-form contract defined in [`docs/anchors.md`](../../anchors.md). Every anchor's quote canonically resolves to a substring of its source session's content. The canonical form tolerates whitespace, case, and Markdown decoration; it rejects content drift, fabrication, paraphrase, and out-of-order stitching.
+- **Every anchor passed the verbatim gate** under the canonical-form contract defined in [`docs/anchors.md`](../../anchors.md): each quote resolves to a substring of its source session's content (whitespace, case and Markdown decoration tolerated; content drift, fabrication, paraphrase and out-of-order stitching rejected). The gate drops what fails, so this is true of any store; the 0.1.0 run did not count how many proposals it dropped, which later releases report.
+- **Anchor refs are 0.1.0-style free-text labels**, not the `<session>#event-<n>` positions derived since 0.2.0.
 - **0 conflicts** — the three sessions cover disjoint scopes (UI adapter round-tripping, decorator introspection, and durable-execution threat modeling), so no `(scope, kind, topic)` group has claims from ≥2 sessions disagreeing.
 
 ## Reproducibility notes
@@ -87,7 +88,7 @@ You cannot exactly reproduce these 18 claims — Claude Code sessions are non-de
 The capture-and-compile process surfaced bugs and contract gaps in `crewlore` itself, all addressed before committing this example:
 
 1. **Haiku drift on long contexts** — Haiku model drifted away from structured-output format past ~30k transcript tokens; Sonnet 4.6 doesn't. Tracked, default model switched to Sonnet 4.6.
-2. **Non-deterministic LLM output** — extractor needed `temperature=0` for reliable structured extraction. Fixed in commit [`a62be7f`](https://github.com/srijansk/crewlore/commit/a62be7f).
+2. **Non-deterministic LLM output** — at the time, `temperature=0` was added to make structured extraction more consistent (commit [`a62be7f`](https://github.com/srijansk/crewlore/commit/a62be7f)). Since 0.3.0 no sampling parameters are sent by default, because current Claude models reject them; set `model.temperature` to opt in.
 3. **Fragile JSON parser** — `_safe_json_array` outermost-bracket fallback broke when prose contained brackets. Explicit code-fence regex extraction added. Fixed in `a62be7f`.
 4. **Conflict detection over-flagging single-session claims** — multiple complementary findings from one session were flagged as conflicts. Tightened to require claims from ≥2 distinct sessions. Fixed in `a62be7f`.
 5. **Fidelity gate's canonical-form contract was implicit** — the gate strictly substring-matched against prompt-rendered transcripts including `[actor/kind]` markers and `tool_call` content. Markdown decoration in source vs decoration-less model quotes also broke matches. The canonical-form contract was made explicit and documented in [`docs/anchors.md`](../../anchors.md); the haystack now excludes `tool_call` events and the canonical form strips Markdown decoration consistently on both sides. Adversarial tests pin down what's still rejected (fabrication, content drift, stitching).
@@ -96,4 +97,4 @@ That's the "test on real data before prod" payoff — five real bugs caught and 
 
 ## Lineage
 
-- The general capture methodology lives in [`docs/evaluating-on-your-codebase.md`](../../evaluating-on-your-codebase.md). The per-issue session briefs that drove these specific sessions are archived in the lab at `knowledge-lab/meta/talks/2026-06-08-ai-tinkerers/session-briefs.md` (private; not part of this repo).
+- The general capture methodology lives in [`docs/evaluating-on-your-codebase.md`](../../evaluating-on-your-codebase.md).

@@ -1,77 +1,81 @@
 # MCP server — wiring `crewlore` into your agent
 
-`crewlore` ships an optional [MCP](https://modelcontextprotocol.io/) server that exposes the compiled knowledge layer as a query tool. Any MCP-speaking agent (Claude Desktop, Cursor, Continue, custom MCP clients) can pull the relevant slice of your team's compiled knowledge into its context on demand.
+`crewlore` ships an optional [MCP](https://modelcontextprotocol.io/) server that exposes the compiled knowledge layer to any MCP-speaking agent (Claude Desktop, Claude Code, Cursor, custom clients). The agent pulls the relevant slice of the team's knowledge into its context on demand, and can report back which claims helped.
 
 ## Install the optional extra
 
-The MCP server lives behind the `[serve]` extra so the base install stays light:
+The server lives behind the `serve` extra so the base install stays light:
 
 ```bash
-pipx install 'crewlore[serve]'
-# or, if installed without the extra:
-pipx inject crewlore 'crewlore[serve]'
+pipx install 'crewlore[serve]'        # fresh install
+pipx inject crewlore mcp              # crewlore already installed with pipx
+pip install 'crewlore[serve]'         # plain pip / a virtualenv
 ```
 
 ## Run the server
 
-From the root of a repo that has `.lore/` initialized:
-
 ```bash
-lore serve --mcp
+lore serve --repo /absolute/path/to/your/repo
 ```
 
-It runs in the foreground over stdio (the standard MCP transport). The server exposes one tool:
+It runs in the foreground over stdio, the standard MCP transport, and reads `.lore/` in the repo you point it at. Always pass `--repo` with an absolute path: MCP clients launch servers from their own working directory, not yours, and a server started elsewhere finds no `.lore/` and returns nothing.
 
-| Tool | Args | Returns |
+Two tools are exposed:
+
+| Tool | Arguments | Returns |
 |---|---|---|
-| `lore_query` | `task: str`, `limit: int = 5` | List of compiled claims relevant to `task`, each with `statement`, `kind`, `scope`, `action`, and `anchors` |
+| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `action`, and `anchors` (`ref` + verbatim `quote`) |
+| `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
 
-Every call is *instrumented*: the claims returned have their `times_served` counter bumped, which feeds the actuation loop (unused claims decay; reinforced claims stay fresh).
+Every `lore_query` call records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
 
-## Wire it into Claude Desktop
+## Claude Desktop
 
-Edit your `mcp.json` (path varies by OS — `~/Library/Application Support/Claude/mcp.json` on macOS, `%APPDATA%\Claude\mcp.json` on Windows) and add a server entry:
+Edit `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`) and add a server entry. Claude Desktop honours `command`, `args` and `env` only, so the repo goes in `args`:
 
 ```json
 {
   "mcpServers": {
     "crewlore": {
       "command": "lore",
-      "args": ["serve", "--mcp"],
-      "cwd": "/absolute/path/to/your/repo"
+      "args": ["serve", "--repo", "/absolute/path/to/your/repo"]
     }
   }
 }
 ```
 
-Restart Claude Desktop. In a new conversation, the `lore_query` tool will appear in the tools list, and Claude will call it when it judges that team-knowledge context is relevant to the task.
+Restart Claude Desktop. If `lore` is not on the PATH Claude Desktop uses, put the absolute path to the binary in `command` (`which lore` prints it).
 
-## Wire it into Cursor
+## Claude Code
 
-Cursor's MCP config lives in **Settings → Features → Model Context Protocol → Edit `mcp.json`**. Same JSON shape as Claude Desktop. After saving, restart Cursor's MCP runtime.
+```bash
+claude mcp add crewlore -- lore serve --repo /absolute/path/to/your/repo
+```
 
-## Wire it into a custom client
+## Cursor
 
-Any client that speaks MCP over stdio works. Spawn `lore serve --mcp` as a subprocess with `cwd` set to the target repo's root, then use your MCP client library to invoke `lore_query(task, limit)`.
+Add the same JSON shape to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` in the project, then reload the MCP servers from Cursor's settings.
+
+## Any other client
+
+Spawn `lore serve --repo /absolute/path` as a subprocess speaking MCP over stdio and call `lore_query(task, limit)` with the task in natural language; call `lore_feedback` once the session has acted on the result.
 
 ## What to expect in the agent's behavior
 
-Once wired, the agent should call `lore_query` near the start of a session — typically right after reading the task. A well-tuned agent will:
+Once wired, an agent should call `lore_query` near the start of a session, right after reading the task. A well-behaved agent will:
 
-1. Call `lore_query("<the current task in natural language>")` and review the returned claims.
-2. Treat returned claims as *citations*, not opinions — every claim has an `anchors` list pointing back to the session line it came from.
-3. If a claim turns out to be inapplicable or wrong for the current context, call `lore_query` with a refined task description rather than dismissing the claim silently.
-
-The instrumentation closes the loop: the more the layer is *used*, the more its claims get reinforced and ranked; the less a claim is used, the faster it decays.
+1. Call `lore_query("<the current task in natural language>")` and read the returned claims.
+2. Treat each claim as a citation, not an opinion: every claim carries anchors pointing at the line it came from, and an `adoption` of `not_adopted` means the team tried that approach and declined it.
+3. Call `lore_feedback` with the ids that shaped its work (`influential`) or that it had to override (`overridden`), rather than silently ignoring a claim that did not fit.
 
 ## Troubleshooting
 
-**`lore: command not found` after install** — `pipx ensurepath` and restart your shell, or use the absolute path to the binary in `mcp.json`'s `command` field.
+**`lore: command not found` after install** — run `pipx ensurepath` and restart your shell, or use the absolute path to the binary in the client's `command` field.
 
-**The tool list doesn't show `lore_query`** — your client may be caching the previous tool list. Restart the client. If still not listed, run `lore serve --mcp` manually in a terminal and verify it stays running (i.e. it's waiting on stdin); if it exits immediately, the error prints to stderr.
+**The tool list does not show `lore_query`** — the client may be caching an old tool list; restart it. If it is still missing, run `lore serve --repo /absolute/path` in a terminal and check it stays running (it waits on stdin); if it exits immediately, the error is printed to stderr.
 
-**Returns empty claims** — the repo's `.lore/claims/claims.jsonl` is empty or your query doesn't overlap with any compiled claim's scope/statement/topic vocabulary. Run `lore status` to see how many active claims you have, and `lore query "<your task>"` to check what the same ranking returns from the CLI.
+**Returns no claims** — the most common cause is a missing or wrong `--repo`, so the server is looking at the wrong directory. Then: the repo's `.lore/claims/claims.jsonl` is empty, or the query shares no vocabulary with any claim (retrieval is word overlap). Run `lore status --repo …` to see how many active claims exist, and `lore query "<your task>" --repo …` to see what the same ranking returns from the CLI.
 
 ## Privacy posture
 
-The MCP server reads from `.lore/` on local disk. It does **not** make outbound network calls and does not require an API key — the LLM call happens at *compile* time, not *serve* time. Queries from the agent are scored against locally-stored claims with a deterministic token-overlap rank; the only thing that crosses a process boundary is the MCP stdio.
+The MCP server reads `.lore/` on local disk. It makes no outbound network calls and needs no API key: the model call happens at compile time, not at serve time. Queries are scored against locally stored claims with a deterministic word-overlap rank; the only thing that crosses a process boundary is the MCP stdio stream.

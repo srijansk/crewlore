@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crewlore"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local-first compiler that turns coding-agent sessions and agent-authored pull requests into a citable, plaintext team-knowledge layer in your git repo, recording what the team adopted and what it tried and declined."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 authors = [
-    { name = "crewlore Contributors" },
+    { name = "Srijan Saket" },
 ]
 keywords = ["ai", "agents", "knowledge", "tribal-knowledge", "compiler", "mcp", "cli", "local-first"]
 classifiers = [
