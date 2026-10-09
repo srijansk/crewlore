@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-09",
+  "prs_scanned": 100,
+  "exported": 24,
+  "skipped": 76,
+  "sessions": 24,
+  "outcomes": {
+    "merged": 18,
+    "closed": 6
+  },
+  "claims": 130,
+  "kinds": {
+    "procedure": 12,
+    "decision": 45,
+    "gotcha": 61,
+    "style": 12
+  },
+  "adoption": {
+    "current": 115,
+    "not_adopted": 15
+  },
+  "scopes": 88,
+  "conflicts": 1,
+  "anchors": 173,
+  "ref_kinds": {
+    "session#event": 113,
+    "path:line": 60
+  },
+  "unresolved": 0,
+  "gate": {
+    "anchors_dropped": 0,
+    "anchors_proposed": 173,
+    "claims_dropped": 0,
+    "claims_proposed": 130
+  },
+  "elapsed_s": 749,
+  "est_input_tokens": 144603,
+  "sessions_with_claims": 24
+}

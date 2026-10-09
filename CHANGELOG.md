@@ -8,7 +8,7 @@
 
 ### Added
 
-- **A current-format example compiled from public pull requests**, `docs/examples/pydantic-ai-prs/`: __EXAMPLE_SUMMARY__ The scrubbed source threads are committed next to the claims, so every anchor can be followed to the event it quotes. The older session-based snapshot stays as `docs/examples/pydantic-ai/`, labelled as the 0.1.0 artifact it is.
+- **A current-format example compiled from public pull requests**, `docs/examples/pydantic-ai-prs/`: `lore import-prs pydantic/pydantic-ai --limit 100` found 24 agent-authored threads among the last 100 closed PRs (18 merged, 6 declined) and compiled them into 130 claims, 15 marked not adopted, with 173 anchors; the gate dropped none of the model's proposals and an independent re-check resolves every anchor. The scrubbed source threads are committed next to the claims, so every anchor can be followed to the event it quotes. The older session-based snapshot stays as `docs/examples/pydantic-ai/`, labelled as the 0.1.0 artifact it is.
 
 ## 0.3.0 — 2026-10-09
 

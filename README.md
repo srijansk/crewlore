@@ -117,9 +117,21 @@ Claims roll up into a knowledge book at `.lore/knowledge/README.md`, grouped by 
 
 ## A real example
 
-[`docs/examples/pydantic-ai/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/) is a committed snapshot compiled on the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (20k+ ⭐) from three Claude Code sessions on real open issues: 18 claims across 9 areas, with the rendered book, the raw claims, and the compile details.
+[`docs/examples/pydantic-ai-prs/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai-prs/) is `lore import-prs pydantic/pydantic-ai --limit 100`, run on 2026-10-09 against the public [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) repo (20k+ ⭐) with the default model, on a machine that had never run an agent in it. Of the last 100 closed pull requests, 24 were written by a coding agent: 18 merged, 6 closed without merging. They compiled into **130 claims**, 15 of them marked **not adopted**, carrying 173 anchors. The fidelity gate dropped none of the model's proposals, and an independent re-check of every anchor against the committed threads found none that fail to resolve. The scrubbed source threads are in the example, so every anchor can be followed to the event it quotes.
 
-Read it for what it is. It was compiled with crewlore 0.1.0 in May 2026, before anchors carried navigable positions and before the adoption field existed, and the three source sessions are not published, so you can check the claims against the public issues and code but not click through to the transcript lines. A current-format example built from public pull-request threads, with the source threads included, is the next thing planned for this directory.
+One claim from a merged pull request, where an alternative was tried and turned down inside the review:
+
+> **`[decision · not adopted]`** · *pydantic_ai_slim/pydantic_ai/models*
+>
+> Unified prompt caching (`ModelSettings.cache` / `Caching`) stays opt-in. A default-on variant (`cache` defaulting to True on models with `supports_cache`) was tried and not adopted, because the maintainer deferred default-on caching to v3.
+>
+> **Instead** — do not default `cache` to True; leave caching off unless the user sets `cache`, uses `Caching()`, or sets a provider-specific cache setting. Revisit default-on only for v3.
+>
+> > *anchor* `pr_pydantic__pydantic-ai__7560#event-65` — "Per maintainer decision, caching stays off unless `cache` (or the `Caching` capability) or a provider-specific cache setting asks for it; turning it on by default waits for v3."
+
+The directory also contains the one conflict the run recorded. It is three claims that agree about the repository's `.github/` maintainer-only rule, grouped as a disagreement because the lexical conflict detector saw the same scope, kind and topic with different statements. That is the known weakness listed under limits below, shown rather than hidden.
+
+The older snapshot, [`docs/examples/pydantic-ai/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/), is three Claude Code sessions compiled with crewlore 0.1.0 in May 2026. Its README explains what it can and cannot show.
 
 ## How it works
 
