@@ -194,7 +194,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 ```yaml
 model:
   provider: anthropic          # anthropic | openai | local
-  name: claude-sonnet-4-6      # any current Claude model works; nothing but the prompt is sent
+  name: claude-sonnet-5-5      # any current Claude model works; nothing but the prompt is sent
   # temperature: 0             # only sent if set; current Claude models reject sampling parameters
   # base_url: http://localhost:11434/v1   # for provider: local — Ollama, LM Studio, vLLM
 capture:
@@ -220,7 +220,7 @@ Before the adoption field existed, I measured what the compiler stores when it r
 
 The part that changed the schema: across every version without the field, 0 of 867 extracted statements mentioned the rejection in their own text. With the field, 85% of the claims it marked `not_adopted` say so in words. Telling the model was not enough; it needed somewhere to write it down.
 
-The code, pinned data revision and reproduction recipe are in [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/). The study ran crewlore's extractor and fidelity gate with Gemini models through the OpenAI-compatible provider, with a second judge for agreement (κ = 0.92). The write-up was submitted to PALM, the NeurIPS 2026 workshop on long-term memory for AI systems. If `crewlore` is useful in your research, [`CITATION.cff`](https://github.com/srijansk/crewlore/blob/main/CITATION.cff) has the citation.
+The code, pinned data revision and reproduction recipe are in [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/). The study ran crewlore's extractor and fidelity gate with Gemini models through the OpenAI-compatible provider, with a second judge for agreement (κ = 0.92). This repository is the primary record of the study; a short write-up is being posted as a preprint and will be linked here. If `crewlore` is useful in your research, [`CITATION.cff`](https://github.com/srijansk/crewlore/blob/main/CITATION.cff) has the citation.
 
 ## Status, limits and roadmap
 

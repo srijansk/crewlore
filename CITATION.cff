@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/srijansk/crewlore"
 url: "https://github.com/srijansk/crewlore"
 license: MIT
-version: 0.3.0
+version: 0.4.0
 date-released: 2026-10-09
 abstract: >-
   An open, local-first compiler that turns AI-coding-agent sessions and

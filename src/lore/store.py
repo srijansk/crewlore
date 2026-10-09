@@ -17,7 +17,7 @@ import yaml
 from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
-    "model": {"provider": "anthropic", "name": "claude-sonnet-4-6"},
+    "model": {"provider": "anthropic", "name": "claude-sonnet-5-5"},
     # "auto" = only this repo's own Claude Code transcripts. Set a directory to
     # read transcripts from somewhere else.
     "capture": {"transcripts": "auto"},

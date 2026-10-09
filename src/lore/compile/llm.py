@@ -68,7 +68,7 @@ def build_complete(config: dict) -> Complete:
 
     sampling = _sampling(model_cfg)
     if provider == "anthropic":
-        return _anthropic_complete(name or "claude-sonnet-4-6", sampling=sampling)
+        return _anthropic_complete(name or "claude-sonnet-5-5", sampling=sampling)
     if provider == "openai":
         return _openai_complete(name or "gpt-4o", sampling=sampling)
     if provider in ("local", "openai-compatible"):

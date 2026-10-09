@@ -4,7 +4,7 @@ Does a memory system that compiles engineering work a team **declined** end up s
 
 The finding that changed the product: without a field that can say "tried and not adopted", the extractor never records the rejection in a claim's own text; with one, it does. That field ships in crewlore as `adoption`.
 
-The write-up was submitted to PALM (Personalized, Aligned, Long-Term Memory for AI Systems), a NeurIPS 2026 workshop.
+The directory is named after the venue the write-up was first prepared for (PALM, a NeurIPS 2026 workshop on long-term memory for AI systems); this repository is the study's primary record, and a preprint will be linked here once posted.
 
 ## Results
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-10-09
+
+### Changed
+
+- **Default model is `claude-sonnet-5-5`.** With no sampling parameters sent (0.3.0), current Claude models work; the newer Sonnet is cheaper than the 4.6 generation and was validated on the new example below. Set `model.name` to keep an older model.
+
+### Added
+
+- **A current-format example compiled from public pull requests**, `docs/examples/pydantic-ai-prs/`: __EXAMPLE_SUMMARY__ The scrubbed source threads are committed next to the claims, so every anchor can be followed to the event it quotes. The older session-based snapshot stays as `docs/examples/pydantic-ai/`, labelled as the 0.1.0 artifact it is.
+
 ## 0.3.0 — 2026-10-09
 
 A launch-readiness release. Two defaults change, one surface is added, and the docs stop claiming more than the code does.
