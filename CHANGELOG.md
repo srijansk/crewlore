@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 — 2026-10-09
+
+### Fixed
+
+- **`lore serve` broke on a fresh install of the `serve` extra.** The `mcp` library's 2.x release renamed the server class crewlore imports, and the extra's range allowed it. The extra now pins `mcp>=1.0,<2`; an incompatible install is reported as such instead of as "extra not installed". Support for `mcp` 2.x is planned.
+- Lockfile refreshed to patched transitive versions (`pyjwt`, `cryptography`, `anyio`, `starlette`, `python-multipart`).
+
 ## 0.4.0 — 2026-10-09
 
 ### Changed

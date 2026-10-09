@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crewlore"
-version = "0.4.0"
+version = "0.4.1"
 description = "Local-first compiler that turns coding-agent sessions and agent-authored pull requests into a citable, plaintext team-knowledge layer in your git repo, recording what the team adopted and what it tried and declined."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -48,8 +48,8 @@ Changelog = "https://github.com/srijansk/crewlore/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 # OpenAI SDK — for `model.provider: openai` and for `local` (OpenAI-compatible endpoints).
 openai = ["openai>=1.0"]
-serve = ["mcp>=1.0"]
-dev = ["pytest>=8.0", "pytest-cov", "ruff", "openai>=1.0"]
+serve = ["mcp>=1.0,<2"]
+dev = ["pytest>=8.0", "pytest-cov", "ruff", "openai>=1.0", "mcp>=1.0,<2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lore"]

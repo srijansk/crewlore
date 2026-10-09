@@ -393,10 +393,13 @@ def serve(
         raise typer.Exit(1)
     try:
         from lore.serve.mcp_server import run_mcp
-    except ImportError:
+    except ImportError as exc:
+        # Either the extra is missing or an incompatible `mcp` major is installed;
+        # say which, because "not installed" is wrong advice for the second case.
+        typer.echo(f"MCP server unavailable: {exc}")
         typer.echo(
-            "MCP extra not installed. Fresh install: pipx install 'crewlore[serve]'  ·  "
-            "existing pipx install: pipx inject crewlore mcp"
+            "Install the extra: pipx install 'crewlore[serve]' (fresh) or "
+            "pipx inject crewlore 'mcp<2' (existing pipx install)."
         )
         raise typer.Exit(1) from None
     run_mcp(store)
