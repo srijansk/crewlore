@@ -29,3 +29,6 @@ htmlcov/
 # Local-only working dir — strategy notes, launch copy drafts,
 # experiments. Never committed; never pushed.
 local/
+
+# Rendered explainer video (regenerate with: vhs docs/social-video.tape)
+docs/assets/*.mp4

@@ -137,7 +137,28 @@ POST_SESSIONS = {
 }
 
 
+def _pause(step: bool) -> None:
+    """In --step mode, wait for Enter between sections so a viewer (or a screen
+    recording) can read each one. EOF on stdin just continues."""
+    if not step:
+        return
+    try:
+        input()
+    except EOFError:
+        pass
+
+
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Offline end-to-end crewlore demo (no API key).")
+    parser.add_argument(
+        "--step",
+        action="store_true",
+        help="pause for Enter between sections (for demos and screen recordings)",
+    )
+    args = parser.parse_args()
+
     adapter = ClaudeCodeAdapter()
     with tempfile.TemporaryDirectory() as tmp:
         store = LoreStore(Path(tmp))
@@ -153,6 +174,7 @@ def main() -> None:
         console.rule("[bold cyan]COMPILED KNOWLEDGE BOOK[/bold cyan]")
         book_md = (Path(tmp) / ".lore" / "knowledge" / "README.md").read_text()
         console.print(Markdown(book_md))
+        _pause(args.step)
 
         console.rule("[bold cyan]QUERY: 'billing webhook firing twice'[/bold cyan]")
         for c in KnowledgeServer(store).query("billing webhook firing twice"):
@@ -160,6 +182,8 @@ def main() -> None:
             if c.action:
                 verb = "" if c.adoption == "current" else "instead: "
                 console.print(f"      [dim]->[/dim] [italic]{verb}{c.action}[/italic]")
+
+        _pause(args.step)
 
         transcript = "\n".join(
             e.content for sid in store.list_sessions() for e in store.load_session(sid)

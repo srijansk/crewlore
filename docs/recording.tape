@@ -4,47 +4,46 @@
 # Output: docs/assets/demo.gif
 # Requires: brew install vhs
 #
-# This tape runs the bundled offline demo (scripts/demo.py) which uses
+# Runs the bundled offline demo (scripts/demo.py --step), which uses
 # deterministic synthetic data — no API key, no network, fully reproducible.
-# Anyone can clone the repo and `vhs docs/recording.tape` to regenerate
-# the GIF.
+# --step pauses between sections so each one is readable; the tape presses
+# Enter to advance. Anyone can clone the repo and re-render this GIF.
+#
+# docs/social-video.tape is the same story at 1920x1080 as an MP4 for posts.
 
 Output docs/assets/demo.gif
 
-# --- Visual tuning ---
-# Higher contrast theme + larger font for README-hero legibility on dark/light.
-Set FontSize 18
+Set FontSize 17
 Set Width 1400
-Set Height 900
+Set Height 920
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 30ms
-Set PlaybackSpeed 1.0
-Set Padding 30
+Set TypingSpeed 25ms
+Set Padding 28
 Set BorderRadius 8
 
-# --- Setup: hide cwd noise; assume user is in the repo with venv ready ---
 Hide
 Type "cd $(git rev-parse --show-toplevel) && clear"
 Enter
 Show
 
-# --- Frame 1: what is this ---
-Type "# crewlore — your agent sessions, compiled into team knowledge."
+Type "# Your coding agents keep relearning what your team already figured out."
 Enter
-Sleep 1s
-Type "# Local-first. Plaintext in your repo. Every claim citable."
+Sleep 1200ms
+Type "# crewlore compiles their sessions and pull requests into a knowledge book in your repo."
 Enter
 Sleep 1500ms
 
-# --- Frame 2: run it ---
-Type "uv run python scripts/demo.py"
+Type "uv run python scripts/demo.py --step"
 Enter
-Sleep 10s
+Sleep 7s
+Enter
+Sleep 4500ms
+Enter
+Sleep 4500ms
 
-# --- Frame 3: close ---
-Type "# Browse a real run on pydantic-ai → docs/examples/pydantic-ai/"
+Type "# Every claim: a verbatim anchor, and whether the team adopted it or declined it."
 Enter
-Sleep 1500ms
-Type "# github.com/srijansk/crewlore  ·  alpha"
+Sleep 1200ms
+Type "# pipx install crewlore   |   github.com/srijansk/crewlore"
 Enter
-Sleep 2500ms
+Sleep 3s
