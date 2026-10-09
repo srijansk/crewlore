@@ -250,3 +250,13 @@ def test_transient_failures_are_survived_but_counted():
     assert extractor.calls == 2  # kept going
     assert result.claims == []
     assert result.failed_sessions == 2
+
+
+# GUARDS: a teammate who pulls the repo and compiles with no local sessions sees
+# support=1 for every inherited claim. That must not reset the authority the
+# claim already earned — the committed claims.jsonl would churn on every pull.
+def test_recompile_without_new_sessions_keeps_earned_authority():
+    earned = _claim("dedupe on idempotency key", "ses_1").model_copy(update={"authority": 0.8})
+    result = compile_sessions({}, DictExtractor({}), prior_claims=[earned])
+    assert len(result.claims) == 1
+    assert result.claims[0].authority == 0.8

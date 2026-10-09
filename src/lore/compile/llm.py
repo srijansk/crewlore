@@ -17,24 +17,47 @@ from lore.compile.extractor import Complete, FatalExtractionError
 
 # Provider status codes that mean "your credentials are wrong", not "try again".
 _AUTH_STATUS = {401, 403}
+# ...and codes that mean "this request will be rejected every time": a bad model
+# name, a parameter the model does not accept. Retrying per session is pointless.
+_REQUEST_STATUS = {400, 404}
 
 
 class CredentialsError(FatalExtractionError):
     """Raised when model credentials / config are missing, invalid, or a provider is unknown."""
 
 
-def _reraise_auth_errors(exc: Exception, provider_hint: str) -> None:
-    """Translate a provider auth rejection into a fatal, actionable error.
+def _reraise_fatal_errors(exc: Exception, provider_hint: str) -> None:
+    """Translate a provider rejection that will recur on every session into a fatal error.
 
-    A key that is present but rejected is otherwise indistinguishable from a
-    transient per-session failure, and the compiler would skip every session and
+    A key that is rejected, or a request the model refuses outright (unknown
+    model name, unsupported parameter), is otherwise indistinguishable from a
+    transient per-session failure — the compiler would skip every session and
     report a successful run that produced nothing.
     """
-    if getattr(exc, "status_code", None) in _AUTH_STATUS:
+    status = getattr(exc, "status_code", None)
+    if status in _AUTH_STATUS:
         raise CredentialsError(
             f"{provider_hint} rejected the API key ({exc.__class__.__name__}). "
             "Check the key is current and has access to the configured model."
         ) from exc
+    if status in _REQUEST_STATUS:
+        detail = getattr(exc, "message", None) or str(exc)
+        raise FatalExtractionError(
+            f"{provider_hint} rejected the request ({exc.__class__.__name__}): {detail}. "
+            "Check `model.name` and `model.temperature` in .lore/config.yaml."
+        ) from exc
+
+
+def _sampling(model_cfg: dict) -> dict:
+    """Optional sampling parameters, sent only when configured.
+
+    Nothing is sent by default: current Claude models reject non-default
+    sampling parameters outright, and a fixed temperature never guaranteed
+    deterministic extraction anyway. Set `model.temperature` in config to pass
+    one to providers that accept it.
+    """
+    temperature = (model_cfg or {}).get("temperature")
+    return {} if temperature is None else {"temperature": float(temperature)}
 
 
 def build_complete(config: dict) -> Complete:
@@ -43,10 +66,11 @@ def build_complete(config: dict) -> Complete:
     name = model_cfg.get("name")
     base_url = model_cfg.get("base_url")
 
+    sampling = _sampling(model_cfg)
     if provider == "anthropic":
-        return _anthropic_complete(name or "claude-sonnet-4-6")
+        return _anthropic_complete(name or "claude-sonnet-4-6", sampling=sampling)
     if provider == "openai":
-        return _openai_complete(name or "gpt-4o")
+        return _openai_complete(name or "gpt-4o", sampling=sampling)
     if provider in ("local", "openai-compatible"):
         if not base_url:
             raise CredentialsError(
@@ -54,14 +78,15 @@ def build_complete(config: dict) -> Complete:
                 "any OpenAI-compatible endpoint (e.g. http://localhost:11434/v1 for Ollama, "
                 "or your LM Studio / vLLM server)."
             )
-        return _openai_complete(name or "local-model", base_url=base_url)
+        return _openai_complete(name or "local-model", base_url=base_url, sampling=sampling)
     raise CredentialsError(
         f"Unknown model provider '{provider}'. Use 'anthropic', 'openai', or 'local' "
         "(an OpenAI-compatible endpoint configured via `model.base_url`)."
     )
 
 
-def _anthropic_complete(model: str) -> Complete:
+def _anthropic_complete(model: str, *, sampling: dict | None = None) -> Complete:
+    sampling = sampling or {}
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise CredentialsError(
             "No ANTHROPIC_API_KEY set. Export an API key, switch to `model.provider: openai` "
@@ -83,18 +108,21 @@ def _anthropic_complete(model: str) -> Complete:
             msg = client.messages.create(
                 model=model,
                 max_tokens=8192,
-                temperature=0,  # deterministic — extraction is structured-output, not creative
                 messages=[{"role": "user", "content": prompt}],
+                **sampling,
             )
         except Exception as exc:
-            _reraise_auth_errors(exc, "Anthropic")
+            _reraise_fatal_errors(exc, "Anthropic")
             raise
         return "".join(block.text for block in msg.content if block.type == "text")
 
     return complete
 
 
-def _openai_complete(model: str, *, base_url: str | None = None) -> Complete:
+def _openai_complete(
+    model: str, *, base_url: str | None = None, sampling: dict | None = None
+) -> Complete:
+    sampling = sampling or {}
     local = base_url is not None
     if not local and not os.environ.get("OPENAI_API_KEY"):
         raise CredentialsError(
@@ -123,11 +151,11 @@ def _openai_complete(model: str, *, base_url: str | None = None) -> Complete:
         try:
             resp = client.chat.completions.create(
                 model=model,
-                temperature=0,  # deterministic — extraction is structured-output, not creative
                 messages=[{"role": "user", "content": prompt}],
+                **sampling,
             )
         except Exception as exc:
-            _reraise_auth_errors(exc, "OpenAI" if not base_url else base_url)
+            _reraise_fatal_errors(exc, "OpenAI" if not base_url else base_url)
             raise
         return resp.choices[0].message.content or ""
 

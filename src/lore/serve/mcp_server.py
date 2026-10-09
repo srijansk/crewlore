@@ -19,10 +19,11 @@ def build_server(store: LoreStore) -> FastMCP:
 
     @mcp.tool()
     def lore_query(task: str, limit: int = 5) -> list[dict]:
-        """Return team tribal-knowledge claims relevant to a task, with anchors."""
+        """Return team-knowledge claims relevant to a task, each with verbatim anchors."""
         claims = server.query(task, limit=limit)
         return [
             {
+                "id": c.id,
                 "statement": c.statement,
                 "kind": c.kind,
                 "adoption": c.adoption,
@@ -32,6 +33,21 @@ def build_server(store: LoreStore) -> FastMCP:
             }
             for c in claims
         ]
+
+    @mcp.tool()
+    def lore_feedback(claim_ids: list[str], verdict: str) -> dict:
+        """Record whether returned claims helped: verdict is "influential" or "overridden".
+
+        Influential claims are reinforced; claims the session had to override
+        are retired once that happens repeatedly.
+        """
+        if verdict == "influential":
+            server.mark_influential(claim_ids)
+        elif verdict == "overridden":
+            server.mark_overridden(claim_ids)
+        else:
+            return {"error": "verdict must be 'influential' or 'overridden'"}
+        return {"recorded": verdict, "claims": list(claim_ids)}
 
     return mcp
 

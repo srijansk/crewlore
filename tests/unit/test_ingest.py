@@ -80,3 +80,29 @@ def test_ingest_skips_unparseable_file(tmp_path):
     stats = ingest_transcripts(store, ClaudeCodeAdapter(), tdir)
     assert stats["ingested"] == 1
     assert store.list_sessions() == ["good"]
+
+
+# GUARDS: the default transcript directory is THIS repo's Claude Code directory,
+# never the whole ~/.claude/projects tree (which holds every project on the
+# machine). Claude Code encodes the cwd by replacing every non-alphanumeric
+# character with "-".
+def test_claude_code_project_dir_encodes_the_repo_path(tmp_path):
+    from lore.capture.ingest import claude_code_project_dir
+
+    repo = tmp_path / "work" / "my_app.v2"
+    repo.mkdir(parents=True)
+    got = claude_code_project_dir(repo, projects_root=tmp_path / "projects")
+    raw = str(repo.resolve()).lstrip("/")
+    expected = "-" + raw.replace("/", "-").replace("_", "-").replace(".", "-")
+    assert got.parent == tmp_path / "projects"
+    assert got.name == expected
+
+
+def test_claude_code_project_dir_defaults_under_home(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from lore.capture import ingest
+
+    monkeypatch.setattr(ingest, "CLAUDE_PROJECTS_ROOT", tmp_path / "projects")
+    got = ingest.claude_code_project_dir(tmp_path / "repo")
+    assert got.parent == Path(tmp_path / "projects")

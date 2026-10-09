@@ -362,3 +362,19 @@ def test_unrecognised_adoption_drops_the_claim_rather_than_inverting_it():
     # failure the field exists to prevent — so the claim is dropped instead.
     extractor = LLMExtractor(lambda prompt: _declined_claim_response("rejected"))
     assert extractor.extract(EVENTS, "ses_1") == []
+
+
+# GUARDS: the post-hoc "fidelity" of a store is 100% by construction. The honest
+# number is what the gate rejected, so the extractor has to count it.
+def test_extractor_counts_what_the_fidelity_gate_rejects():
+    two = json.dumps([
+        json.loads(_one_claim_response("fires twice in staging"))[0],
+        json.loads(_one_claim_response("this text never appeared"))[0],
+    ])
+    extractor = LLMExtractor(lambda prompt: two)
+    claims = extractor.extract(EVENTS, "ses_1")
+    assert len(claims) == 1
+    assert extractor.stats == {
+        "claims_emitted": 2, "claims_rejected": 1,
+        "anchors_emitted": 2, "anchors_rejected": 1,
+    }

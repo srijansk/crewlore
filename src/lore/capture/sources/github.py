@@ -211,6 +211,7 @@ class GitHubPRSource:
         limit: int = 50,
         agents_only: bool = True,
         include_checks: bool = True,
+        state: str = "closed",
     ) -> dict:
         """Write one JSONL session per PR into `out_dir` for `lore compile`.
 
@@ -221,7 +222,7 @@ class GitHubPRSource:
         out_dir.mkdir(parents=True, exist_ok=True)
         owner, _, name = repo.partition("/")
         written = skipped = 0
-        for pr in self.discover(repo, limit=limit):
+        for pr in self.discover(repo, limit=limit, state=state):
             records = self.fetch_thread(repo, pr, include_checks=include_checks)
             if agents_only and not any(r.get("agent") for r in records):
                 skipped += 1

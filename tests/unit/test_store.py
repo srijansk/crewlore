@@ -148,3 +148,45 @@ def test_entry_time_is_independent_of_source_observation_time(tmp_path):
     stored = store.load_claims()[0]
     assert stored.observed_at == datetime(2026, 5, 19, tzinfo=timezone.utc)
     assert stored.compiled_at == now
+
+
+# GUARDS: a store written to before `lore init` ran must still never commit raw
+# sessions — `git add .` after a compile is the common path, not init.
+def test_writing_a_session_without_init_creates_the_gitignore(tmp_path):
+    store = LoreStore(tmp_path)
+    store.write_session(
+        "abc",
+        [
+            NSFEvent(
+                session="abc", actor="user", kind="user_message",
+                timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc), content="hi",
+            )
+        ],
+    )
+    gitignore = (tmp_path / ".lore" / ".gitignore").read_text().splitlines()
+    assert "sessions/" in gitignore
+    assert "sources/" in gitignore  # raw PR exports are never committed either
+    assert "claims/usage.jsonl" in gitignore
+
+
+def test_ensure_gitignore_upgrades_an_older_shorter_list(tmp_path):
+    store = LoreStore(tmp_path)
+    (tmp_path / ".lore").mkdir()
+    (tmp_path / ".lore" / ".gitignore").write_text("sessions/\ncache/\nclaims/usage.jsonl\n")
+    store.ensure_gitignore()
+    lines = (tmp_path / ".lore" / ".gitignore").read_text().splitlines()
+    assert "sources/" in lines
+    assert lines.count("sessions/") == 1  # idempotent: nothing duplicated
+    store.ensure_gitignore()
+    assert (tmp_path / ".lore" / ".gitignore").read_text().splitlines() == lines
+
+
+def test_default_config_has_no_dead_keys(tmp_path):
+    import yaml
+
+    store = LoreStore(tmp_path)
+    store.init()
+    cfg = yaml.safe_load((tmp_path / ".lore" / "config.yaml").read_text())
+    assert set(cfg) == {"model", "capture", "compile"}
+    assert cfg["capture"]["transcripts"] == "auto"
+    assert cfg["compile"] == {"watch_interval_seconds": 300, "max_unused_days": 30}

@@ -61,22 +61,60 @@ def test_rejected_api_key_becomes_a_fatal_credentials_error():
     import pytest
 
     from lore.compile.extractor import FatalExtractionError
-    from lore.compile.llm import CredentialsError, _reraise_auth_errors
+    from lore.compile.llm import CredentialsError, _reraise_fatal_errors
 
     class Unauthorized(Exception):
         status_code = 401
 
     assert issubclass(CredentialsError, FatalExtractionError)
     with pytest.raises(CredentialsError, match="rejected the API key"):
-        _reraise_auth_errors(Unauthorized(), "Anthropic")
+        _reraise_fatal_errors(Unauthorized(), "Anthropic")
 
 
 # GUARDS: rate limits and server errors must stay retryable, not be misreported
 # as a credentials problem that tells the user to go check their key.
 def test_transient_status_codes_are_not_treated_as_credentials_failures():
-    from lore.compile.llm import _reraise_auth_errors
+    from lore.compile.llm import _reraise_fatal_errors
 
     class RateLimited(Exception):
         status_code = 429
 
-    _reraise_auth_errors(RateLimited(), "Anthropic")  # returns, caller re-raises
+    _reraise_fatal_errors(RateLimited(), "Anthropic")  # returns, caller re-raises
+
+
+# GUARDS: a request the model rejects outright (unknown model name, a parameter
+# it does not accept) recurs on every session exactly like a bad key. It must be
+# fatal and name the config to fix — not a per-session "failed, will retry".
+def test_bad_request_is_fatal_and_points_at_model_config():
+    from lore.compile.extractor import FatalExtractionError
+    from lore.compile.llm import CredentialsError, _reraise_fatal_errors
+
+    class BadRequest(Exception):
+        status_code = 400
+        message = "temperature is not supported for this model"
+
+    with pytest.raises(FatalExtractionError, match="model.name") as exc:
+        _reraise_fatal_errors(BadRequest(), "Anthropic")
+    assert not isinstance(exc.value, CredentialsError)
+    assert "temperature is not supported" in str(exc.value)
+
+
+def test_unknown_model_is_fatal():
+    from lore.compile.extractor import FatalExtractionError
+    from lore.compile.llm import _reraise_fatal_errors
+
+    class NotFound(Exception):
+        status_code = 404
+
+    with pytest.raises(FatalExtractionError):
+        _reraise_fatal_errors(NotFound(), "Anthropic")
+
+
+# GUARDS: current Claude models reject non-default sampling parameters, so no
+# temperature may be sent unless the user configured one.
+def test_no_sampling_parameters_are_sent_by_default():
+    from lore.compile.llm import _sampling
+
+    assert _sampling({}) == {}
+    assert _sampling({"name": "claude-sonnet-4-6"}) == {}
+    assert _sampling({"temperature": 0}) == {"temperature": 0.0}

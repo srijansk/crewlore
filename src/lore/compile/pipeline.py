@@ -1,4 +1,4 @@
-"""The compiler — NSF events into compiled claims. This is the moat.
+"""The compiler — NSF events into compiled claims. This is where the value is made.
 
 Pipeline stages: gate on signal -> extract candidate claims (LLM, behind a seam)
 -> cluster & dedup -> detect conflicts (record, don't merge) -> score
@@ -98,9 +98,15 @@ def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
                     "anchors": _merge_anchors(members),
                     "observed_at": _latest_observed(members),
                     "compiled_at": _earliest_compiled(members),
-                    "authority": min(
-                        _AUTHORITY_CAP,
-                        _AUTHORITY_BASE + _AUTHORITY_PER_SUPPORT * (support - 1),
+                    # Never below what the claim already earned: a teammate who
+                    # compiles with no local sessions sees support=1 for every
+                    # inherited claim and must not reset the whole store to base.
+                    "authority": max(
+                        base.authority,
+                        min(
+                            _AUTHORITY_CAP,
+                            _AUTHORITY_BASE + _AUTHORITY_PER_SUPPORT * (support - 1),
+                        ),
                     ),
                     "confidence": max(m.confidence for m in members),
                 }

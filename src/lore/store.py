@@ -17,12 +17,16 @@ import yaml
 from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
-    "harness": "claude-code",
     "model": {"provider": "anthropic", "name": "claude-sonnet-4-6"},
-    "scopes": ["."],
-    "capture": {"transcripts": "~/.claude/projects"},
-    "compile": {"cadence": "auto", "watch_interval_seconds": 300},
+    # "auto" = only this repo's own Claude Code transcripts. Set a directory to
+    # read transcripts from somewhere else.
+    "capture": {"transcripts": "auto"},
+    "compile": {"watch_interval_seconds": 300, "max_unused_days": 30},
 }
+
+# Never committed: raw sessions and raw source exports can carry secrets or PII,
+# the extraction cache is local, and usage stats are volatile.
+GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl")
 
 
 class LoreStore:
@@ -56,15 +60,32 @@ class LoreStore:
         return self.lore / "cache" / f"{session_id}.jsonl"
 
     # --- lifecycle ---
+    @property
+    def is_initialised(self) -> bool:
+        return self.config_path.exists()
+
     def init(self) -> None:
         (self.lore / "claims").mkdir(parents=True, exist_ok=True)
         (self.lore / "knowledge").mkdir(parents=True, exist_ok=True)
         (self.lore / "sessions").mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
             self.config_path.write_text(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
-        # Raw sessions never get committed — they can carry secrets/PII. The
-        # extraction cache and volatile usage stats are local-only too.
-        (self.lore / ".gitignore").write_text("sessions/\ncache/\nclaims/usage.jsonl\n")
+        self.ensure_gitignore()
+
+    def ensure_gitignore(self) -> None:
+        """Make sure `.lore/.gitignore` exists and covers every local-only path.
+
+        Called from every write path, not only `init`, so a store that was
+        written to before `lore init` ran — or that was initialised by an older
+        version with a shorter list — can never commit raw sessions or raw
+        source exports by accident.
+        """
+        path = self.lore / ".gitignore"
+        existing = path.read_text().splitlines() if path.exists() else []
+        missing = [line for line in GITIGNORE_LINES if line not in existing]
+        if not existing or missing:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("".join(f"{line}\n" for line in [*existing, *missing]))
 
     def load_config(self) -> dict:
         if not self.config_path.exists():
@@ -74,6 +95,7 @@ class LoreStore:
     # --- claims ---
     def write_claims(self, claims: list[Claim], *, now: datetime | None = None) -> None:
         self.claims_path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_gitignore()
         stamped = self._stamp_entry_time(claims, now or datetime.now(timezone.utc))
         ordered = sorted(stamped, key=lambda c: c.id)
         # Committed truth excludes volatile usage stats — they live in a gitignored
@@ -151,6 +173,7 @@ class LoreStore:
     def write_session(self, session_id: str, events: list[NSFEvent]) -> None:
         path = self.session_path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_gitignore()  # raw sessions must never be committable
         self._write_jsonl(path, events)
 
     def load_session(self, session_id: str) -> list[NSFEvent]:
@@ -179,6 +202,7 @@ class LoreStore:
     def save_extraction(self, session_id: str, claims: list[Claim]) -> None:
         path = self.extraction_cache_path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_gitignore()
         self._write_jsonl(path, claims)
 
     # --- jsonl helpers ---

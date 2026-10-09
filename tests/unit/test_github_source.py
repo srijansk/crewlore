@@ -284,3 +284,18 @@ def test_repo_specific_marker_can_be_supplied():
     agent, method = detect_agent(pr, [], extra_markers=[r"house robot"])
     assert agent == "unspecified"
     assert method == "disclosure-marker"
+
+
+# GUARDS: `--state` must reach the listing query; a repo whose agent PRs are
+# mostly open would otherwise silently export nothing.
+def test_export_state_is_passed_through_to_discovery(tmp_path):
+    seen = []
+
+    def api(path, paginate=True):
+        seen.append(path)
+        if path.startswith("repos/acme/billing/pulls?"):
+            return []
+        raise AssertionError(path)
+
+    GitHubPRSource(api=api).export("acme/billing", tmp_path, limit=5, state="open")
+    assert any("state=open" in p for p in seen)

@@ -9,10 +9,28 @@ compilation automatic rather than a chore.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from lore.scrub import scrub_events
 from lore.store import LoreStore
+
+CLAUDE_PROJECTS_ROOT = Path("~/.claude/projects")
+
+
+def claude_code_project_dir(repo_root: Path | str, projects_root: Path | str | None = None) -> Path:
+    """The directory where Claude Code keeps the transcripts for ONE repo.
+
+    Claude Code stores every session under `~/.claude/projects/<encoded cwd>/`,
+    where the encoding replaces every character that is not a letter or digit
+    with `-` (so `/Users/me/work/app` becomes `-Users-me-work-app`). Scoping to
+    that one directory is what keeps `lore compile` from reading every project
+    on the machine into this repo's committed knowledge, and from billing the
+    model key for all of them.
+    """
+    root = Path(projects_root or CLAUDE_PROJECTS_ROOT).expanduser()
+    encoded = re.sub(r"[^A-Za-z0-9]", "-", str(Path(repo_root).resolve()))
+    return root / encoded
 
 
 def discover_transcripts(root: Path | str) -> list[Path]:

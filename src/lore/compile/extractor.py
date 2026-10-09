@@ -177,6 +177,17 @@ class LLMExtractor:
         self._complete = complete
         self._author = author
         self._harness = harness
+        # What the gate did, cumulatively, for this extractor instance. The
+        # post-hoc "fidelity" of a store is 100% by construction (anything that
+        # fails the gate never enters it); the informative number is how much
+        # the gate had to drop. Cached sessions are not re-extracted and so do
+        # not count here.
+        self.stats = {
+            "claims_emitted": 0,
+            "claims_rejected": 0,
+            "anchors_emitted": 0,
+            "anchors_rejected": 0,
+        }
 
     def extract(
         self,
@@ -211,8 +222,11 @@ class LLMExtractor:
 
         claims: list[Claim] = []
         for item in items:
+            self.stats["claims_emitted"] += 1
             claim = self._build_claim(item, provenance, observed_at, haystack, index)
-            if claim is not None:
+            if claim is None:
+                self.stats["claims_rejected"] += 1
+            else:
                 claims.append(claim)
         return claims
 
@@ -228,9 +242,11 @@ class LLMExtractor:
 
     def _build_claim(self, item, provenance, observed_at, haystack, index) -> Claim | None:
         verified = []
-        for a in item.get("anchors", []):
-            quote = a.get("quote")
+        for a in item.get("anchors", []) if isinstance(item, dict) else []:
+            self.stats["anchors_emitted"] += 1
+            quote = a.get("quote") if isinstance(a, dict) else None
             if not quote or _canonical_form(quote) not in haystack:
+                self.stats["anchors_rejected"] += 1
                 continue  # fidelity gate: the quote must appear verbatim
             # The ref is derived from where the quote actually resolved, never
             # taken from the model. A model-stated ref is unverified prose: it

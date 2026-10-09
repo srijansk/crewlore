@@ -66,7 +66,7 @@ class Provenance(BaseModel):
 
 class Anchor(BaseModel):
     source_kind: str  # transcript | diff | file
-    ref: str  # e.g. "ses_1#turn-42" or "services/billing/webhook.py:88"
+    ref: str  # e.g. "ses_1#event-42" or "services/billing/webhook.py:88"
     quote: str  # verbatim excerpt — never a paraphrase
 
     @field_validator("quote")
