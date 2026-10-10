@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>crewlore wordmark and social card</title>
+<style>
+  :root{ --teal:#68a0b3; --fg:#f3f5f7; --ink:#0f141a; --muted:#aeb4ba; --line:rgba(255,255,255,.09);
+         --sans:BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif; --mono:Menlo,Monaco,monospace; }
+  html,body{margin:0;padding:0;background:transparent;font-family:var(--sans);}
+  /* The wordmark: the same type, weight, tracking and colours as the video's end card. */
+  .wordmark{display:inline-block;font-weight:700;font-size:160px;letter-spacing:-.035em;line-height:1;white-space:nowrap;padding:16px 24px 28px 20px;}
+  .wordmark b{font-weight:700;color:var(--teal);}
+  #logo-dark{color:var(--fg);}      /* for dark backgrounds (GitHub dark theme) */
+  #logo-light{color:var(--ink);}    /* for light backgrounds */
+  /* Social preview card, 1280x640 (GitHub's recommended size). */
+  #card{position:relative;width:1280px;height:640px;overflow:hidden;color:var(--fg);
+        background:linear-gradient(160deg,#0f141a 0%,#131b24 55%,#0c1015 100%);}
+  .glow{position:absolute;width:900px;height:900px;border-radius:50%;pointer-events:none;}
+  #g1{left:-250px;top:-420px;background:radial-gradient(circle,rgba(104,160,179,.22) 0%,rgba(104,160,179,0) 60%);}
+  #g2{left:620px;top:40px;background:radial-gradient(circle,rgba(74,93,158,.20) 0%,rgba(74,93,158,0) 60%);}
+  #vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.42) 100%);}
+  #card .wordmark{position:absolute;left:0;right:0;top:150px;text-align:center;font-size:132px;padding:0;color:var(--fg);}
+  #card .tag{position:absolute;left:100px;right:100px;top:318px;text-align:center;font-size:30px;color:var(--muted);line-height:1.3;}
+  #card .chips{position:absolute;left:0;right:0;top:398px;display:flex;justify-content:center;gap:12px;}
+  #card .chip{padding:9px 18px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.045);font-size:21px;color:#dfe4e8;white-space:nowrap;}
+  #card .install{position:absolute;left:100px;bottom:52px;font-family:var(--mono);font-size:28px;color:#fff;}
+  #card .url{position:absolute;right:100px;bottom:54px;font-size:26px;color:#9ed0e0;}
+</style>
+</head>
+<body>
+  <div id="logo-dark" class="wordmark">crew<b>lore</b></div>
+  <div id="logo-light" class="wordmark">crew<b>lore</b></div>
+  <div id="card">
+    <div class="glow" id="g1"></div><div class="glow" id="g2"></div><div id="vignette"></div>
+    <div class="wordmark">crew<b>lore</b></div>
+    <div class="tag">Team knowledge, compiled from the work your coding agents already did.</div>
+    <div class="chips">
+      <span class="chip">Sessions and pull requests in</span>
+      <span class="chip">Plain text in git out</span>
+      <span class="chip">Every claim quotes its source</span>
+      <span class="chip">Declined work stays declined</span>
+    </div>
+    <div class="install">pipx install crewlore</div>
+    <div class="url">github.com/srijansk/crewlore</div>
+  </div>
+</body>
+</html>

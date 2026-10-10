@@ -32,3 +32,4 @@ local/
 
 # Rendered explainer video (regenerate with: vhs docs/social-video.tape)
 docs/assets/*.mp4
+docs/assets/social-preview.png

@@ -1,14 +1,25 @@
-# crewlore
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/logo-dark.png">
+    <img alt="crewlore" src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/logo-light.png" width="300">
+  </picture>
+</p>
 
-[![CI](https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg)](https://github.com/srijansk/crewlore/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/crewlore.svg)](https://pypi.org/project/crewlore/)
-[![Python](https://img.shields.io/pypi/pyversions/crewlore.svg)](https://pypi.org/project/crewlore/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <a href="https://github.com/srijansk/crewlore/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/srijansk/crewlore/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pypi.org/project/crewlore/"><img alt="PyPI" src="https://img.shields.io/pypi/v/crewlore.svg"></a>
+  <a href="https://pypi.org/project/crewlore/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/crewlore.svg"></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+</p>
 
 > **Your coding agents keep relearning what your team already figured out.**
 > `crewlore` reads the sessions your agents already produce, and your repo's pull requests, pulls out the decisions, procedures and gotchas, and writes them into a plain-text knowledge book inside your repo. Every entry quotes the exact line it came from, and records whether the team adopted it or tried it and declined. Runs on your machine with your own model key.
 
+**Sixty seconds on what it does and how it is used:**
+
 https://github.com/user-attachments/assets/457a7289-6591-4790-9e96-bc99c293b162
+
+**The same thing in a terminal.** The recording below is the bundled demo, `uv run python scripts/demo.py --step`, which needs no API key: a handful of synthetic sessions compiled into a book, including one claim the team tried and declined.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/demo.gif" alt="crewlore compiling agent sessions into a team knowledge book, including a claim the team declined" />

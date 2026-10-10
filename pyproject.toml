@@ -62,6 +62,7 @@ exclude = [
   "/docs/assets",
   "/docs/examples",
   "/docs/launch-video",
+  "/docs/brand",
   "/docs/recording.tape",
   "/studies",
   "/local",

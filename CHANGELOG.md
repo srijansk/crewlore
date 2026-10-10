@@ -10,6 +10,7 @@
 ### Added
 
 - **Launch video source**, `docs/launch-video/`: a 56-second product video drawn frame by frame from one HTML file and rendered through the locally installed Chrome (`render.py`, Playwright, ffmpeg). The MP4 stays out of git; the README and the Welcome discussion embed a copy uploaded to GitHub.
+- **Wordmark and social-card sources**, `docs/brand/`: the README header now uses the wordmark (`docs/assets/logo-dark.png` / `logo-light.png`, switched by theme), and the repository's social preview card is rendered from the same file.
 
 ### Fixed
 
