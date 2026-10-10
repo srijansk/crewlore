@@ -2,8 +2,7 @@
 """Render the crewlore wordmark PNGs and the GitHub social-preview card from wordmark.html.
 
 Outputs, all under docs/assets/:
-  logo-dark.png        white "crew" + teal "lore" on a transparent background (dark themes)
-  logo-light.png       ink "crew" + teal "lore" on a transparent background (light themes)
+  wordmark.png         the wordmark on its own dark card, for the README header (2x, 1440x480)
   social-preview.png   1280x640 card for the repository's Settings -> Social preview (gitignored)
 
 Requires Google Chrome and `uv` (which fetches Playwright on the fly):
@@ -25,14 +24,11 @@ def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome", headless=True)
-        # 2x for the logos so they stay crisp on high-density displays at any README width.
+        # 2x for the banner so it stays crisp on high-density displays at any README width.
         page = browser.new_page(viewport={"width": 1400, "height": 1200}, device_scale_factor=2)
         page.goto(HTML.as_uri())
         page.evaluate("document.fonts.ready")
-        for name in ("logo-dark", "logo-light"):
-            page.locator(f"#{name}").screenshot(
-                path=str(ASSETS / f"{name}.png"), omit_background=True
-            )
+        page.locator("#banner").screenshot(path=str(ASSETS / "wordmark.png"), omit_background=True)
         browser.close()
         # The card is rendered at 1x: 1280x640 is exactly what GitHub asks for.
         browser = p.chromium.launch(channel="chrome", headless=True)
@@ -41,7 +37,7 @@ def main() -> None:
         page.evaluate("document.fonts.ready")
         page.locator("#card").screenshot(path=str(ASSETS / "social-preview.png"))
         browser.close()
-    for name in ("logo-dark.png", "logo-light.png", "social-preview.png"):
+    for name in ("wordmark.png", "social-preview.png"):
         path = ASSETS / name
         print(f"{path} ({path.stat().st_size / 1024:.0f} KB)")
 

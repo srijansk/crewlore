@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/logo-dark.png">
-    <img alt="crewlore" src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/logo-light.png" width="300">
-  </picture>
+  <img alt="crewlore" src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/wordmark.png" width="420">
 </p>
 
 <p align="center">

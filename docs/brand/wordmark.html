@@ -12,6 +12,15 @@
   .wordmark b{font-weight:700;color:var(--teal);}
   #logo-dark{color:var(--fg);}      /* for dark backgrounds (GitHub dark theme) */
   #logo-light{color:var(--ink);}    /* for light backgrounds */
+  /* README banner: the wordmark on its own dark card, so it looks the same whatever theme the
+     page uses. (A <picture> switched by prefers-color-scheme follows the OS setting, not the
+     GitHub theme, and showed the white wordmark on a white page.) */
+  #banner{position:relative;width:720px;height:240px;overflow:hidden;border-radius:22px;color:var(--fg);
+          background:linear-gradient(160deg,#0f141a 0%,#131b24 55%,#0c1015 100%);}
+  #banner .glow{width:600px;height:600px;}
+  #banner #b1{left:-180px;top:-300px;background:radial-gradient(circle,rgba(104,160,179,.24) 0%,rgba(104,160,179,0) 60%);}
+  #banner #b2{left:360px;top:-120px;background:radial-gradient(circle,rgba(74,93,158,.22) 0%,rgba(74,93,158,0) 60%);}
+  #banner .wordmark{position:absolute;left:0;right:0;top:46px;text-align:center;font-size:124px;padding:0;color:var(--fg);}
   /* Social preview card, 1280x640 (GitHub's recommended size). */
   #card{position:relative;width:1280px;height:640px;overflow:hidden;color:var(--fg);
         background:linear-gradient(160deg,#0f141a 0%,#131b24 55%,#0c1015 100%);}
@@ -30,6 +39,10 @@
 <body>
   <div id="logo-dark" class="wordmark">crew<b>lore</b></div>
   <div id="logo-light" class="wordmark">crew<b>lore</b></div>
+  <div id="banner">
+    <div class="glow" id="b1"></div><div class="glow" id="b2"></div>
+    <div class="wordmark">crew<b>lore</b></div>
+  </div>
   <div id="card">
     <div class="glow" id="g1"></div><div class="glow" id="g2"></div><div id="vignette"></div>
     <div class="wordmark">crew<b>lore</b></div>
