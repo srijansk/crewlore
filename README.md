@@ -8,6 +8,8 @@
 > **Your coding agents keep relearning what your team already figured out.**
 > `crewlore` reads the sessions your agents already produce, and your repo's pull requests, pulls out the decisions, procedures and gotchas, and writes them into a plain-text knowledge book inside your repo. Every entry quotes the exact line it came from, and records whether the team adopted it or tried it and declined. Runs on your machine with your own model key.
 
+https://github.com/user-attachments/assets/457a7289-6591-4790-9e96-bc99c293b162
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/srijansk/crewlore/main/docs/assets/demo.gif" alt="crewlore compiling agent sessions into a team knowledge book, including a claim the team declined" />
 </p>

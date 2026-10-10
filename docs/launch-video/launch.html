@@ -328,7 +328,7 @@
 
   const scenes = [
     { id: 's0', start: 0.0, end: 6.4, update(t, $) {
-        fx($('h'), t, { in: .25, dur: .8, dy: 24 });
+        fx($('h'), t, { in: -1, dur: .8, dy: 24 });  // visible from frame 0: the poster frame carries the hook
         [['c1', 1.2, 3.7, 'sh1', 'st1'], ['c2', 1.8, 4.05, 'sh2', 'st2'], ['c3', 2.4, 4.4, 'sh3', 'st3']].forEach(([k, a, b, sh, st]) => {
           fx($(k), t, { in: a, dur: .6, dy: 30 });
           $(sh).style.opacity = tw(t, b, b + .5, 0, 1).toFixed(3);
@@ -423,7 +423,9 @@
       const vis = t >= s.start - .02 && t <= s.end + .02;
       el.style.display = vis ? 'block' : 'none';
       if (!vis) continue;
-      const o = Math.min(tw(t, s.start, s.start + FADE), tw(t, s.end - FADE, s.end, 1, 0));
+      // The first scene starts fully visible so frame 0 (the poster frame) carries the hook.
+      const fadeIn = s.start <= 0 ? 1 : tw(t, s.start, s.start + FADE);
+      const o = Math.min(fadeIn, tw(t, s.end - FADE, s.end, 1, 0));
       el.style.opacity = o.toFixed(4);
       s.update(t - s.start, get[s.id]);
     }
