@@ -14,7 +14,7 @@
 
 **Sixty seconds on what it does and how it is used:**
 
-https://github.com/user-attachments/assets/457a7289-6591-4790-9e96-bc99c293b162
+https://github.com/user-attachments/assets/b16cb272-da48-4756-89ba-1cc626629e0c
 
 **The same thing in a terminal.** The recording below is the bundled demo, `uv run python scripts/demo.py --step`, which needs no API key: a handful of synthetic sessions compiled into a book, including one claim the team tried and declined.
 

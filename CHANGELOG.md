@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **An original score for the launch video**, `docs/launch-video/audio/`: `score.json` lists a sound event for every moment on screen and one chord per bar; `score.py` synthesises it deterministically (numpy, scipy) and masters it with ffmpeg to -14 LUFS / -1 dBTP; `render.py mux` puts it onto the rendered video. The embedded copies in the README and the Welcome discussion carry the score.
+
 ## 0.4.2 — 2026-10-09
 
 ### Changed
