@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>crewlore launch video</title>
+<style>
+  :root{
+    --bg:#0f141a; --fg:#f3f5f7; --muted:#aeb4ba; --dim:#7f8a94;
+    --teal:#68a0b3; --teal2:#9ed0e0; --gold:#d8bf55; --amber:#e0a458; --peri:#8b9fe8;
+    --red:#ff5f57; --yellow:#febc2e; --green:#28c840;
+    --card:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
+    --sans:BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:Menlo,Monaco,monospace;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;color:var(--fg);font-family:var(--sans);
+    background:linear-gradient(160deg,#0f141a 0%,#131b24 55%,#0c1015 100%);}
+  .glow{position:absolute;width:1300px;height:1300px;border-radius:50%;pointer-events:none;}
+  #g1{left:-200px;top:-500px;background:radial-gradient(circle,rgba(104,160,179,.20) 0%,rgba(104,160,179,0) 60%);}
+  #g2{left:900px;top:100px;background:radial-gradient(circle,rgba(74,93,158,.20) 0%,rgba(74,93,158,0) 60%);}
+  #vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.42) 100%);pointer-events:none;}
+  .scene{position:absolute;inset:0;display:none;}
+  .fx{opacity:0;visibility:hidden;will-change:opacity,transform;}
+  .mono{font-family:var(--mono);}
+  .h1{position:absolute;left:120px;top:104px;width:1680px;font-size:62px;line-height:1.15;font-weight:700;letter-spacing:-.015em;}
+  .sub{position:absolute;left:120px;width:1600px;font-size:32px;line-height:1.35;color:var(--muted);}
+  .sub .mono{font-size:29px;color:#d7dde3;}
+  /* terminal + document cards */
+  .term,.doc,.chat,.sess{position:absolute;background:#0b0f14;border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden;}
+  .bar{height:46px;display:flex;align-items:center;padding:0 18px;gap:10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.025);}
+  .dot{width:14px;height:14px;border-radius:50%;flex:none;}
+  .bar .title{margin-left:10px;font-size:20px;color:#8a949e;white-space:nowrap;}
+  .bar .right{margin-left:auto;font-size:19px;color:var(--teal2);font-family:var(--mono);white-space:nowrap;}
+  .body{padding:24px 30px;font-family:var(--mono);font-size:26px;line-height:1.55;color:#d7dde3;}
+  .ln{display:block;}
+  .ln.i1{padding-left:2ch;} .ln.i2{padding-left:4ch;}
+  .prompt{color:var(--teal);}
+  .out{color:#b8c0c8;}
+  .cursor{display:inline-block;width:14px;height:30px;background:var(--teal);vertical-align:-5px;margin-left:2px;visibility:hidden;}
+  .k-decision{color:var(--teal2);} .k-gotcha{color:var(--amber);} .k-procedure{color:var(--peri);} .k-style{color:#c9c9c9;} .k-na{color:var(--gold);}
+  .chips{position:absolute;display:flex;gap:18px;flex-wrap:wrap;}
+  .chip{display:inline-block;padding:13px 26px;border:1px solid var(--line);border-radius:999px;background:var(--card);font-size:28px;color:#dfe4e8;white-space:nowrap;}
+  /* steps */
+  #steps{position:absolute;left:0;right:0;top:1002px;display:flex;justify-content:center;gap:14px;}
+  .step{padding:8px 22px;border-radius:999px;border:1px solid var(--line);font-size:22px;color:var(--dim);background:rgba(255,255,255,.03);font-family:var(--mono);}
+  .step.active{color:#0f141a;background:var(--teal);border-color:var(--teal);}
+  .step.done{color:var(--teal);border-color:rgba(104,160,179,.55);}
+  #wm{position:absolute;right:120px;top:52px;font-size:26px;color:#6f7a84;letter-spacing:.01em;}
+  #wm b{color:var(--teal);font-weight:700;}
+  /* scene 0 */
+  .hero{position:absolute;left:160px;top:200px;width:1600px;text-align:center;font-size:78px;line-height:1.12;font-weight:700;letter-spacing:-.02em;}
+  .sess{top:520px;width:480px;height:230px;}
+  .sess .msgs{padding:20px 24px;font-size:23px;line-height:1.4;}
+  .sess .u{color:#f3f5f7;margin-bottom:10px;} .sess .a{color:#aeb4ba;}
+  .sess .shade{position:absolute;inset:0;background:rgba(11,15,20,.72);opacity:0;}
+  .stamp{position:absolute;right:16px;bottom:14px;padding:6px 14px;border:1px solid rgba(255,95,87,.7);border-radius:8px;color:#ff8a84;font-size:19px;letter-spacing:.06em;text-transform:uppercase;background:rgba(11,15,20,.9);}
+  .center{text-align:center;left:160px;width:1600px;}
+  /* scene 2 panel */
+  .panel{position:absolute;padding:34px 36px;border:1px solid var(--line);border-radius:16px;background:var(--card);}
+  .panel .big{font-size:150px;line-height:1;font-weight:700;color:var(--teal2);letter-spacing:-.03em;}
+  .panel .lab{font-size:26px;line-height:1.3;color:var(--muted);margin-top:10px;}
+  .barbg{height:12px;border-radius:6px;background:rgba(255,255,255,.08);margin-top:26px;overflow:hidden;}
+  .barfg{height:100%;background:var(--teal);width:0%;border-radius:6px;}
+  .split{margin-top:18px;font-size:26px;color:var(--muted);}
+  .split .ok{color:#8fd3a3;} .split .no{color:var(--gold);}
+  /* scene 3 flow */
+  .flow{position:absolute;}
+  .node{position:absolute;padding:18px 24px;border:1px solid var(--line);border-radius:14px;background:var(--card);font-size:28px;line-height:1.2;color:#eef1f4;}
+  .node small{display:block;margin-top:8px;font-size:20px;color:var(--dim);font-family:var(--mono);}
+  .node.core{border-color:rgba(104,160,179,.6);background:rgba(104,160,179,.12);}
+  .node.outnode{border-color:rgba(216,191,85,.45);}
+  .arrow{position:absolute;width:3px;background:rgba(255,255,255,.22);}
+  .arrow:after{content:"";position:absolute;left:-7px;bottom:-2px;border:8px solid transparent;border-top:12px solid rgba(255,255,255,.35);}
+  .doc .body{font-size:20px;line-height:1.45;padding:20px 26px;}
+  .doc .hd{color:#fff;font-weight:700;} .doc .h2{color:var(--teal2);font-weight:700;margin-top:6px;}
+  .doc .anc{color:var(--dim);}
+  /* scene 4 claim */
+  .claim{position:absolute;border:1px solid var(--line);border-radius:18px;background:#0b0f14;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden;}
+  .row{display:flex;align-items:flex-start;gap:30px;padding:18px 32px;border-bottom:1px solid var(--line);font-size:27px;line-height:1.35;}
+  .row:last-child{border-bottom:0;}
+  .row .c{flex:1;} .row .c p{margin:0;}
+  .row code{font-family:var(--mono);font-size:24px;color:#e6ebef;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:6px;}
+  .callout{flex:none;width:330px;font-size:22px;line-height:1.3;color:var(--teal2);padding-left:18px;border-left:3px solid var(--teal);align-self:center;}
+  .badge{font-family:var(--mono);font-size:27px;}
+  .scope{font-family:var(--mono);font-size:24px;color:var(--muted);margin-left:16px;}
+  .row.anchor .c{color:#cfd6dc;}
+  .row.anchor .ref{font-family:var(--mono);font-size:22px;color:var(--teal2);display:block;margin-bottom:6px;}
+  /* scene 5 */
+  .hl{border-radius:6px;padding:0 4px;}
+  /* scene 6 chat */
+  .chat .msgs{padding:22px 26px;display:flex;flex-direction:column;gap:16px;font-size:24px;line-height:1.4;}
+  .msg{padding:14px 18px;border-radius:14px;max-width:100%;}
+  .msg.user{background:rgba(255,255,255,.08);color:#f3f5f7;align-self:flex-end;}
+  .msg.tool{font-family:var(--mono);font-size:21px;color:var(--teal2);border:1px dashed rgba(104,160,179,.55);background:rgba(104,160,179,.08);}
+  .msg.result{font-family:var(--mono);font-size:19px;color:#b8c0c8;background:rgba(255,255,255,.04);border:1px solid var(--line);}
+  .msg.asst{background:rgba(104,160,179,.14);color:#eef1f4;}
+  .tools{position:absolute;}
+  .tools .cap{margin-top:14px;font-size:24px;color:var(--dim);}
+  /* scene 7 */
+  .wordmark{position:absolute;left:0;right:0;top:250px;text-align:center;font-size:124px;font-weight:700;letter-spacing:-.035em;}
+  .wordmark b{color:var(--teal);}
+  .tag{position:absolute;left:160px;width:1600px;top:420px;text-align:center;font-size:36px;color:var(--muted);}
+  .benefits{position:absolute;left:210px;width:1500px;top:530px;display:flex;flex-wrap:wrap;justify-content:center;gap:18px;}
+  .benefits .chip{font-size:29px;}
+  .install{position:absolute;left:0;right:0;top:770px;text-align:center;font-family:var(--mono);font-size:48px;color:#fff;}
+  .url{position:absolute;left:0;right:0;top:852px;text-align:center;font-size:38px;color:var(--teal2);}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="glow" id="g1"></div>
+  <div class="glow" id="g2"></div>
+  <div id="vignette"></div>
+
+  <!-- S0: hook -->
+  <section class="scene" id="s0">
+    <div class="hero fx" data-k="h">Your team keeps teaching the same AI the same lessons.</div>
+    <div class="sess fx" data-k="c1" style="left:180px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">Claude Code · Monday, Priya</span></div>
+      <div class="msgs"><div class="u">› why does the billing webhook fire twice?</div><div class="a">The retry job re-enqueues on 5xx. Fixed with an idempotency key.</div></div>
+      <div class="shade" data-k="sh1"></div><div class="stamp fx" data-k="st1">session ended</div>
+    </div>
+    <div class="sess fx" data-k="c2" style="left:720px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">Claude Code · two weeks later, Tom</span></div>
+      <div class="msgs"><div class="u">› billing webhook fires twice, why?</div><div class="a">Looks like the retry job re-enqueues on 5xx. Let me investigate…</div></div>
+      <div class="shade" data-k="sh2"></div><div class="stamp fx" data-k="st2">session ended</div>
+    </div>
+    <div class="sess fx" data-k="c3" style="left:1260px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">Cursor · next month, Mei</span></div>
+      <div class="msgs"><div class="u">› duplicate billing webhook events?</div><div class="a">I'll trace the retry path. This could take a while…</div></div>
+      <div class="shade" data-k="sh3"></div><div class="stamp fx" data-k="st3">session ended</div>
+    </div>
+    <div class="sub center fx" data-k="sub" style="top:820px">Each lesson dies with the chat it was learned in. The next session starts from zero.</div>
+  </section>
+
+  <!-- S1: install -->
+  <section class="scene" id="s1">
+    <div class="h1 fx" data-k="h">Install it on your machine.</div>
+    <div class="sub fx" data-k="sub" style="top:196px">One command. Runs locally, with your own API key.</div>
+    <div class="term fx" data-k="term" style="left:340px;top:330px;width:1240px;height:400px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">zsh</span></div>
+      <div class="body"><span class="ln"><span class="prompt">$&nbsp;</span><span class="cmd" data-k="cmd"></span><span class="cursor" data-k="cur"></span></span>
+        <span class="ln out i1 fx" data-k="o1">installed package crewlore, installed using Python 3.13</span>
+        <span class="ln out i1 fx" data-k="o2">These apps are now globally available</span>
+        <span class="ln out i2 fx" data-k="o3">- lore</span>
+        <span class="ln out fx" data-k="o4">done! ✨ 🌟 ✨</span>
+      </div>
+    </div>
+    <div class="chips" style="left:120px;top:790px;width:1680px;justify-content:center">
+      <span class="chip fx" data-k="k1">Your machine, your API key</span>
+      <span class="chip fx" data-k="k2">Anthropic, OpenAI or a local model</span>
+      <span class="chip fx" data-k="k3">No account, no hosted service</span>
+    </div>
+  </section>
+
+  <!-- S2: import-prs -->
+  <section class="scene" id="s2">
+    <div class="h1 fx" data-k="h">Point it at a repo. It reads the pull requests your agents already wrote.</div>
+    <div class="term fx" data-k="term" style="left:120px;top:330px;width:1140px;height:440px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">zsh — pydantic-ai</span></div>
+      <div class="body"><span class="ln"><span class="prompt">$&nbsp;</span><span class="cmd" data-k="cmd"></span><span class="cursor" data-k="cur"></span></span>
+        <span class="ln out fx" data-k="o1">exported 24 PR threads from pydantic/pydantic-ai</span>
+        <span class="ln out i1 fx" data-k="o2">skipped 76 with no agent authorship detected (use --all-authors to include them)</span>
+        <span class="ln out fx" data-k="o3">ingested 24 new sessions; 130 active claims, 0 conflicts</span>
+        <span class="ln out i1 fx" data-k="o4">fidelity gate: dropped 0 of 173 anchors and 0 of 130 claims the model proposed this pass</span>
+      </div>
+    </div>
+    <div class="panel fx" data-k="panel" style="left:1320px;top:330px;width:408px;height:372px">
+      <div class="big"><span data-k="n24">0</span></div>
+      <div class="lab">of the last 100 closed pull requests were written by a coding agent</div>
+      <div class="barbg"><div class="barfg" data-k="bar"></div></div>
+      <div class="split fx" data-k="split"><span class="ok">18 merged</span> · <span class="no">6 declined</span></div>
+    </div>
+    <div class="sub fx" data-k="sub" style="top:840px">Through your existing <span class="mono">gh</span> login, no token stored. Your Claude Code sessions on disk work the same way.</div>
+  </section>
+
+  <!-- S3: compile -> book -->
+  <section class="scene" id="s3">
+    <div class="h1 fx" data-k="h">It compiles them into a plain-text book in your repo.</div>
+    <div class="flow" style="left:120px;top:330px;width:820px;height:520px">
+      <div class="node fx" data-k="n1" style="left:0;top:0;width:340px">Claude Code sessions<small>~/.claude/projects, this repo only</small></div>
+      <div class="node fx" data-k="n2" style="left:430px;top:0;width:340px">Pull-request threads<small>lore import-prs owner/repo</small></div>
+      <div class="arrow fx" data-k="a1" style="left:193px;top:118px;height:52px"></div>
+      <div class="arrow fx" data-k="a2" style="left:623px;top:118px;height:52px"></div>
+      <div class="node core fx" data-k="n3" style="left:0;top:186px;width:770px">lore compile<small>one model call per session, then deterministic checks: verbatim-anchor gate, dedup, conflict check, scoring</small></div>
+      <div class="arrow fx" data-k="a3" style="left:408px;top:318px;height:52px"></div>
+      <div class="node outnode fx" data-k="n4" style="left:0;top:386px;width:770px">.lore/knowledge/README.md<small>plain text in your repo, git-versioned</small></div>
+    </div>
+    <div class="sub fx" data-k="sub" style="top:880px;width:820px;font-size:28px"><span class="mono">lore watch</span> keeps it current on a timer. Review changes to <span class="mono">.lore/</span> in a pull request like any other diff.</div>
+    <div class="doc fx" data-k="book" style="left:1000px;top:330px;width:800px;height:600px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">.lore/knowledge/README.md</span><span class="right fx" data-k="stats">130 claims · 173 anchors</span></div>
+      <div class="body">
+        <span class="ln hd fx" data-k="b1"># Team knowledge (compiled by crewlore)</span>
+        <span class="ln h2 fx" data-k="b2">## .github/</span>
+        <span class="ln fx" data-k="b3">- <span class="k-gotcha">[gotcha]</span> Changes under .github/ are maintainer-only, and a CI guard check enforces this.</span>
+        <span class="ln i1 fx" data-k="b4">Do: don't edit .github/ in a contributor PR; ask a maintainer to carry the change.</span>
+        <span class="ln h2 fx" data-k="b6">## pydantic_ai_slim/pydantic_ai/models</span>
+        <span class="ln fx" data-k="b7">- <span class="k-decision">[decision</span> · <span class="k-na">not adopted]</span> Unified prompt caching stays opt-in. A default-on variant was tried and not adopted.</span>
+        <span class="ln i1 fx" data-k="b8">Instead: do not default cache to True; revisit default-on only for v3.</span>
+        <span class="ln i1 anc fx" data-k="b9">anchor pr_pydantic__pydantic-ai__7560#event-65: "…turning it on by default waits for v3."</span>
+        <span class="ln h2 fx" data-k="b10">## pydantic_ai/mcp.py</span>
+        <span class="ln fx" data-k="b11">- <span class="k-decision">[decision]</span> Hiding app-only MCP tools by default was justified under docs/version-policy.md.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- S4: claim anatomy -->
+  <section class="scene" id="s4">
+    <div class="h1 fx" data-k="h">Every claim carries its proof, and its outcome.</div>
+    <div class="sub fx" data-k="sub" style="top:196px">No invented citations. Declined work is recorded as declined, with what to do instead.</div>
+    <div class="claim fx" data-k="card" style="left:200px;top:300px;width:1520px">
+      <div class="row fx" data-k="r1"><div class="c"><span class="badge"><span class="k-decision">[decision</span> · <span class="k-na">not adopted]</span></span><span class="scope">pydantic_ai_slim/pydantic_ai/models</span></div><div class="callout fx" data-k="c1">kind · adoption · where in the code it applies</div></div>
+      <div class="row fx" data-k="r2"><div class="c"><p>Unified prompt caching (<code>ModelSettings.cache</code> / <code>Caching</code>) stays opt-in. A default-on variant (<code>cache</code> defaulting to True on models with <code>supports_cache</code>) was tried and not adopted, because the maintainer deferred default-on caching to v3.</p></div><div class="callout fx" data-k="c2">what was decided</div></div>
+      <div class="row fx" data-k="r3"><div class="c"><p><b>Instead</b> — do not default <code>cache</code> to True; leave caching off unless the user sets <code>cache</code>, uses <code>Caching()</code>, or sets a provider-specific cache setting. Revisit default-on only for v3.</p></div><div class="callout fx" data-k="c3">what to do instead</div></div>
+      <div class="row anchor fx" data-k="r4"><div class="c"><p><span class="ref">anchor pr_pydantic__pydantic-ai__7560#event-65</span>“Per maintainer decision, caching stays off unless <code>cache</code> (or the <code>Caching</code> capability) or a provider-specific cache setting asks for it; turning it on by default waits for v3.”</p></div><div class="callout fx" data-k="c4">verbatim quote from the source line, checked before the claim is stored</div></div>
+    </div>
+  </section>
+
+  <!-- S5: query -->
+  <section class="scene" id="s5">
+    <div class="h1 fx" data-k="h">Ask before you repeat the work.</div>
+    <div class="term fx" data-k="term" style="left:120px;top:300px;width:1680px;height:570px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">zsh — pydantic-ai</span></div>
+      <div class="body" style="font-size:24px;line-height:1.5"><span class="ln"><span class="prompt">$&nbsp;</span><span class="cmd" data-k="cmd"></span><span class="cursor" data-k="cur"></span></span>
+        <span class="ln out fx" data-k="o1"><span class="k-decision">[decision]</span> (examples/pydantic_ai_examples/) Example apps in examples/pydantic_ai_examples/ model prompt caching: every agent that makes regular model requests gets `capabilities=[Caching()]`. Caching is opt-in until v3, but is what users should reach for by default.  [clm_9711c3620d0f]</span>
+        <span class="ln out i2 fx" data-k="o2">-> When adding or editing an example agent that makes regular model requests, add `capabilities=[Caching()]`.</span>
+        <span class="ln out fx" data-k="o3"><span class="hl" data-k="hl"><span class="k-decision">[decision</span> · <span class="k-na">not adopted]</span></span> (pydantic_ai_slim/pydantic_ai/models) Unified prompt caching (`ModelSettings.cache` / `Caching`) stays opt-in. A default-on variant (`cache` defaulting to True on models with `supports_cache`) was tried and not adopted, because the maintainer deferred default-on caching to v3. Caching is off unless `cache`, `Caching()`, or a provider-specific cache setting asks for it.  [clm_2fd729373373]</span>
+        <span class="ln out i2 fx" data-k="o4">-> instead: Do not default `cache` to True. Leave caching off unless the user sets `cache`, uses `Caching()`, or sets a provider-specific cache setting. Revisit default-on only for v3.</span>
+      </div>
+    </div>
+    <div class="sub fx" data-k="sub" style="top:910px">Humans use the CLI. <span class="mono">lore feedback</span> keeps what helped; claims nobody reads age out.</div>
+  </section>
+
+  <!-- S6: serve over MCP -->
+  <section class="scene" id="s6">
+    <div class="h1 fx" data-k="h">Your agents read it back over MCP.</div>
+    <div class="term fx" data-k="term" style="left:120px;top:300px;width:900px;height:200px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">zsh — pydantic-ai</span></div>
+      <div class="body" style="font-size:22px"><span class="ln"><span class="prompt">$&nbsp;</span><span class="cmd" data-k="cmd"></span><span class="cursor" data-k="cur"></span></span>
+        <span class="ln out fx" data-k="o1">Added stdio MCP server crewlore to local config</span>
+      </div>
+    </div>
+    <div class="tools fx" data-k="tools" style="left:120px;top:540px;width:900px">
+      <div class="chips" style="position:static"><span class="chip mono" style="font-size:26px">lore_query</span><span class="chip mono" style="font-size:26px">lore_feedback</span></div>
+      <div class="cap">Two tools over stdio. Works with Claude Code, Cursor and Claude Desktop.</div>
+    </div>
+    <div class="sub fx" data-k="sub" style="top:760px;width:880px">The next session starts with what the team already knows, and tells the layer what helped.</div>
+    <div class="chat fx" data-k="chat" style="left:1080px;top:300px;width:720px;height:520px">
+      <div class="bar"><span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--green)"></span><span class="title">Claude Code · pydantic-ai</span></div>
+      <div class="msgs">
+        <div class="msg user fx" data-k="m1">Make prompt caching default to on for models that support it.</div>
+        <div class="msg tool fx" data-k="m2">lore_query  ·  "caching default"</div>
+        <div class="msg result fx" data-k="m3">[decision · not adopted] Unified prompt caching stays opt-in. A default-on variant was tried and not adopted … instead: revisit default-on only for v3.</div>
+        <div class="msg asst fx" data-k="m4">That was tried in PR 7560 and not adopted: default-on caching is deferred to v3. I'll keep it opt-in and add <code class="mono">Caching()</code> to the example instead.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S7: end card -->
+  <section class="scene" id="s7">
+    <div class="wordmark fx" data-k="wm">crew<b>lore</b></div>
+    <div class="tag fx" data-k="tag">Team knowledge, compiled from the work your agents already did.</div>
+    <div class="benefits">
+      <span class="chip fx" data-k="b1">Stops re-teaching the same lessons</span>
+      <span class="chip fx" data-k="b2">Verbatim anchors, checked at compile time</span>
+      <span class="chip fx" data-k="b3">Declined work stays declined</span>
+      <span class="chip fx" data-k="b4">Plain text in git</span>
+      <span class="chip fx" data-k="b5">Local-first, your key, no vector DB</span>
+      <span class="chip fx" data-k="b6">Open source, MIT</span>
+    </div>
+    <div class="install fx" data-k="inst">pipx install crewlore</div>
+    <div class="url fx" data-k="url">github.com/srijansk/crewlore</div>
+  </section>
+
+  <div id="steps" class="fx">
+    <span class="step">1 install</span><span class="step">2 import-prs</span><span class="step">3 compile</span><span class="step">4 query</span><span class="step">5 serve</span>
+  </div>
+  <div id="wm" class="fx">crew<b>lore</b></div>
+</div>
+
+<script>
+(function(){
+  const E = {
+    out: x => 1 - Math.pow(1 - x, 3),
+    inout: x => x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2,
+    lin: x => x,
+  };
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  function tw(t, t0, t1, a = 0, b = 1, e = E.out) {
+    if (t1 <= t0) return t >= t1 ? b : a;
+    return a + (b - a) * e(clamp((t - t0) / (t1 - t0), 0, 1));
+  }
+  // enter/exit animation for one element: opacity + slide (+ optional scale)
+  function fx(el, t, o) {
+    const dur = o.dur ?? .6, odur = o.odur ?? .4, dy = o.dy ?? 28, dx = o.dx ?? 0;
+    let op = tw(t, o.in, o.in + dur);
+    const y = tw(t, o.in, o.in + dur, dy, 0), x = tw(t, o.in, o.in + dur, dx, 0);
+    if (o.out !== undefined) op *= tw(t, o.out, o.out + odur, 1, 0);
+    let tr = `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)`;
+    if (o.scale !== undefined) tr += ` scale(${tw(t, o.in, o.in + dur, o.scale, 1).toFixed(4)})`;
+    el.style.opacity = op.toFixed(4);
+    el.style.transform = tr;
+    el.style.visibility = op <= 0.001 ? 'hidden' : 'visible';
+  }
+  // typed command with cursor: blinks before typing, solid while typing, blinks briefly after, then "enter"
+  function typeCmd(cmdEl, curEl, text, t, t0, cps) {
+    const n = clamp(Math.floor((t - t0) * cps), 0, text.length);
+    cmdEl.textContent = text.slice(0, n);
+    const tEnd = t0 + text.length / cps;
+    let show;
+    if (t < t0) show = Math.floor(t * 2) % 2 === 0;
+    else if (t < tEnd) show = true;
+    else if (t < tEnd + .45) show = Math.floor((t - tEnd) * 4) % 2 === 0;
+    else show = false;
+    curEl.style.visibility = show ? 'visible' : 'hidden';
+  }
+  function lines(get, t, spec, dur = .3, dy = 8) {
+    for (const [k, at] of spec) fx(get(k), t, { in: at, dur, dy });
+  }
+
+  const cache = {};
+  function collect(id) {
+    const root = document.getElementById(id), m = { root };
+    root.querySelectorAll('[data-k]').forEach(el => { m[el.dataset.k] = el; });
+    cache[id] = m;
+    return k => m[k];
+  }
+
+  const scenes = [
+    { id: 's0', start: 0.0, end: 6.4, update(t, $) {
+        fx($('h'), t, { in: .25, dur: .8, dy: 24 });
+        [['c1', 1.2, 3.7, 'sh1', 'st1'], ['c2', 1.8, 4.05, 'sh2', 'st2'], ['c3', 2.4, 4.4, 'sh3', 'st3']].forEach(([k, a, b, sh, st]) => {
+          fx($(k), t, { in: a, dur: .6, dy: 30 });
+          $(sh).style.opacity = tw(t, b, b + .5, 0, 1).toFixed(3);
+          fx($(st), t, { in: b, dur: .3, dy: 6, scale: 1.25 });
+        });
+        fx($('sub'), t, { in: 4.7, dur: .7, dy: 16 });
+    }},
+    { id: 's1', start: 5.95, end: 11.6, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        fx($('sub'), t, { in: .45, dur: .7, dy: 16 });
+        fx($('term'), t, { in: .35, dur: .7, dy: 30 });
+        typeCmd($('cmd'), $('cur'), 'pipx install crewlore', t, 1.0, 24);
+        lines($, t, [['o1', 2.35], ['o2', 2.55], ['o3', 2.75], ['o4', 3.1]]);
+        [['k1', 3.6], ['k2', 3.9], ['k3', 4.2]].forEach(([k, a]) => fx($(k), t, { in: a, dur: .5, dy: 14 }));
+    }},
+    { id: 's2', start: 11.15, end: 19.4, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        fx($('term'), t, { in: .35, dur: .7, dy: 30 });
+        typeCmd($('cmd'), $('cur'), 'lore import-prs pydantic/pydantic-ai --limit 100', t, 0.9, 30);
+        lines($, t, [['o1', 3.2], ['o2', 3.45], ['o3', 4.1], ['o4', 4.35]]);
+        fx($('panel'), t, { in: 3.3, dur: .6, dy: 24 });
+        const v = tw(t, 3.4, 4.4, 0, 24);
+        $('n24').textContent = Math.round(v);
+        $('bar').style.width = v.toFixed(2) + '%';
+        fx($('split'), t, { in: 4.5, dur: .4, dy: 8 });
+        fx($('sub'), t, { in: 5.2, dur: .6, dy: 14 });
+    }},
+    { id: 's3', start: 18.95, end: 27.4, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        [['n1', .3], ['n2', .5], ['a1', .8], ['a2', .8], ['n3', 1.0], ['a3', 1.3], ['n4', 1.5]].forEach(([k, a]) => fx($(k), t, { in: a, dur: .5, dy: 14 }));
+        fx($('book'), t, { in: 1.2, dur: .7, dy: 30 });
+        lines($, t, ['b1', 'b2', 'b3', 'b4', 'b6', 'b7', 'b8', 'b9', 'b10', 'b11'].map((k, i) => [k, 1.9 + i * .22]), .3, 6);
+        fx($('stats'), t, { in: 4.4, dur: .4, dy: 0 });
+        fx($('sub'), t, { in: 5.0, dur: .6, dy: 14 });
+    }},
+    { id: 's4', start: 26.95, end: 35.6, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        fx($('card'), t, { in: .3, dur: .7, dy: 30 });
+        [['r1', .5], ['r2', .7], ['r3', .9], ['r4', 1.1]].forEach(([k, a]) => fx($(k), t, { in: a, dur: .5, dy: 10 }));
+        [['r1', 'c1', 1.7], ['r2', 'c2', 2.9], ['r3', 'c3', 4.1], ['r4', 'c4', 5.3]].forEach(([r, c, a]) => {
+          fx($(c), t, { in: a, dur: .45, dx: 14, dy: 0 });
+          const pulse = tw(t, a, a + .35, 0, 1) * (1 - .65 * tw(t, a + 1.0, a + 1.8, 0, 1));
+          $(r).style.background = `rgba(104,160,179,${(0.16 * pulse).toFixed(3)})`;
+        });
+        fx($('sub'), t, { in: .45, dur: .7, dy: 16 });
+    }},
+    { id: 's5', start: 35.15, end: 42.8, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        fx($('term'), t, { in: .35, dur: .7, dy: 30 });
+        typeCmd($('cmd'), $('cur'), 'lore query "default caching opt-in"', t, 0.9, 30);
+        lines($, t, [['o1', 2.7], ['o2', 2.95], ['o3', 3.4], ['o4', 3.65]]);
+        const g = tw(t, 4.2, 4.6, 0, 1);
+        $('hl').style.boxShadow = `0 0 0 3px rgba(216,191,85,${(0.9 * g).toFixed(3)})`;
+        $('hl').style.background = `rgba(216,191,85,${(0.16 * g).toFixed(3)})`;
+        fx($('sub'), t, { in: 5.0, dur: .6, dy: 14 });
+    }},
+    { id: 's6', start: 42.35, end: 50.8, update(t, $) {
+        fx($('h'), t, { in: .15, dur: .7 });
+        fx($('term'), t, { in: .35, dur: .7, dy: 30 });
+        typeCmd($('cmd'), $('cur'), 'claude mcp add crewlore -- lore serve --repo /path/to/repo', t, 0.9, 32);
+        lines($, t, [['o1', 3.0]]);
+        fx($('tools'), t, { in: 3.5, dur: .5, dy: 14 });
+        fx($('chat'), t, { in: 1.0, dur: .7, dy: 30 });
+        [['m1', 2.0], ['m2', 3.4], ['m3', 4.0], ['m4', 4.9]].forEach(([k, a]) => fx($(k), t, { in: a, dur: .45, dy: 12 }));
+        fx($('sub'), t, { in: 5.7, dur: .6, dy: 14 });
+    }},
+    { id: 's7', start: 50.35, end: 56.5, update(t, $) {
+        fx($('wm'), t, { in: .3, dur: .9, dy: 0, scale: .94 });
+        fx($('tag'), t, { in: .9, dur: .7, dy: 14 });
+        ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'].forEach((k, i) => fx($(k), t, { in: 1.6 + i * .22, dur: .5, dy: 14 }));
+        fx($('inst'), t, { in: 3.4, dur: .6, dy: 14 });
+        fx($('url'), t, { in: 3.8, dur: .6, dy: 10 });
+    }},
+  ];
+  const get = {};
+  scenes.forEach(s => { get[s.id] = collect(s.id); });
+  const stepsEl = document.getElementById('steps');
+  const stepEls = Array.from(stepsEl.querySelectorAll('.step'));
+  const wmEl = document.getElementById('wm');
+  const g1 = document.getElementById('g1'), g2 = document.getElementById('g2');
+  const FADE = .45;
+  const STEPS_IN = 5.95, STEPS_OUT = 50.35;
+  function activeStep(t) { return t < 11.6 ? 0 : t < 19.4 ? 1 : t < 35.6 ? 2 : t < 42.8 ? 3 : 4; }
+
+  window.DURATION = 56.5;
+  window.SCENES = scenes.map(s => ({ id: s.id, start: s.start, end: s.end }));
+  window.seek = function (t) {
+    g1.style.transform = `translate(${(120 * Math.sin(t * .25)).toFixed(1)}px, ${(80 * Math.cos(t * .2)).toFixed(1)}px)`;
+    g2.style.transform = `translate(${(100 * Math.cos(t * .18)).toFixed(1)}px, ${(90 * Math.sin(t * .23)).toFixed(1)}px)`;
+    for (const s of scenes) {
+      const el = cache[s.id].root;
+      const vis = t >= s.start - .02 && t <= s.end + .02;
+      el.style.display = vis ? 'block' : 'none';
+      if (!vis) continue;
+      const o = Math.min(tw(t, s.start, s.start + FADE), tw(t, s.end - FADE, s.end, 1, 0));
+      el.style.opacity = o.toFixed(4);
+      s.update(t - s.start, get[s.id]);
+    }
+    // step indicator + watermark
+    const so = Math.min(tw(t, STEPS_IN, STEPS_IN + FADE), tw(t, STEPS_OUT, STEPS_OUT + FADE, 1, 0));
+    for (const el of [stepsEl, wmEl]) {
+      el.style.opacity = so.toFixed(4);
+      el.style.visibility = so <= .001 ? 'hidden' : 'visible';
+      el.style.transform = 'none';
+    }
+    const a = activeStep(t);
+    stepEls.forEach((el, i) => { el.className = 'step' + (i === a ? ' active' : i < a ? ' done' : ''); });
+  };
+  window.seek(0);
+})();
+</script>
+</body>
+</html>

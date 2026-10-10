@@ -9,7 +9,7 @@
 # --step pauses between sections so each one is readable; the tape presses
 # Enter to advance. Anyone can clone the repo and re-render this GIF.
 #
-# docs/social-video.tape is the same story at 1920x1080 as an MP4 for posts.
+# The launch video for posts is rendered separately: see docs/launch-video/README.md.
 
 Output docs/assets/demo.gif
 
