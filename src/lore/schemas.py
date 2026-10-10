@@ -92,8 +92,10 @@ class Claim(BaseModel):
     kind: ClaimKind
     scope: str
     # A short normalized key grouping claims that speak to the same question
-    # (e.g. "ledger-db"). Same scope + topic, different statement => a conflict.
-    # Deliberately excluded from the content-addressed id.
+    # (e.g. "ledger-db"). Same scope + kind + topic puts claims in front of the
+    # conflict detector, which then needs evidence they disagree (an adoption
+    # split, or one forbidding what the other prescribes — see
+    # `pipeline._disagreement`). Deliberately excluded from the content-addressed id.
     topic: str | None = None
     # The actionable form — what a future session should *do*. A claim that cannot
     # be made actionable is dumpyard material and should be down-ranked or dropped.

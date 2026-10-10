@@ -22,8 +22,12 @@ class DemoExtractor:
     RULES = [
         ("fires twice", "gotcha", "Billing webhook double-fires; dedupe on idempotency key.",
          "webhook-dedupe", "Dedupe on the idempotency key before processing."),
-        ("postgres", "decision", "Use Postgres for the ledger.", "ledger-db", None),
-        ("dynamo", "decision", "Use DynamoDB for the ledger.", "ledger-db", None),
+        ("postgres", "decision", "Use Postgres for the ledger.", "ledger-db",
+         "Use Postgres for the ledger."),
+        # The later session forbids what the earlier one prescribes — the
+        # opposed-directive evidence the conflict detector reads.
+        ("dynamo", "decision", "Use DynamoDB for the ledger.", "ledger-db",
+         "Do not use Postgres for the ledger; use DynamoDB."),
     ]
 
     def extract(self, events, session_id, known_topics=None):
@@ -79,7 +83,8 @@ def test_full_loop_capture_compile_serve_actuate_replay(tmp_path):
     # --- compile ---
     result = run_compile(store, DemoExtractor())
     assert len(result.claims) >= 2
-    # Postgres vs Dynamo on the same topic -> a recorded conflict, not a silent merge.
+    # Postgres vs Dynamo on the same topic, the later session forbidding the
+    # earlier choice -> a recorded conflict, not a silent merge.
     assert len(result.conflicts) == 1
     book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
     assert "Conflicts" in book

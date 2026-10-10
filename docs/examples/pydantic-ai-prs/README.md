@@ -1,6 +1,6 @@
 # Example: `crewlore` compiled from [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) pull requests
 
-A current-format snapshot (crewlore 0.4.0, 2026-10-09): `lore import-prs pydantic/pydantic-ai --limit 100` on a repo nobody had run an agent in locally. The last 100 closed pull requests were scanned; 24 were detected as written by a coding agent (6 closed, 18 merged); they compiled into **130 claims**, 15 of them marked **not adopted**.
+A current-format snapshot (claims compiled with crewlore 0.4.0 on 2026-10-09; book re-rendered with 0.4.2, see [`provenance.md`](provenance.md)): `lore import-prs pydantic/pydantic-ai --limit 100` on a repo nobody had run an agent in locally. The last 100 closed pull requests were scanned; 24 were detected as written by a coding agent (6 closed, 18 merged); they compiled into **130 claims**, 15 of them marked **not adopted**.
 
 The point of this example is that every anchor can be followed. The scrubbed source threads are committed in [`sessions/`](sessions/), so a ref like `pr_pydantic__pydantic-ai__9988#event-12` is the thirteenth line of `sessions/pr_pydantic__pydantic-ai__9988.jsonl`, and a `path:line` ref is where an inline review comment sat in the pull request.
 
@@ -22,6 +22,6 @@ The point of this example is that every anchor can be followed. The scrubbed sou
 
 ## What this example does not show
 
-- A real cross-PR disagreement. The one conflict recorded (end of `book.md`) is three claims that *agree* about the `.github/` maintainer-only rule, grouped as a disagreement because the lexical conflict detector saw the same scope, kind and topic with different statements. It is left in as an honest example of that mechanism's current weakness.
+- A cross-PR disagreement. None is recorded. The 0.4.0 run reported one, at the end of `book.md`: three claims that *agree* about the `.github/` maintainer-only rule (`clm_75189e4ed6c0`, `clm_8705a01acfb0`, `clm_8f6fc780f2dc`), grouped as a disagreement because the detector then compared only scope, kind and topic. crewlore 0.4.2 requires evidence of disagreement — one claim marked not adopted while another is current, or one forbidding what another prescribes — and re-rendering the book from the committed claims records no conflict. `claims.jsonl` is unchanged, so the three claims are still there to read.
 - Anything about transcripts: this snapshot is pull requests only. The older [`pydantic-ai/`](../pydantic-ai/) snapshot is the session-based one, compiled with 0.1.0.
 - Long-horizon lifecycle behaviour; the claims were minutes old when committed.

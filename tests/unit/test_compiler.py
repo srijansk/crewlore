@@ -28,9 +28,13 @@ def _trivial_events(session):
     ]
 
 
-def _claim(statement, session, *, topic=None, scope="services/billing", kind="gotcha", when=19):
+def _claim(
+    statement, session, *, topic=None, scope="services/billing", kind="gotcha", when=19,
+    action=None, adoption="current",
+):
     return Claim(
-        statement=statement, kind=kind, scope=scope, topic=topic,
+        statement=statement, kind=kind, scope=scope, topic=topic, action=action,
+        adoption=adoption,
         provenance=Provenance(session=session, author="alice", harness="claude-code"),
         anchors=[Anchor(source_kind="transcript", ref=f"{session}#t1", quote=statement)],
         observed_at=datetime(2026, 5, when, tzinfo=timezone.utc),
@@ -105,8 +109,14 @@ def test_dedup_merges_identical_claims_and_raises_authority():
 
 
 def test_conflict_recorded_not_merged_for_same_scope_topic():
-    pg = _claim("use Postgres for the ledger", "ses_1", topic="ledger-db", kind="decision")
-    dy = _claim("use DynamoDB for the ledger", "ses_2", topic="ledger-db", kind="decision")
+    pg = _claim(
+        "use Postgres for the ledger", "ses_1", topic="ledger-db", kind="decision",
+        action="Use Postgres for the ledger.",
+    )
+    dy = _claim(
+        "use DynamoDB for the ledger", "ses_2", topic="ledger-db", kind="decision",
+        action="Do not use Postgres for the ledger; use DynamoDB.",
+    )
     sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
     extractor = DictExtractor({"ses_1": [pg], "ses_2": [dy]})
 
@@ -148,6 +158,145 @@ def test_no_conflict_when_topic_absent():
     sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
     extractor = DictExtractor({"ses_1": [a], "ses_2": [b]})
     result = compile_sessions(sessions, extractor)
+    assert result.conflicts == []
+
+
+# GUARDS: a shared (scope, kind, topic) says two claims answer the same
+# question, not that they answer it differently. Real-data false positive
+# (pydantic-ai pull requests 9988, 9986 and 9899, compiled 2026-10-09): three
+# gotchas that all say contributor PRs must not touch `.github/` were reported
+# as a disagreement because their statements differed. Text verbatim from that run.
+_GITHUB_GUARD_TOPIC = "github directory maintainer-only changes"
+_GITHUB_GUARD_CLAIMS = [
+    (
+        "pr_pydantic__pydantic-ai__9988",
+        "Changes under `.github/` are maintainer-only, and a `.github Directory Guard` CI check "
+        "enforces this. Non-maintainer PRs must leave `.github/` files such as the runner lock "
+        "untouched and flag the needed refresh for a maintainer.",
+        "Do not edit anything under `.github/` in a contributor PR. Note in the PR description "
+        "that a maintainer needs to refresh the runner lock.",
+    ),
+    (
+        "pr_pydantic__pydantic-ai__9986",
+        "Pull requests from non-maintainers that touch any file under `.github/` (including "
+        "`.github/scripts/pydantic-ai-runner.lock`) fail the automatic '.github Directory Guard' "
+        "check. Only maintainers may change that directory, because it runs with the repo's "
+        "credentials. The contributor has to revert the `.github/` changes on the branch and ask "
+        "a maintainer to carry them in a separate PR.",
+        "Do not edit anything under `.github/` in a contributor PR. If a change there is needed, "
+        "run `git checkout origin/main -- .github`, push, and ask a maintainer in a comment to "
+        "make the `.github/` change separately.",
+    ),
+    (
+        "pr_pydantic__pydantic-ai__9899",
+        "The .github Directory Guard only accepts changes under .github/ from maintainers. A "
+        "contributor PR that touches workflows is blocked, so the CI job was dropped from the "
+        "diff and kept in a separate commit for a maintainer to cherry-pick into their own PR.",
+        "Do not include .github/ workflow changes in a contributor PR. Keep them in a separate "
+        "commit and tell maintainers to carry them forward in their own PR.",
+    ),
+]
+
+
+def test_agreeing_claims_on_one_topic_across_sessions_are_not_a_conflict():
+    mapping = {
+        session: [
+            _claim(
+                statement, session, scope=".github/", kind="gotcha",
+                topic=_GITHUB_GUARD_TOPIC, action=action,
+            )
+        ]
+        for session, statement, action in _GITHUB_GUARD_CLAIMS
+    }
+    sessions = {session: _signal_events(session) for session in mapping}
+    result = compile_sessions(sessions, DictExtractor(mapping))
+    assert len(result.claims) == 3
+    assert result.conflicts == []
+
+
+def test_current_vs_not_adopted_on_one_topic_is_a_conflict():
+    # The store would otherwise tell a future session both "this is practice"
+    # and "this was declined" about one question.
+    kept = _claim(
+        "Store the idempotency key in Redis.", "ses_1", topic="idem-key-store",
+        kind="decision", action="Put the idempotency key in Redis.",
+    )
+    declined = _claim(
+        "Redis for the idempotency key was tried and not adopted.", "ses_2",
+        topic="idem-key-store", kind="decision", adoption="not_adopted",
+        action="Keep the idempotency key inside the transaction.",
+    )
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    result = compile_sessions(sessions, DictExtractor({"ses_1": [kept], "ses_2": [declined]}))
+    assert len(result.conflicts) == 1
+    assert set(result.conflicts[0].claim_ids) == {kept.id, declined.id}
+    assert "not adopted" in result.conflicts[0].reason
+
+
+def test_adoption_split_within_one_session_is_not_a_conflict():
+    # The same pair from one session is one investigation's record — "we tried
+    # Redis, declined it, kept the key in the transaction" — not a disagreement.
+    # Evidence of disagreement does not waive the cross-session requirement.
+    kept = _claim(
+        "Store the idempotency key in Redis.", "ses_1", topic="idem-key-store",
+        kind="decision", action="Put the idempotency key in Redis.",
+    )
+    declined = _claim(
+        "Redis for the idempotency key was tried and not adopted.", "ses_1",
+        topic="idem-key-store", kind="decision", adoption="not_adopted",
+        action="Keep the idempotency key inside the transaction.",
+    )
+    result = compile_sessions(
+        {"ses_1": _signal_events("ses_1")}, DictExtractor({"ses_1": [kept, declined]})
+    )
+    assert len(result.claims) == 2
+    assert result.conflicts == []
+
+
+def test_forbidding_what_another_claim_prescribes_is_a_conflict():
+    put = _claim(
+        "The idempotency key lives in Redis.", "ses_1", topic="idem-key-store",
+        kind="decision", action="Put the idempotency key in Redis.",
+    )
+    forbid = _claim(
+        "The idempotency key must not live in Redis.", "ses_2", topic="idem-key-store",
+        kind="decision", action="Don't put the key in Redis. Keep it inside the transaction.",
+    )
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    result = compile_sessions(sessions, DictExtractor({"ses_1": [put], "ses_2": [forbid]}))
+    assert len(result.conflicts) == 1
+    assert set(result.conflicts[0].claim_ids) == {put.id, forbid.id}
+    assert "forbids" in result.conflicts[0].reason
+
+
+def test_prescribing_the_alternative_a_prohibition_names_is_agreement():
+    # "Do not X; do Y" and "do Y" agree, although the prohibition overlaps the
+    # other claim's directive: the two prescriptions match more closely.
+    both = _claim(
+        "The key belongs in the transaction, not in Redis.", "ses_1",
+        topic="idem-key-store", kind="decision",
+        action="Do not store the key in Redis. Store the key in the transaction.",
+    )
+    same = _claim(
+        "The key is written inside the transaction.", "ses_2", topic="idem-key-store",
+        kind="decision", action="Store the key in the transaction.",
+    )
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    result = compile_sessions(sessions, DictExtractor({"ses_1": [both], "ses_2": [same]}))
+    assert result.conflicts == []
+
+
+def test_different_answers_with_no_marker_are_not_flagged():
+    # Deliberate blind spot, recorded so it stays explicit: two decisions that
+    # pick different answers, with neither marked not adopted nor forbidding the
+    # other, carry no evidence the detector can read offline. Telling "a
+    # different answer" from "a different wording" needs a model; guessing it
+    # from statement text is what produced the false positive above.
+    pg = _claim("use Postgres for the ledger", "ses_1", topic="ledger-db", kind="decision")
+    dy = _claim("use DynamoDB for the ledger", "ses_2", topic="ledger-db", kind="decision")
+    sessions = {"ses_1": _signal_events("ses_1"), "ses_2": _signal_events("ses_2")}
+    result = compile_sessions(sessions, DictExtractor({"ses_1": [pg], "ses_2": [dy]}))
+    assert len(result.claims) == 2
     assert result.conflicts == []
 
 

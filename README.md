@@ -131,7 +131,7 @@ One claim from a merged pull request, where an alternative was tried and turned 
 >
 > > *anchor* `pr_pydantic__pydantic-ai__7560#event-65` — "Per maintainer decision, caching stays off unless `cache` (or the `Caching` capability) or a provider-specific cache setting asks for it; turning it on by default waits for v3."
 
-The directory also contains the one conflict the run recorded. It is three claims that agree about the repository's `.github/` maintainer-only rule, grouped as a disagreement because the lexical conflict detector saw the same scope, kind and topic with different statements. That is the known weakness listed under limits below, shown rather than hidden.
+The directory also shows what the conflict detector does with claims that agree. The 0.4.0 run recorded one conflict: three claims that all say contributor PRs must not touch the repository's `.github/` directory, grouped as a disagreement because the detector then compared only scope, kind and topic. Since 0.4.2 a conflict needs evidence of disagreement (one claim marked not adopted while another is current, or one forbidding what another prescribes), and re-rendering the book from the committed claims records none. The blind spot that remains is listed under limits below.
 
 The older snapshot, [`docs/examples/pydantic-ai/`](https://github.com/srijansk/crewlore/tree/main/docs/examples/pydantic-ai/), is three Claude Code sessions compiled with crewlore 0.1.0 in May 2026. Its README explains what it can and cannot show.
 
@@ -242,7 +242,7 @@ The code, pinned data revision and reproduction recipe are in [`studies/palm/`](
 > **Alpha.** The on-disk format may change before 1.0; format changes are listed in the [CHANGELOG](https://github.com/srijansk/crewlore/blob/main/CHANGELOG.md). Tested on Python 3.10–3.14, with no network calls in the test suite.
 
 - **Works today:** capture from Claude Code transcripts and GitHub pull-request threads, secret scrubbing, the compile pipeline (verbatim-anchor gate, derived anchor positions, adoption field, conflict recording, authority scoring), the book, `lore query`, the MCP server, feedback, and unused-claim decay.
-- **Limits worth knowing:** retrieval is word overlap, not embeddings; the only transcript source is Claude Code (Cursor, Codex and Copilot sessions come in through the PR path); commits outside a pull request are not read; there is no approve-before-serve gate, so review the `.lore/` diff in a PR; usage and decay are per machine, not shared across the team.
+- **Limits worth knowing:** retrieval is word overlap, not embeddings; the only transcript source is Claude Code (Cursor, Codex and Copilot sessions come in through the PR path); commits outside a pull request are not read; there is no approve-before-serve gate, so review the `.lore/` diff in a PR; the conflict detector flags a disagreement only when one claim is marked not adopted or forbids what another prescribes, so two sessions that merely pick different answers go unflagged; usage and decay are per machine, not shared across the team.
 - **Planned:** a human approve-before-serve gate, transcript adapters for other coding agents, embedding-based retrieval, a real-time capture hook, and a shared usage signal across teammates.
 
 ## Contributing

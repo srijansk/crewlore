@@ -12,7 +12,7 @@ lore import-prs pydantic/pydantic-ai --limit 100      # closed PRs, most recentl
 | | |
 |---|---|
 | Date | 2026-10-09 |
-| crewlore version | 0.4.0 (the pipeline is the 0.3.0 one; 0.4.0 changed only the default model) |
+| crewlore version | 0.4.0 for extraction (the pipeline is the 0.3.0 one; 0.4.0 changed only the default model); book and conflicts re-derived with 0.4.2, see below |
 | Model | `claude-sonnet-5-5` via the Anthropic API, no sampling parameters sent |
 | Pull requests scanned | 100 most recently updated closed PRs |
 | Detected as agent-authored | 24 (all Claude Code; detection by body marker) — 76 skipped as human-authored |
@@ -35,8 +35,12 @@ An independent re-check of every anchor in `claims.jsonl` against the committed 
 | Active claims | 130 (61 gotcha · 45 decision · 12 procedure · 12 style) |
 | Adoption | 115 current · 15 not adopted |
 | Scopes | 88 |
-| Conflicts recorded | 1 |
+| Conflicts recorded | 0 (the 0.4.0 detector recorded 1; see below) |
 | Anchors | 173 — refs: 60 path:line, 113 session#event |
+
+## Re-rendered with 0.4.2
+
+On 2026-10-09, after the conflict detector was changed to require evidence of disagreement (crewlore 0.4.2), `book.md` and the conflict list were re-derived from the committed `claims.jsonl` with no model call: a store holding only these claims and no sessions was recompiled (`lore.compile.run.run_compile` with no sessions — the path `lore compile` takes for a teammate who has no local transcripts). `claims.jsonl` came out byte-identical. The one conflict the 0.4.0 detector had recorded — `clm_75189e4ed6c0`, `clm_8705a01acfb0` and `clm_8f6fc780f2dc`, three gotchas from PRs 9988, 9986 and 9899 that all say contributor PRs must not touch `.github/` — is no longer recorded, because the three carry no marker of disagreement: all are `current`, and all three actions forbid the same thing. The conflict count above and in `stats.json` reflects the re-render; every other number is from the original run.
 
 ## Per pull request
 

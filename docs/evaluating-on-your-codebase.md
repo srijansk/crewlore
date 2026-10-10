@@ -65,7 +65,7 @@ Open Claude Code in the repo. Work the problem. **Engage** — ask, push back, w
 
 After each session, note (one line in your own notebook) what you'd expect `lore` to capture from it. We'll cross-check on compile day.
 
-A useful target: **4–6 sessions across at least 2 distinct areas of the codebase**, so the resulting book has scope diversity. If you want a real cross-session conflict to surface, deliberately pick two related issues you and a colleague work independently with different framings — the conflict mechanism only flags claims sharing `(scope, kind, topic)` from ≥2 distinct sessions.
+A useful target: **4–6 sessions across at least 2 distinct areas of the codebase**, so the resulting book has scope diversity. If you want a real cross-session conflict to surface, deliberately pick two related issues you and a colleague work independently with different framings — the conflict mechanism only flags claims sharing `(scope, kind, topic)` from ≥2 distinct sessions, and only when they carry evidence of disagreement: one marked not adopted while the other is current, or one forbidding what the other prescribes. Two sessions that merely pick different answers, with neither marker, are not flagged.
 
 ### Compile day
 

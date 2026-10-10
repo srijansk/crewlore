@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2 — 2026-10-09
+
+### Changed
+
+- **The conflict detector needs evidence of disagreement.** It used to record a conflict whenever claims from different sessions shared a scope, kind and topic, without reading what they said, so three claims that agreed about one rule were reported as a disagreement (the `.github/` maintainer-only conflict in `docs/examples/pydantic-ai-prs/`, until now disclosed as a known weakness). A conflict is now recorded only for a cross-session pair on one topic that carries a marker the detector can read offline: one claim marked `not_adopted` while the other is `current`, or one claim's action forbidding what the other's prescribes — a sentence opening with *do not*, *don't*, *never*, *avoid*, *must not*, *should not* or *no longer* whose content overlaps the other claim's prescription more closely than the two agree, so "do not X; do Y" and "do Y" count as agreement. The same-kind and cross-session requirements are unchanged, and the recorded reason now names the evidence and the claims. Two decisions that merely pick different answers, with neither marker, are no longer flagged: telling a different answer from a different wording needs a model, and guessing it from text is what over-flagged. Lexical similarity was evaluated and rejected — on the example corpus the agreeing claims are the low-similarity ones (pairwise Jaccard 0.11–0.23) and the disagreeing test pair the high one (0.50). The deterministic stages still make no model call.
+- **`docs/examples/pydantic-ai-prs/` re-rendered with the new detector.** `book.md`, `stats.json` and `provenance.md` now record 0 conflicts; `claims.jsonl` is byte-identical, since re-deriving conflicts and the book from committed claims needs no model call. The README no longer lists the false positive as a known weakness and names the remaining blind spot under limits.
+
+### Added
+
+- **Launch video source**, `docs/launch-video/`: a 56-second product video drawn frame by frame from one HTML file and rendered through the locally installed Chrome (`render.py`, Playwright, ffmpeg). The MP4 stays out of git; the README and the Welcome discussion embed a copy uploaded to GitHub.
+
+### Fixed
+
+- **GitHub releases now carry their CHANGELOG section as notes.** The release workflow matched the version heading only without its date suffix, so every release until now said "See CHANGELOG.md."; the earlier releases were backfilled by hand.
+
 ## 0.4.1 — 2026-10-09
 
 ### Fixed

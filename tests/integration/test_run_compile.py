@@ -20,9 +20,10 @@ def _signal_session(store, sid, text):
     store.write_session(sid, events)
 
 
-def _claim(statement, sid, *, topic=None, kind="gotcha"):
+def _claim(statement, sid, *, topic=None, kind="gotcha", adoption="current"):
     return Claim(
         statement=statement, kind=kind, scope="services/billing", topic=topic,
+        adoption=adoption,
         provenance=Provenance(session=sid, author="alice", harness="claude-code"),
         anchors=[Anchor(source_kind="transcript", ref=f"{sid}#1", quote=statement)],
         observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
@@ -44,11 +45,16 @@ def test_run_compile_writes_claims_conflicts_and_book(tmp_path):
     _signal_session(store, "ses_2", "use idempotency key")
     extractor = DictExtractor(
         {
+            # One session holds Dynamo current; another records it as tried and
+            # declined. That adoption split is the evidence a conflict needs.
             "ses_1": [
-                _claim("use Postgres for ledger", "ses_1", topic="ledger-db", kind="decision")
+                _claim("use Dynamo for ledger", "ses_1", topic="ledger-db", kind="decision")
             ],
             "ses_2": [
-                _claim("use Dynamo for ledger", "ses_2", topic="ledger-db", kind="decision")
+                _claim(
+                    "Dynamo for the ledger was tried and not adopted", "ses_2",
+                    topic="ledger-db", kind="decision", adoption="not_adopted",
+                )
             ],
         }
     )

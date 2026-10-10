@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crewlore"
-version = "0.4.1"
+version = "0.4.2"
 description = "Local-first compiler that turns coding-agent sessions and agent-authored pull requests into a citable, plaintext team-knowledge layer in your git repo, recording what the team adopted and what it tried and declined."
 readme = "README.md"
 license = {file = "LICENSE"}

@@ -708,7 +708,3 @@ rewriting the few Postgres-only spellings"
 - **[style]** Test tool functions in the MCP Apps visibility test use docstring-only bodies so they need no coverage.
   - *Do:* In tests that define tool functions that are never executed, give them docstring-only bodies to avoid needing coverage pragmas or extra coverage.
   - _anchor_ `pr_pydantic__pydantic-ai__9862#event-21`: "Give the MCP Apps visibility test's tools docstring-only bodies so they need no coverage"
-
-## Conflicts (unresolved disagreements)
-
-- **.github/**: Claims disagree on topic 'github directory maintainer-only changes' within .github/. (clm_75189e4ed6c0, clm_8705a01acfb0, clm_8f6fc780f2dc)
