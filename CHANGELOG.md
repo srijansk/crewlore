@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **Study tables relabelled.** The headline poisoning numbers (44.7%, 47.6%, 30.1%, 17.5%) are the mean share of a declined PR's claims that state the rejected approach as current, as `studies/palm/analyze.py` computes them, not the share of declined PRs with at least one such claim, which the README and the study README had said. Both metrics are now shown (47, 45, 35 and 25 of 60 declined PRs), and the "0 of 867 statements" figure, which mixed declined-only and control arms, is replaced by 0 of 658 statements from declined PRs (0 of 1,060 counting the merged controls). No analysis code changed.
+
 ### Added
 
 - **An original score for the launch video**, `docs/launch-video/audio/`: `score.json` lists a sound event for every moment on screen and one chord per bar; `score.py` synthesises it deterministically (numpy, scipy) and masters it with ffmpeg to -14 LUFS / -1 dBTP; `render.py mux` puts it onto the rendered video. The embedded copies in the README and the Welcome discussion carry the score.
@@ -71,7 +75,7 @@ Every claim now says whether the team adopted it; pull-request threads are a sec
 
 ### Added — adoption polarity
 
-- **`adoption: current | not_adopted` on every claim.** A schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X: the compiled claim reads fluently, cites a real line, and is wrong about the world. Measured on agent-authored pull requests that were closed without merging (see [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/)), crewlore's own extractor stored the declined approach as current practice in roughly half of those threads, and so did a schema-free summarizer, so this is not one prompt's fault. Stating the outcome in the transcript helps; giving the schema a field for it, plus an instruction to use it, is what makes the extractor actually *record* the rejection in the claim's text. Across every arm without such a field it never once did. The field is excluded from the content-addressed id, like `topic`, and defaults to `current`, so existing `claims.jsonl` files load unchanged.
+- **`adoption: current | not_adopted` on every claim.** A schema that can only say "X" turns "we tried X and declined it" into a confident assertion of X: the compiled claim reads fluently, cites a real line, and is wrong about the world. Measured on agent-authored pull requests that were closed without merging (see [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/)), crewlore's own extractor stored the declined approach as current practice in roughly half of the claims it extracted from those threads (and left at least one such claim behind in three out of four of them), and so did a schema-free summarizer, so this is not one prompt's fault. Stating the outcome in the transcript helps; giving the schema a field for it, plus an instruction to use it, is what makes the extractor actually *record* the rejection in the claim's text. Across every arm without such a field it never once did. The field is excluded from the content-addressed id, like `topic`, and defaults to `current`, so existing `claims.jsonl` files load unchanged.
 - **The extractor is instructed to use it.** When a session shows an approach was declined, reverted or not accepted, the statement records that it was tried and not adopted and `action` says what to do instead. An unrecognised value is never coerced to `current` (that would be the exact inversion the field prevents); the claim is dropped.
 - **Declined claims are visible everywhere a claim is shown.** The book and `lore query` tag them `[kind · not adopted]` and label the action *Instead*; the MCP tool returns the field.
 
