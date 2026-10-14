@@ -4,11 +4,12 @@ using a fake extractor, and verify claims, conflicts, and the book are written.
 
 import errno
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 import lore.compile.run as run_module
+from lore.actuation import apply_lifecycle
 from lore.compile.run import (
     CompileInProgress,
     HeadMoved,
@@ -256,6 +257,42 @@ def test_head_moved_leaves_an_older_tracked_gitignore_untouched(tmp_path):
 
     run_compile(store, extractor, expect_head=current_head(tmp_path))
     assert ".*.tmp" in (lore_dir / ".gitignore").read_text().splitlines()
+
+
+# GUARDS: a compile replays every cached extraction onto the committed claims, so the
+# documented way to remove a claim in review is to archive it on its line, not to delete
+# the line. The committed line comes first when duplicates merge, so its status wins; the
+# lifecycle leaves non-active claims alone; the book shows active claims only. The deleted
+# line does come back, which is why the docs say so; tombstones would change that half.
+def test_a_claim_archived_on_its_line_in_review_stays_archived_when_the_cache_replays(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    kept = _claim("dedupe on idempotency key", "ses_1")
+    deleted = _claim("retry the webhook with backoff", "ses_1")
+    archived = _claim("use the ledger table", "ses_1")
+    run_compile(store, DictExtractor({"ses_1": [kept, deleted, archived]}))
+    assert len(store.load_claims()) == 3
+
+    reviewed = []
+    for line in store.claims_path.read_text().splitlines():
+        if deleted.id in line:
+            continue
+        if archived.id in line:
+            line = line.replace('"status":"active"', '"status":"archived"')
+        reviewed.append(line + "\n")
+    store.claims_path.write_text("".join(reviewed))
+
+    run_compile(store, DictExtractor({}))  # the cached extraction answers, not the model
+    by_id = {c.id: c for c in store.load_claims()}
+    assert by_id[archived.id].status == "archived"  # the review stands
+    assert by_id[deleted.id].status == "active"  # the deleted line is back from the cache
+    book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
+    assert "ledger table" not in book and "backoff" in book
+    pruned = apply_lifecycle(
+        store.load_claims(), now=datetime.now(timezone.utc), max_unused_age=timedelta(days=30)
+    )
+    assert {c.id: c.status for c in pruned}[archived.id] == "archived"
 
 
 # GUARDS: a render reproduces the stored claims and nothing else — not a cached

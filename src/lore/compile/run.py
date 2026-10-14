@@ -255,6 +255,11 @@ def _git_ok(repo: Path, *args: str) -> str | None:
 
 
 def _compile(store: LoreStore, extractor: Extractor, *, rebuild: bool) -> CompileResult:
+    """Every captured session, cache first, on top of the stored claims. The stored
+    claims come first, so for an id present in both the committed line's fields that
+    dedup does not merge, `status` among them, win: a claim archived on its line in
+    review stays archived. A line deleted outright has nothing to win with and returns
+    from the cache; the docs say to archive, not delete."""
     sessions = {sid: store.load_session(sid) for sid in store.list_sessions()}
     prior_claims = store.load_claims()
     cached = _CachingExtractor(store, extractor, refresh=rebuild)
@@ -308,8 +313,9 @@ def run_render(store: LoreStore, *, expect_head: str | None = None) -> RenderRes
 
     No model call, no sessions, no extraction cache: a render reproduces what is
     committed, so a claim a teammate removed in review cannot come back from this
-    machine's cache, and a cached session not yet compiled stays out until `lore
-    compile` adds it. A store with no claims file is left untouched.
+    machine's cache (the next compile does replay the cache; see `_compile`), and a
+    cached session not yet compiled stays out until `lore compile` adds it. A store
+    with no claims file is left untouched.
     """
     with compile_lock(store):
         pending = sum(
