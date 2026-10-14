@@ -24,6 +24,11 @@ on the record so a downstream disagreement can be audited rather than argued:
 
 An unrecognised author is reported as human. Under-claiming agent authorship is
 the safe direction: it shrinks the corpus rather than contaminating it.
+
+Every authored record also carries GitHub's `author_association` (owner, member,
+collaborator, contributor, first-time contributor, none) as `association`, so a
+claim anchored to a drive-by comment can later be told from one anchored to a
+maintainer's review.
 """
 
 from __future__ import annotations
@@ -245,6 +250,7 @@ class GitHubPRSource:
         actor, login = _author(issue.get("user"), None)
         return [{
             "type": "issue", "actor": actor, "login": login,
+            "association": issue.get("author_association"),
             "created_at": issue.get("created_at"), "number": issue.get("number"),
             "title": issue.get("title"), "body": issue.get("body"),
         }]
@@ -256,6 +262,7 @@ class GitHubPRSource:
         actor, login = _author(pr.get("user"), agent)
         return {
             "type": "pr", "actor": actor, "login": login, "repo": repo,
+            "association": pr.get("author_association"),
             "number": pr["number"], "created_at": pr.get("created_at"),
             "title": pr.get("title"), "body": pr.get("body"), "files": files,
             "agent": agent, "detection": method,
@@ -281,12 +288,14 @@ class GitHubPRSource:
             actor, login = _author(c.get("user"), None)
             out.append({
                 "type": "comment", "actor": actor, "login": login,
+                "association": c.get("author_association"),
                 "created_at": c.get("created_at"), "body": c.get("body"),
             })
         for c in self._api(f"repos/{repo}/pulls/{number}/comments"):
             actor, login = _author(c.get("user"), None)
             out.append({
                 "type": "review_comment", "actor": actor, "login": login,
+                "association": c.get("author_association"),
                 "created_at": c.get("created_at"), "body": c.get("body"),
                 "path": c.get("path"), "line": c.get("line") or c.get("original_line"),
             })
@@ -298,6 +307,7 @@ class GitHubPRSource:
             actor, login = _author(r.get("user"), None)
             out.append({
                 "type": "review", "actor": actor, "login": login,
+                "association": r.get("author_association"),
                 "created_at": r.get("submitted_at"), "state": r.get("state"),
                 "body": r.get("body"),
             })

@@ -6,7 +6,7 @@ used ones. Also renders the human+agent-readable knowledge book.
 from datetime import datetime, timezone
 
 from lore.schemas import Anchor, Claim, Conflict, Provenance
-from lore.serve.server import KnowledgeServer, rank_claims, render_book
+from lore.serve.server import KnowledgeServer, anchor_attribution, rank_claims, render_book
 from lore.store import LoreStore
 
 
@@ -133,3 +133,73 @@ def test_render_book_marks_claims_the_team_did_not_adopt():
     assert "*Instead:* Keep the key inside the database transaction." in book
     assert "**[gotcha]** dedupe billing webhook" in book
     assert "*Do:* dedupe on the key" in book
+
+
+def test_render_book_names_who_wrote_each_anchor():
+    claim = Claim(
+        statement="Keep the idempotency key inside the transaction.",
+        kind="decision", scope="services/billing",
+        provenance=Provenance(session="pr_acme__billing__42", author="a", harness="github-pr"),
+        anchors=[
+            Anchor(
+                source_kind="file", ref="services/billing/webhook.py:88",
+                quote="This must be inside the transaction.",
+                actor="user", login="reviewer", association="member",
+            ),
+            Anchor(
+                source_kind="transcript", ref="pr_acme__billing__42#event-3",
+                quote="store it in Redis", actor="user", login="drive-by", association="none",
+            ),
+            Anchor(source_kind="transcript", ref="pr_acme__billing__42#event-1",
+                   quote="I chose a persisted key", actor="agent"),
+            Anchor(source_kind="transcript", ref="old#event-1", quote="legacy anchor"),
+        ],
+    )
+    book = render_book([claim], [])
+    assert '`services/billing/webhook.py:88` (@reviewer, human, member): "This must be' in book
+    assert '(@drive-by, human, no repository role): "store it in Redis"' in book
+    assert '(agent): "I chose a persisted key"' in book
+    assert '`old#event-1`: "legacy anchor"' in book  # nothing invented for old anchors
+    assert anchor_attribution(claim.anchors[3]) == ""
+
+
+def test_render_book_prints_each_field_and_quote_as_one_clean_line():
+    claim = Claim(
+        statement="dedupe \x1b[31mbilling\x1b[0m webhook\n- **[gotcha]** forged claim",
+        kind="gotcha", scope="services/\u202ebilling",
+        action="dedupe on the key\n  - *Do:* forged action",
+        provenance=Provenance(session="s", author="a", harness="claude-code"),
+        anchors=[Anchor(source_kind="transcript", ref="s#1",
+                        quote='fires twice\n  - _anchor_ `s#9`: "forged quote"')],
+    )
+    book = render_book([claim], [])
+    assert "\x1b" not in book and "\u202e" not in book
+    assert sum(ln.startswith("- **[") for ln in book.splitlines()) == 1
+    assert sum("*Do:*" in ln for ln in book.splitlines()) == 1
+    assert sum("_anchor_" in ln for ln in book.splitlines()) == 1
+    assert "## services/billing" in book
+    assert '"fires twice - _anchor_ `s#9`: "forged quote""' in book
+
+
+def test_render_book_groups_spellings_that_clean_to_one_scope():
+    claims = [
+        _claim("a", "services/billing"),
+        _claim("b", "services/\u200bbilling"),
+        _claim("c", "services/billing "),
+    ]
+    book = render_book(claims, [])
+    assert book.count("## services/billing\n") == 1
+    assert all(f"**[gotcha]** {s}" in book for s in "abc")
+
+
+def test_agent_authorship_on_a_persons_account_is_said_so():
+    def anchor(**fields):
+        return Anchor(source_kind="transcript", ref="s#1", quote="q", **fields)
+
+    assert anchor_attribution(anchor(actor="agent", login="some-dev", association="member")) == (
+        "agent under @some-dev, member"
+    )
+    bot = anchor(actor="agent", login="dependabot[bot]", association="none")
+    assert anchor_attribution(bot) == "agent under @dependabot[bot], no repository role"
+    assert anchor_attribution(anchor(actor="agent")) == "agent"
+    assert anchor_attribution(anchor(actor="user", login="reviewer")) == "@reviewer, human"

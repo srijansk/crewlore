@@ -409,3 +409,28 @@ def test_recompile_without_new_sessions_keeps_earned_authority():
     result = compile_sessions({}, DictExtractor({}), prior_claims=[earned])
     assert len(result.claims) == 1
     assert result.claims[0].authority == 0.8
+
+
+def test_merging_anchors_keeps_authorship_from_either_side():
+    from lore.compile.pipeline import _merge_anchors
+    from lore.schemas import Anchor, Claim, Provenance
+
+    def claim(anchor, session):
+        return Claim(
+            statement="dedupe on the key", kind="gotcha", scope="services/billing",
+            provenance=Provenance(session=session, author="a", harness="github-pr"),
+            anchors=[anchor],
+        )
+
+    bare = Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")
+    known = Anchor(
+        source_kind="transcript", ref="s#event-1", quote="fires twice",
+        actor="user", login="alice", association="member",
+    )
+    other = Anchor(source_kind="transcript", ref="s#event-2", quote="again", actor="agent")
+    for first, second in ((bare, known), (known, bare)):
+        merged = _merge_anchors([claim(first, "s1"), claim(second, "s2"), claim(other, "s3")])
+        assert [a.ref for a in merged] == ["s#event-1", "s#event-2"]
+        assert (merged[0].actor, merged[0].login, merged[0].association) == (
+            "user", "alice", "member",
+        )
