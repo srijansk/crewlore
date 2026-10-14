@@ -34,15 +34,22 @@ def _claim_text(c: Claim) -> str:
     return " ".join(filter(None, [c.statement, c.scope, c.topic or "", c.action or ""]))
 
 
-def rank_claims(claims: list[Claim], query: str, limit: int = 5) -> list[Claim]:
-    """Pure relevance ranking over active claims. No side effects."""
+def rank_claims(
+    claims: list[Claim], query: str, limit: int = 5, *, min_overlap: int = 1
+) -> list[Claim]:
+    """Pure relevance ranking over active claims. No side effects.
+
+    `min_overlap` is how many content words a claim must share with the query to count;
+    the default of one is right for an explicit query, a hook that fires on every prompt
+    asks for more.
+    """
     q = _tokens(query)
     scored: list[tuple[int, float, Claim]] = []
     for c in claims:
         if c.status != "active":
             continue
         overlap = len(q & _tokens(_claim_text(c)))
-        if overlap > 0:
+        if overlap >= max(1, min_overlap):
             scored.append((overlap, c.authority, c))
     scored.sort(key=lambda t: (t[0], t[1], t[2].id), reverse=True)
     return [c for _, _, c in scored[:limit]]
@@ -89,19 +96,28 @@ class KnowledgeServer:
     def __init__(self, store: LoreStore):
         self.store = store
 
-    def query(self, text: str, limit: int = 5) -> list[Claim]:
+    def query(self, text: str, limit: int = 5, *, min_overlap: int = 1) -> list[Claim]:
         claims = self.store.load_claims()
-        ranked = rank_claims(claims, text, limit=limit)
-        served_ids = {c.id for c in ranked}
+        ranked = rank_claims(claims, text, limit=limit, min_overlap=min_overlap)
+        by_id = self._serve(claims, [c.id for c in ranked])
+        # Return the freshly-incremented claim objects, preserving rank order.
+        return [by_id[c.id] for c in ranked]
+
+    def mark_served(self, claim_ids: list[str]) -> dict[str, Claim]:
+        """Record that these claims were put in front of someone by another route than
+        a query (a hook, a page of the book); returns the updated claims by id."""
+        return self._serve(self.store.load_claims(), claim_ids)
+
+    def _serve(self, claims: list[Claim], claim_ids: list[str]) -> dict[str, Claim]:
+        served_ids = set(claim_ids)
         now = datetime.now(timezone.utc)
         for c in claims:
             if c.id in served_ids:
                 c.usage.times_served += 1
                 c.usage.last_served_at = now
-        self.store.write_claims(claims)
-        # Return the freshly-incremented claim objects, preserving rank order.
-        by_id = {c.id: c for c in claims}
-        return [by_id[c.id] for c in ranked]
+        if served_ids:
+            self.store.write_claims(claims)
+        return {c.id: c for c in claims if c.id in served_ids}
 
     def mark_influential(self, claim_ids: list[str]) -> None:
         self._bump(claim_ids, "times_influential")

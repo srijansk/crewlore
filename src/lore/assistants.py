@@ -238,21 +238,28 @@ def install(
     repo: Path = Path("."),
     always_on: bool = False,
     force: bool = False,
+    hooks: bool = False,
 ) -> list[str]:
-    """Write the skill (and, when asked, the instruction block or rule).
+    """Write the skill (and, when asked, the instruction block or rule, and the hooks).
 
     Every target is resolved and checked before anything is written (symbolic links
-    on a project install, ownership, UTF-8, that the path can be created and written),
-    so one platform's refusal cannot leave another half-installed. Returns one line per
-    file.
+    on a project install, ownership, UTF-8, that the path can be created and written,
+    that an existing settings file is valid JSON), so one platform's refusal cannot
+    leave another half-installed. Returns one line per file.
     """
+    from lore.assistant_hooks import install_hooks, load_settings, settings_path
+
     targets = [target(name, project=project, repo=repo) for name in platforms]
+    settings = settings_path(project=project, repo=Path(repo)) if hooks else None
     for tgt in targets:
         instruction = tgt.instruction_path if always_on else None
         rule = tgt.rule_path if always_on else None
         for path in (tgt.skill_path, instruction, rule):
             if path is not None:
                 _check_writable(path, tgt.root, strict=project)
+        if settings is not None and tgt.platform == "claude":
+            _check_writable(settings, tgt.root, strict=project)
+            load_settings(settings)  # refuse invalid JSON before anything is written
         if tgt.skill_path is not None and not force and not _owned_or_absent(tgt.skill_path):
             raise AssistantsError(
                 f"{tgt.skill_path} exists and was not written by crewlore; "
@@ -267,6 +274,13 @@ def install(
     lines: list[str] = []
     try:
         _write_targets(targets, always_on, lines)
+        if settings is not None:
+            for tgt in targets:
+                if tgt.platform == "claude":
+                    outcome = install_hooks(settings, tgt.root, strict=project)
+                    lines.append(f"claude: hooks {outcome} in {settings}")
+                else:
+                    lines.append(f"{tgt.platform}: hooks are available for Claude Code only")
     except OSError as exc:
         done = "; ".join(lines) or "nothing"
         raise AssistantsError(f"{exc}. Already written: {done}") from exc
@@ -341,6 +355,14 @@ def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(
             lines.append(f"{tgt.platform}: removed {tgt.instruction_path} (held only the block)")
         elif outcome == "removed":
             lines.append(f"{tgt.platform}: instruction block removed from {tgt.instruction_path}")
+    if "claude" in platforms:
+        from lore.assistant_hooks import settings_path, uninstall_hooks
+
+        settings = settings_path(project=project, repo=Path(repo))
+        root = Path(repo) if project else _claude_config_dir()
+        outcome = uninstall_hooks(settings, root, strict=project)
+        if outcome != "absent":
+            lines.append(f"claude: hooks {outcome} ({settings})")
     return lines or ["nothing to remove"]
 
 
