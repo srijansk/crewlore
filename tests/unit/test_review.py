@@ -163,10 +163,11 @@ def test_markdown_report_keeps_model_text_in_code_spans_and_uses_no_table():
 
 
 def test_markdown_report_is_cut_before_github_rejects_it():
-    many = [_claim(f"claim {i} " + "x" * 400, "services/billing") for i in range(300)]
+    many = [_claim(f"claim {i} " + "\u00e9" * 400, "services/billing") for i in range(300)]
     md = render_markdown(review(many, Change(label="x", title="t", body="",
                                              files=["services/billing/a.py"])))
-    assert len(md) <= mod.MARKDOWN_MAX_CHARS + 200 and "Report cut here" in md
+    assert len(md.encode("utf-8")) <= mod.MARKDOWN_MAX_BYTES + 200 and "Report cut here" in md
+    assert all(line.count("`") % 2 == 0 for line in md.splitlines())  # cut on a line boundary
 
 
 def test_json_report_carries_the_shared_claim_shape_plus_overlap_and_files():
@@ -177,7 +178,7 @@ def test_json_report_carries_the_shared_claim_shape_plus_overlap_and_files():
     assert [c["id"] for c in payload["claims"]] == [CURRENT.id]
     assert payload["change"] == {
         "label": "pull request #7", "title": REPROPOSAL.title,
-        "files": ["services/billing/webhook.py", "README.md"],
+        "files": ["services/billing/webhook.py", "README.md"], "partial": False,
     }
     assert payload["uncovered_files"] == ["README.md"]
     assert {"statement", "adoption", "anchors", "authority"} <= set(payload["flagged"][0])
@@ -222,7 +223,25 @@ def test_local_change_is_the_branch_against_its_base_plus_the_working_tree(tmp_p
     # An unknown base reviews the working tree alone, and the label says so.
     change = local_change(repo, base="no-such-branch")
     assert change.label == "working tree of feature (base no-such-branch not found)"
+    assert change.partial is True
     assert change.files == ["README.md", "new file.txt", "notes.txt"] and change.body == ""
+    # A detached checkout is named by its commit; a repository without commits is refused.
+    _git(repo, "checkout", "-q", "--detach")
+    detached = local_change(repo, base="main")
+    assert detached.label.startswith("detached HEAD at ") and detached.partial is False
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, "init", "-q", "-b", "main")
+    with pytest.raises(ChangeError, match="no commits yet"):
+        local_change(empty, base="main")
+
+
+def test_text_report_cleans_file_names_git_hands_over_raw():
+    change = Change(label="x", title="t", body="", files=["services/billing/\x1b[31mRED\x1b[0m.py",
+                                                        "\x1b[2Jdocs/\u202eevil.md"])
+    text = render_text(review([CURRENT], change))
+    assert "\x1b" not in text and "\u202e" not in text
+    assert "files: services/billing/RED.py" in text and "docs/evil.md" in text
 
 
 def test_default_base_is_origins_default_branch_as_a_remote_tracking_ref(monkeypatch, tmp_path):
@@ -236,8 +255,10 @@ def test_default_base_is_origins_default_branch_as_a_remote_tracking_ref(monkeyp
     assert mod.default_base(tmp_path) == "main"
 
 
-def _fake_gh(view_files=2, changed_files=2, diff_files=None):
+def _fake_gh(changed_files=2, api_lines=None, renamed=()):
     seen = []
+    if api_lines is None:
+        api_lines = [f"services/f{i}.py" for i in range(changed_files)]
 
     def fake_run(cmd, cwd=None, stdin=None):
         seen.append((cmd, cwd))
@@ -245,36 +266,55 @@ def _fake_gh(view_files=2, changed_files=2, diff_files=None):
             return json.dumps({
                 "title": "Store the key in Redis", "body": "for speed",
                 "changedFiles": changed_files,
-                "files": [{"path": f"services/f{i}.py"} for i in range(view_files)],
                 "baseRefName": "main", "headRefName": "feat/redis\x1b[31m",
             })
-        if cmd[:3] == ["gh", "pr", "diff"]:
-            if diff_files is None:
-                raise ChangeError("unknown flag: --name-only")
-            return "".join(f"services/f{i}.py\n" for i in range(diff_files))
+        if cmd[:3] == ["gh", "repo", "view"]:
+            return "acme/billing\n"
+        if cmd[:3] == ["gh", "api", "--paginate"]:
+            assert cmd[3] == "repos/acme/billing/pulls/7/files"
+            names = list(api_lines)
+            for old, new in renamed:
+                names += [new, old]
+            return "".join(f"{n}\n" for n in names)
         raise AssertionError(cmd)
 
     return fake_run, seen
 
 
-def test_github_change_reads_every_file_of_a_large_pull_request(monkeypatch, tmp_path):
-    fake_run, seen = _fake_gh(view_files=100, changed_files=150, diff_files=150)
+def test_github_change_reads_every_file_through_the_paginated_files_endpoint(monkeypatch, tmp_path):
+    fake_run, seen = _fake_gh(changed_files=150)
     monkeypatch.setattr(mod, "_run", fake_run)
     change = mod.github_change(7, "acme/billing", cwd=tmp_path)
     assert len(change.files) == 150 and change.files[0] == "services/f0.py"
     assert change.label == "pull request #7 in acme/billing (feat/redis into main)"
     assert all(cwd == tmp_path for _, cwd in seen)  # gh runs in the reviewed repository
-    assert all("--repo" in cmd for cmd, _ in seen)
+    assert [cmd[:2] for cmd, _ in seen] == [["gh", "pr"], ["gh", "api"]]  # slug given: no lookup
+    fake_run, seen = _fake_gh(changed_files=2, api_lines=["services/caf\u00e9 x.py", "b.py"],
+                              renamed=[("old name.py", "new name.py")])
+    monkeypatch.setattr(mod, "_run", fake_run)
+    change = mod.github_change(7)
+    assert [cmd[:2] for cmd, _ in seen][1] == ["gh", "repo"]  # the slug comes from the checkout
+    assert change.files == ["services/caf\u00e9 x.py", "b.py", "new name.py", "old name.py"]
 
 
-def test_github_change_on_an_old_gh_refuses_a_capped_file_list(monkeypatch):
-    fake_run, _ = _fake_gh(view_files=100, changed_files=150, diff_files=None)
+def test_github_change_refuses_what_github_cannot_list_in_full(monkeypatch):
+    fake_run, _ = _fake_gh(changed_files=3001, api_lines=["a.py"])
     monkeypatch.setattr(mod, "_run", fake_run)
-    with pytest.raises(ChangeError, match="100 of 150"):
-        mod.github_change(7)
-    fake_run, _ = _fake_gh(view_files=2, changed_files=2, diff_files=None)
+    with pytest.raises(ChangeError, match="3001 files"):
+        mod.github_change(7, "acme/billing")
+    fake_run, _ = _fake_gh(changed_files=5, api_lines=[])
     monkeypatch.setattr(mod, "_run", fake_run)
-    assert mod.github_change(7).files == ["services/f0.py", "services/f1.py"]
+    with pytest.raises(ChangeError, match="listed no files"):
+        mod.github_change(7, "acme/billing")
+
+    def failing(cmd, cwd=None, stdin=None):
+        if cmd[:3] == ["gh", "api", "--paginate"]:
+            raise ChangeError("gh api repos failed: HTTP 406: diff exceeded the maximum")
+        return _fake_gh(changed_files=400)[0](cmd, cwd, stdin)
+
+    monkeypatch.setattr(mod, "_run", failing)
+    with pytest.raises(ChangeError, match="HTTP 406"):  # gh's own words, not a guess
+        mod.github_change(7, "acme/billing")
 
 
 def test_missing_tools_are_a_change_error(monkeypatch):
@@ -329,7 +369,7 @@ def test_cli_review_of_the_local_branch_and_its_errors(tmp_path, monkeypatch):
     assert result.exit_code == 2 and "needs a pull request number" in result.stderr
     assert result.stdout == ""  # refused before any work
     partial = Change(label="working tree of fix (base origin/main not found)", title="fix",
-                     body="", files=["services/auth/tokens.py"])
+                     body="", files=["services/auth/tokens.py"], partial=True)
     monkeypatch.setattr("lore.review.local_change", lambda repo, base: partial)
     result = runner.invoke(app, ["review", "--repo", str(tmp_path)])
     assert result.exit_code == 0 and "commits were not reviewed" in result.stderr

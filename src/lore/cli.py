@@ -355,7 +355,7 @@ def review(
     except ChangeError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
-    if change.label.startswith("working tree of "):
+    if change.partial:
         typer.echo(f"note: {change.label}; commits were not reviewed", err=True)
     report = review_change(store.load_claims(), change)
     if json_out:

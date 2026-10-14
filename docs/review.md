@@ -11,7 +11,7 @@ lore review --json           # for scripts and hooks
 lore review --exit-code      # exit 5 when a declined approach is flagged (0 otherwise)
 ```
 
-The change is the branch's commits since the merge base with origin's default branch (`origin/main` as the remote-tracking ref, or `--base`), the uncommitted edits, and untracked files; the text matched against claims is the commit messages. When the base cannot be found locally (a single-branch clone), only the working tree is reviewed and the report says so. The exit code stays 0 unless you pass `--exit-code`, so an assistant running the command through a shell tool does not see a flag as a failed command; a pre-push hook or a script asks for it. Reviewing does not count as reading for the lifecycle: nothing a review touches is marked served, since a CI checkout is throwaway.
+The change is the branch's commits since the merge base with origin's default branch (`origin/main` as the remote-tracking ref, or `--base`), the uncommitted edits, and untracked files, with a renamed file listed under both names; the text matched against claims is the commit messages. When the base cannot be found locally (a single-branch clone), only the working tree is reviewed and the report says so. The exit code stays 0 unless you pass `--exit-code`, so an assistant running the command through a shell tool does not see a flag as a failed command; a pre-push hook or a script asks for it. Reviewing does not count as reading for the lifecycle: nothing a review touches is marked served, since a CI checkout is throwaway.
 
 ## A pull request on GitHub
 
@@ -21,7 +21,7 @@ lore review 42 --github owner/repo      # another repository
 lore review 42 --comment                # also post the Markdown report as a comment on the PR
 ```
 
-Without `--comment` nothing is posted; the report is printed. With it, one comment is added each time the command runs, so wire it to run once per push rather than per commit. Every claim field in the comment is rendered inside a code span and never inside a table (GitHub splits table cells on `|` before it reads inline code), so model-written text cannot mention a person, link out, or restyle the comment. The file list comes from `gh pr diff --name-only`, which is complete; `gh pr view` stops at 100 files without saying so.
+Without `--comment` nothing is posted; the report is printed. With it, one comment is added each time the command runs, so wire it to run once per push rather than per commit. Every claim field in the comment is rendered inside a code span and never inside a table (GitHub splits table cells on `|` before it reads inline code), so model-written text cannot mention a person, link out, or restyle the comment. The file list comes from GitHub's paginated pull-request files endpoint, so pull requests with more than 100 files (`gh pr view` stops there without saying so) and non-ASCII paths are read in full; renamed files are listed under both names. GitHub lists at most 3000 files, and a larger pull request is refused rather than reviewed in part.
 
 ## In GitHub Actions
 
@@ -47,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          lore review ${{ github.event.pull_request.number }} --exit-code --json > review.json
+          lore review ${{ github.event.pull_request.number }} --exit-code >/dev/null
           rc=$?
           set -e
           case "$rc" in

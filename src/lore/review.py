@@ -7,9 +7,10 @@ tried and declined. The adoption field exists for exactly this moment: the point
 someone is about to redo rejected work without knowing it was rejected.
 
 No model is called. The change's title and description are other people's text: they
-are tokenised for overlap and never printed beyond a short label, and every claim field
-that reaches a pull-request comment is rendered inside a code span, so model-written
-text cannot mention a person, link out, or restyle the comment.
+are tokenised for overlap and never printed beyond a cleaned label (the JSON report
+carries the cleaned title), file names are cleaned before they are printed, and every
+claim field that reaches a pull-request comment is rendered inside a code span, never a
+table, so model-written text cannot mention a person, link out, or restyle the comment.
 """
 
 from __future__ import annotations
@@ -33,14 +34,17 @@ REPROPOSAL_MIN_OVERLAP = 0.5
 REPROPOSAL_MIN_SHARED_WORDS = 2
 # The extractor's own template words for declined work carry no signal about a change.
 _TEMPLATE_WORDS = frozenset(
-    "tried adopted declined rejected reverted proposed merged instead approach was".split()
+    "tried adopted declined rejected reverted proposed merged instead".split()
 )
 # Anchors quoted per flagged claim in the Markdown report.
 MARKDOWN_ANCHORS = 2
 # Uncovered files named in the text report before "…".
 UNCOVERED_LISTED = 8
-# GitHub rejects comments over 65,536 characters; stop well short and say so.
-MARKDOWN_MAX_CHARS = 60_000
+# GitHub rejects comments over 65,536 characters; stop well short, measured in UTF-8
+# bytes so the bound holds whatever unit GitHub counts in, and say so.
+MARKDOWN_MAX_BYTES = 60_000
+# GitHub's pull-request files endpoint lists at most this many files.
+GITHUB_FILES_CAP = 3000
 
 
 class ChangeError(RuntimeError):
@@ -53,6 +57,9 @@ class Change:
     title: str
     body: str
     files: list[str]
+    # True when the change could only be read in part (a local base that is not
+    # present), so the caller can say so instead of presenting a smaller review as whole.
+    partial: bool = False
 
 
 @dataclass
@@ -151,7 +158,8 @@ def review(claims: list[Claim], change: Change) -> Report:
 def _run(cmd: list[str], cwd: Path | None = None, stdin: str | None = None) -> str:
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, cwd=cwd, input=stdin
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=False, cwd=cwd, input=stdin,
         )
     except FileNotFoundError as exc:
         raise ChangeError(f"{cmd[0]} is not installed") from exc
@@ -186,42 +194,65 @@ def local_change(repo: Path, base: str | None = None) -> Change:
     """
     repo = Path(repo)
     base = base or default_base(repo)
-    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).strip()
+    try:
+        branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).strip()
+    except ChangeError as exc:
+        raise ChangeError(f"nothing to review: {repo} has no commits yet") from exc
+    if branch == "HEAD":  # detached: name the commit rather than the word HEAD
+        short = _run(["git", "rev-parse", "--short", "HEAD"], cwd=repo).strip()
+        branch = f"detached HEAD at {short}"
     files: list[str] = []
+    partial = False
     try:
         merge_base = _run(["git", "merge-base", base, "HEAD"], cwd=repo).strip()
     except ChangeError:
         label = f"working tree of {sanitize_line(branch)} (base {sanitize_line(base)} not found)"
-        body = ""
+        body, partial = "", True
     else:
-        label = f"branch {sanitize_line(branch)} against {sanitize_line(base)}"
+        label = f"{sanitize_line(branch)} against {sanitize_line(base)}"
+        if not branch.startswith("detached"):
+            label = "branch " + label
         span = f"{merge_base}..HEAD"
         files += _paths(_run(["git", "diff", "--name-only", "--no-renames", "-z", span], cwd=repo))
         body = _run(["git", "log", "--format=%s%n%b", span], cwd=repo)
     files += _paths(_run(["git", "diff", "--name-only", "--no-renames", "-z", "HEAD"], cwd=repo))
     files += _paths(_run(["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=repo))
-    return Change(label=label, title=branch, body=body, files=list(dict.fromkeys(files)))
+    return Change(
+        label=label, title=branch, body=body, files=list(dict.fromkeys(files)), partial=partial
+    )
 
 
 def github_change(number: int, repo_slug: str | None = None, cwd: Path | None = None) -> Change:
     """A pull request's title, description and files, through the `gh` CLI, run in the
-    repository being reviewed so the pull request resolves against it."""
+    repository being reviewed so the pull request resolves against it.
+
+    The files come from the paginated pull-request files endpoint: `gh pr view --json
+    files` stops at 100 files without saying so, and `gh pr diff --name-only` fails on
+    large diffs and quotes non-ASCII names. Renamed files are listed under both names,
+    as the local review does, so a claim about the old location still speaks.
+    """
     where = ["--repo", repo_slug] if repo_slug else []
-    fields = "title,body,baseRefName,headRefName,changedFiles,files"
+    fields = "title,body,baseRefName,headRefName,changedFiles"
     data = json.loads(_run(["gh", "pr", "view", str(number), "--json", fields, *where], cwd=cwd))
-    # `gh pr view --json files` stops at 100 files without saying so; the diff listing
-    # is complete. Fall back to the capped list only on a gh too old for `--name-only`.
-    try:
-        listing = _run(["gh", "pr", "diff", str(number), "--name-only", *where], cwd=cwd)
-        files = [ln for ln in listing.splitlines() if ln]
-    except ChangeError:
-        files = [f["path"] for f in data.get("files", []) if isinstance(f, dict) and f.get("path")]
-        expected = data.get("changedFiles")
-        if isinstance(expected, int) and expected > len(files):
-            raise ChangeError(
-                f"gh listed {len(files)} of {expected} changed files; upgrade gh so "
-                "`gh pr diff --name-only` is available"
-            ) from None
+    slug = repo_slug or _run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], cwd=cwd
+    ).strip()
+    listing = _run(
+        [
+            "gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/files",
+            "--jq", ".[] | .filename, (.previous_filename // empty)",
+        ],
+        cwd=cwd,
+    )
+    files = list(dict.fromkeys(ln for ln in listing.splitlines() if ln))
+    expected = data.get("changedFiles")
+    if isinstance(expected, int) and expected > GITHUB_FILES_CAP:
+        raise ChangeError(
+            f"the pull request changes {expected} files; GitHub lists at most "
+            f"{GITHUB_FILES_CAP}, so it cannot be reviewed in full"
+        )
+    if isinstance(expected, int) and not files and expected > 0:
+        raise ChangeError(f"gh listed no files for a pull request that changes {expected}")
     place = f" in {sanitize_line(repo_slug)}" if repo_slug else ""
     head, into = sanitize_line(data.get("headRefName")), sanitize_line(data.get("baseRefName"))
     return Change(
@@ -242,6 +273,11 @@ def post_comment(
 # --- rendering ----------------------------------------------------------------------------
 
 
+def _names(files: list[str]) -> str:
+    """File names for a terminal: git hands them over raw, so they are cleaned here."""
+    return ", ".join(sanitize_line(f) for f in files)
+
+
 def _line(m: Match) -> str:
     c = m.claim
     return f"[{claim_label(c)}] ({sanitize_line(c.scope)}) {sanitize_line(c.statement)}  [{c.id}]"
@@ -259,7 +295,7 @@ def render_text(report: Report) -> str:
         lines.append("   " + _line(m))
         if m.claim.action:
             lines.append(f"   -> instead: {sanitize_line(m.claim.action)}")
-        lines.append(f"   files: {', '.join(m.files)}")
+        lines.append(f"   files: {_names(m.files)}")
     others = [m for m in report.matches if not m.flagged]
     if others:
         lines.append("")
@@ -268,10 +304,10 @@ def render_text(report: Report) -> str:
             if m.claim.action:
                 verb = "" if m.claim.adoption == "current" else "instead: "
                 lines.append(f"    -> {verb}{sanitize_line(m.claim.action)}")
-            lines.append(f"    files: {', '.join(m.files)}")
+            lines.append(f"    files: {_names(m.files)}")
     if report.uncovered:
         lines.append("")
-        shown = ", ".join(report.uncovered[:UNCOVERED_LISTED])
+        shown = _names(report.uncovered[:UNCOVERED_LISTED])
         more = " …" if len(report.uncovered) > UNCOVERED_LISTED else ""
         lines.append(f"no claims cover {len(report.uncovered)} of the files: {shown}{more}")
     return "\n".join(lines)
@@ -315,8 +351,9 @@ def render_markdown(report: Report) -> str:
         "<sub>Claims come from the repository's `.lore/`; they are evidence, not verdicts.</sub>"
     )
     text = "\n".join(lines)
-    if len(text) > MARKDOWN_MAX_CHARS:
-        cut = text[:MARKDOWN_MAX_CHARS].rsplit("\n", 1)[0]
+    if len(text.encode("utf-8")) > MARKDOWN_MAX_BYTES:
+        cut = text.encode("utf-8")[:MARKDOWN_MAX_BYTES].decode("utf-8", "ignore")
+        cut = cut.rsplit("\n", 1)[0]
         text = cut + "\n\n<sub>Report cut here; `lore review` locally prints it in full.</sub>"
     return text
 
@@ -331,6 +368,7 @@ def to_json(report: Report) -> dict:
             "label": report.change.label,
             "title": sanitize_line(report.change.title),
             "files": report.change.files,
+            "partial": report.change.partial,
         },
         "flagged": [_entry(m) for m in report.flagged],
         "claims": [_entry(m) for m in report.matches if not m.flagged],
