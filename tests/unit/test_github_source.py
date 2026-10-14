@@ -39,18 +39,19 @@ ISSUE = {
 
 ISSUE_COMMENTS = [{
     "created_at": "2026-05-19T11:00:00Z", "body": "Don't put the key in Redis.",
-    "user": {"login": "reviewer", "type": "User"},
+    "user": {"login": "drive-by", "type": "User"}, "author_association": "NONE",
 }]
 
 REVIEW_COMMENTS = [{
     "created_at": "2026-05-19T11:02:00Z", "body": "Must be inside the transaction.",
     "path": "services/billing/webhook.py", "line": 88,
-    "user": {"login": "reviewer", "type": "User"},
+    "user": {"login": "reviewer", "type": "User"}, "author_association": "MEMBER",
 }]
 
 REVIEWS = [{
     "submitted_at": "2026-05-19T11:05:00Z", "state": "CHANGES_REQUESTED",
     "body": "Move it into the transaction.", "user": {"login": "reviewer", "type": "User"},
+    "author_association": "MEMBER",
 }]
 
 CHECK_RUNS = {"check_runs": [{
@@ -299,3 +300,14 @@ def test_export_state_is_passed_through_to_discovery(tmp_path):
 
     GitHubPRSource(api=api).export("acme/billing", tmp_path, limit=5, state="open")
     assert any("state=open" in p for p in seen)
+
+
+def test_records_carry_the_authors_repository_association(source):
+    records = source.fetch_thread("acme/billing", PR)
+    by_type = {r["type"]: r for r in records}
+    assert by_type["comment"]["association"] == "NONE"
+    assert by_type["review_comment"]["association"] == "MEMBER"
+    assert by_type["review"]["association"] == "MEMBER"
+    # Payloads without the field (older exports, the issue fixture) carry None, not a guess.
+    assert by_type["pr"]["association"] is None
+    assert by_type["issue"]["association"] is None

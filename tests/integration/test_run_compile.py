@@ -121,7 +121,8 @@ def test_a_second_compile_steps_aside_while_the_lock_is_held(tmp_path):
     assert store.claims_path.read_bytes() == before
 
     run_compile(store, newer, rebuild=True)  # the lock is released again
-    assert len(store.load_claims()) == 2
+    # A rebuild replaces what the re-extracted session produced before.
+    assert [c.statement for c in store.load_claims()] == ["dedupe on the Stripe event id"]
 
 
 # GUARDS: `git commit && git checkout main` is routine. A compile that finishes after

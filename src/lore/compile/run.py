@@ -261,9 +261,31 @@ def _compile(store: LoreStore, extractor: Extractor, *, rebuild: bool) -> Compil
     review stays archived. A line deleted outright has nothing to win with and returns
     from the cache; the docs say to archive, not delete."""
     sessions = {sid: store.load_session(sid) for sid in store.list_sessions()}
-    prior_claims = store.load_claims()
+    prior_all = store.load_claims()
+    prior_by_id = {c.id: c for c in prior_all}
+    prior_claims = prior_all
+    if rebuild:
+        # A rebuild re-extracts every session still on disk, so what those sessions
+        # produced before (under an older prompt or model) is not carried forward: a
+        # claim that does not re-emerge is gone. Claims from sessions no longer on
+        # disk, such as a teammate's, are kept as they are.
+        prior_claims = [c for c in prior_all if c.provenance.session not in sessions]
     cached = _CachingExtractor(store, extractor, refresh=rebuild)
-    return compile_sessions(sessions, cached, prior_claims=prior_claims)
+    result = compile_sessions(sessions, cached, prior_claims=prior_claims)
+    if rebuild:
+        # A claim that re-emerges is the same claim: it keeps its usage, its lifecycle
+        # status and the authority it earned (the store keeps its entry time by id).
+        claims = [_carry_over(c, prior_by_id.get(c.id)) for c in result.claims]
+        # A session whose re-extraction failed (a transient error, an oversized
+        # context) keeps what it had: dropping its claims would lose them now and let
+        # the stale cache entry bring them back later as new, with everything reset.
+        failed = set(result.failed_session_ids)
+        present = {c.id for c in claims}
+        claims += [
+            c for c in prior_all if c.provenance.session in failed and c.id not in present
+        ]
+        result = result.model_copy(update={"claims": claims})
+    return result
 
 
 def _persist(store: LoreStore, result: CompileResult) -> None:
@@ -306,6 +328,18 @@ def run_compile(
         _check_head(store, expect_head)
         _persist(store, result)
     return result
+
+
+def _carry_over(claim, prior):
+    if prior is None:
+        return claim
+    return claim.model_copy(
+        update={
+            "usage": prior.usage,
+            "status": prior.status,
+            "authority": max(claim.authority, prior.authority),
+        }
+    )
 
 
 def run_render(store: LoreStore, *, expect_head: str | None = None) -> RenderResult:

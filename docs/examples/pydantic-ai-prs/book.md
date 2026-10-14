@@ -36,8 +36,7 @@
 
 - **[gotcha]** In gh-aw workflows that define their own safe-output jobs, the short `missing-tool: false` form is ignored. Use the explicit form (`create-issue: false` for `missing-tool`, `missing-data` and `report-incomplete`, and `noop.report-as-issue: false`) in every agentic workflow so these reports don't file issues.
   - *Do:* When adding or editing an agentic workflow, set `create-issue: false` explicitly for missing-tool, missing-data and report-incomplete, plus `noop.report-as-issue: false`. Do not use the bare `missing-tool: false` form.
-  - _anchor_ `pr_pydantic__pydantic-ai__9541#event-17`: "The bare `false` form was dropped by gh-aw in workflows with custom safe-output
-jobs, so the explicit `create-issue: false` form is used everywhere."
+  - _anchor_ `pr_pydantic__pydantic-ai__9541#event-17`: "The bare `false` form was dropped by gh-aw in workflows with custom safe-output jobs, so the explicit `create-issue: false` form is used everywhere."
 
 ## .github/workflows, .github/scripts/agent_spend_report.py
 
@@ -129,8 +128,7 @@ jobs, so the explicit `create-issue: false` form is used everywhere."
 
 - **[style]** Harness docs must show installs as a single `pip/uv-add` line in its own bash fence, not a hand-written `pip install` or `uv add` command. tests/harness/test_docs_installation.py enforces this.
   - *Do:* Write install instructions in harness docs with the `pip/uv-add` shorthand, one line per bash fence.
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-18`: "is one `pip/uv-add` line in its own bash fence rather than a hand-written
-`pip install` or `uv add` command."
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-18`: "is one `pip/uv-add` line in its own bash fence rather than a hand-written `pip install` or `uv add` command."
 
 ## docs/models/google.md, docs/capabilities/caching.md
 
@@ -265,8 +263,7 @@ jobs, so the explicit `create-issue: false` form is used everywhere."
 
 - **[gotcha]** `WrapperCapability` must forward the private default-id hooks (`_default_run_id` and `_default_conversation_id`). Otherwise a durability capability wrapped in it contributes no defaults and its runs keep random UUID7 ids. A wrapped `TemporalDurability` then reaches `workflow.patched()`, so tests that fake `in_workflow` must also fake `workflow.patched`.
   - *Do:* When adding a new hook to the capability base, forward it in `WrapperCapability` and add a test with a wrapped durability capability.
-  - _anchor_ `pr_pydantic__pydantic-ai__9701#event-9`: "A durability capability wrapped in a `WrapperCapability` otherwise
-contributed no defaults, so its runs kept random ids."
+  - _anchor_ `pr_pydantic__pydantic-ai__9701#event-9`: "A durability capability wrapped in a `WrapperCapability` otherwise contributed no defaults, so its runs kept random ids."
 
 ## pydantic_ai_slim/pydantic_ai/durable_exec
 
@@ -343,8 +340,7 @@ contributed no defaults, so its runs kept random ids."
   - _anchor_ `pr_pydantic__pydantic-ai__7560#event-65`: "Per maintainer decision, caching stays off unless `cache` (or the `Caching` capability) or a provider-specific cache setting asks for it; turning it on by default waits for v3."
 - **[decision]** Provider-specific cache settings (`anthropic_cache*`, `bedrock_cache_*`, `openrouter_cache_*`, `google_cached_content`, etc.) always take precedence over the unified `cache` setting, including when set to `False`. When one wins, the resolved `ModelRequestParameters.cache` is cleared so telemetry and durable-exec consumers don't see a retention that never reached the wire. This presence check lives in each provider's `prepare_request`.
   - *Do:* In each provider's `prepare_request`, clear `params.cache` to None when an explicit provider-specific cache setting is present. Do not let the unified value override it.
-  - _anchor_ `pr_pydantic__pydantic-ai__7560#event-16`: "Clear `ModelRequestParameters.cache` when explicit provider cache settings
-  take precedence"
+  - _anchor_ `pr_pydantic__pydantic-ai__7560#event-16`: "Clear `ModelRequestParameters.cache` when explicit provider cache settings take precedence"
   - _anchor_ `pr_pydantic__pydantic-ai__7560#event-6`: "Provider-specific cache settings take precedence over the unified one whenever any is present, including `False`."
 
 ## pydantic_ai_slim/pydantic_ai/models/__init__.py
@@ -444,8 +440,7 @@ contributed no defaults, so its runs kept random ids."
   - _anchor_ `tests/models/test_openai_prompt_cache.py:2360`: "`test_openai_responses_unified_cache_stable_prefix_only_keeps_tool_result_breakpoint`"
 - **[gotcha]** For resumed streams (e.g. `starting_after`), deltas and `function_call_arguments.done` snapshots for an item whose `output_item.added` was never seen are skipped, because there is no ToolCallPart with a tool name. `output_item.done` then creates the part from the full item. Without this guard, reconciliation asserted that a part existed and raised AssertionError.
   - *Do:* Keep the guard that skips deltas and done snapshots for items without a prior `output_item.added`, and let `output_item.done` create the part.
-  - _anchor_ `pr_pydantic__pydantic-ai__10039#event-7`: "A stream resumed after output_item.added has no complete ToolCallPart, so
-skip its deltas and done snapshot and let output_item.done create the part."
+  - _anchor_ `pr_pydantic__pydantic-ai__10039#event-7`: "A stream resumed after output_item.added has no complete ToolCallPart, so skip its deltas and done snapshot and let output_item.done create the part."
 - **[decision]** In the Responses stream parser, the completed snapshot from `function_call_arguments.done` (with `output_item.done` as a fallback) is authoritative over delta-built args. If the args received so far are equal, nothing is emitted. If the snapshot extends them, only the missing suffix is emitted as a ToolCallPartDelta. If they disagree, the part's args are replaced with the snapshot. An empty snapshot is ignored. Once an item is finalized, a repeated done or a late delta for it is ignored. The "apply done only when no delta arrived" approach (litellm's) was considered and not adopted.
   - *Do:* Reconcile function-call args against the done snapshot per item id: emit only the missing suffix, replace on mismatch, ignore empty snapshots and anything after finalization. Do not use the narrower "apply done only if no delta arrived" rule.
   - _anchor_ `pr_pydantic__pydantic-ai__10039#event-2`: "the completed snapshot is authoritative when it disagrees with the deltas, because that is what the non-streaming `_process_response` would return (keeps stream-vs-complete parity)"
@@ -614,25 +609,20 @@ skip its deltas and done snapshot and let output_item.done create the part."
 
 - **[style]** Harness writing style: do not use Unicode arrows in class docstrings. Main's lint also flags `timezone.utc` (UP017), so use `datetime.UTC`.
   - *Do:* Use ASCII in docstrings (no Unicode arrows) and `from datetime import UTC` instead of `timezone.utc`.
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-8`: "Also drop a Unicode arrow from the class
-docstring per the harness writing style."
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-12`: "Main's lint now flags `timezone.utc` (UP017), so the live Postgres suite
-uses `UTC` as well."
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-8`: "Also drop a Unicode arrow from the class docstring per the harness writing style."
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-12`: "Main's lint now flags `timezone.utc` (UP017), so the live Postgres suite uses `UTC` as well."
 
 ## src/pydantic_ai_harness/step_persistence
 
 - **[gotcha]** Import the Postgres pool protocols (PostgresConnection/PostgresPool) from pydantic_ai_harness.media, where they are defined and publicly exported. Re-importing them through step_persistence._postgres fails pyright with reportPrivateImportUsage and breaks the CI quality checks.
   - *Do:* In step_persistence modules, import PostgresPool and PostgresConnection from pydantic_ai_harness.media, not from a private sibling module.
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-11`: "Pyright rejects re-importing PostgresConnection/PostgresPool through
-step_persistence._postgres (reportPrivateImportUsage), which failed the CI
-quality checks"
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-11`: "Pyright rejects re-importing PostgresConnection/PostgresPool through step_persistence._postgres (reportPrivateImportUsage), which failed the CI quality checks"
 
 ## src/pydantic_ai_harness/step_persistence/_postgres.py, media Postgres store
 
 - **[decision]** Postgres table prefixes for the new stores are restricted to lowercase identifiers. Postgres folds unquoted identifiers to lowercase, so 'Orders' and 'orders' silently shared tables across supposedly distinct stores. Rejecting uppercase at construction makes the aliasing impossible. The older PostgresMemoryStore `_TABLE_RE` still has this exposure, and tightening it is a compatibility decision for maintainers.
   - *Do:* Validate any Postgres `table=` prefix as lowercase-only. Do not change PostgresMemoryStore's `_TABLE_RE` without a maintainer compatibility decision.
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-10`: "PostgreSQL folds unquoted identifiers to lowercase, so 'Orders' and 'orders'
-silently shared the same tables across supposedly distinct stores"
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-10`: "PostgreSQL folds unquoted identifiers to lowercase, so 'Orders' and 'orders' silently shared the same tables across supposedly distinct stores"
 
 ## tests/
 
@@ -668,9 +658,7 @@ silently shared the same tables across supposedly distinct stores"
 
 - **[decision]** The issue proposed covering the Postgres stores against a real Postgres in CI rather than a hand-maintained SQL fake. Because the CI job could not be included in the PR, the merged change instead covers the stores in the ordinary unit suites through a SqlitePool shim. This is an in-memory SQLite pool that satisfies PostgresPool and rewrites the few Postgres-only spellings. The live Postgres suite is kept as an additional behavior suite that does not run in CI here.
   - *Do:* When adding or changing Postgres store SQL, keep it compatible with the SqlitePool shim so the unit suites cover it on every test leg, and also run the live suite with `make integration-postgres`.
-  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-19`: "The live Postgres suite does not run in CI, so the coverage job saw only the
-construction tests. SqlitePool satisfies PostgresPool over in-memory SQLite,
-rewriting the few Postgres-only spellings"
+  - _anchor_ `pr_pydantic__pydantic-ai__9899#event-19`: "The live Postgres suite does not run in CI, so the coverage job saw only the construction tests. SqlitePool satisfies PostgresPool over in-memory SQLite, rewriting the few Postgres-only spellings"
 
 ## tests/models
 

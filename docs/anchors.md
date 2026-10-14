@@ -4,7 +4,7 @@ What "verbatim anchor" means in `crewlore`, exactly. This is the trust contract 
 
 ## The claim
 
-Every compiled claim carries one or more **anchors** — `(source_kind, ref, quote)` tuples — that cite where in the source session the claim was learned. The contract:
+Every compiled claim carries one or more **anchors** — records of `source_kind`, `ref` and `quote`, plus the author of the quoted text (`actor`, `login`, `association`) when the source knows it — that cite where in the source session the claim was learned and who said it. The contract:
 
 > A claim's anchor `quote`, after **canonical-form normalization**, must resolve as a substring of the claim's source session's content, after the same normalization. Claims with no surviving anchor are dropped at extraction time.
 
