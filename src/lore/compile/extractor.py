@@ -197,7 +197,7 @@ class _LocatorIndex:
 
     def locate(self, quote: str) -> tuple[str, str, NSFEvent | None]:
         canonical = _canonical_form(quote)
-        position = self._find(canonical)
+        position, whole = self._find(canonical)
         if position is None:
             # The quote validated against the joined transcript but sits in no
             # single event — it spans a reply split by tool calls. The session
@@ -205,23 +205,28 @@ class _LocatorIndex:
             # inventing a pointer.
             return self._session, "transcript", None
         event = self._events[position]
+        # A quote that starts in one event and ends in another has no single author:
+        # the opening event is still the right place to land, but its author is not
+        # vouched for words someone else wrote.
+        author = event if whole else None
         if file_ref := self._file_ref(event):
-            return file_ref, "file", event
-        return f"{self._session}#event-{position}", self._source_kind(event), event
+            return file_ref, "file", author
+        return f"{self._session}#event-{position}", self._source_kind(event), author
 
-    def _find(self, canonical: str) -> int | None:
+    def _find(self, canonical: str) -> tuple[int | None, bool]:
+        """(index of the event, whether it holds the whole quote)."""
         for i, text in enumerate(self._canonical):
             if canonical and canonical in text:
-                return i
+                return i, True
         # A quote may straddle two events; fall back to whichever event opens it
         # so the reader still lands at the right place.
         probe = canonical[:_LOCATOR_PROBE_CHARS]
         if len(probe) < _LOCATOR_PROBE_CHARS:
-            return None
+            return None, False
         for i, text in enumerate(self._canonical):
             if probe in text:
-                return i
-        return None
+                return i, False
+        return None, False
 
     @staticmethod
     def _file_ref(event: NSFEvent) -> str | None:

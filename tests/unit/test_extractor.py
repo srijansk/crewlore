@@ -451,6 +451,33 @@ def test_known_topics_are_framed_bounded_and_single_line():
     assert prompt.rindex("</known-topics-abc123>") < prompt.index("\n<transcript-abc123>\n")
 
 
+def test_a_quote_spanning_two_authors_names_neither():
+    alice = NSFEvent(
+        session="ses_1", actor="user", kind="user_message",
+        timestamp=datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc),
+        content="the billing webhook fires twice in staging whenever stripe retries a delivery",
+        meta={"login": "alice", "association": "none"},
+    )
+    bob = NSFEvent(
+        session="ses_1", actor="user", kind="user_message",
+        timestamp=datetime(2026, 5, 19, 10, 1, tzinfo=timezone.utc),
+        content="so dedupe on the idempotency key before any side effect runs",
+        meta={"login": "bob", "association": "member"},
+    )
+    straddling = (
+        "fires twice in staging whenever stripe retries a delivery "
+        "so dedupe on the idempotency key"
+    )
+    extractor = LLMExtractor(lambda p: _one_claim_response(straddling))
+    (claim,) = extractor.extract([alice, bob], "ses_1")
+    anchor = claim.anchors[0]
+    assert anchor.ref == "ses_1#event-0"  # lands where the quote opens
+    assert (anchor.actor, anchor.login, anchor.association) == (None, None, None)
+    whole = "dedupe on the idempotency key before any side effect runs"
+    (claim,) = LLMExtractor(lambda p: _one_claim_response(whole)).extract([alice, bob], "ses_1")
+    assert (claim.anchors[0].login, claim.anchors[0].association) == ("bob", "member")
+
+
 def test_anchors_name_who_wrote_the_quoted_text():
     attributed = [
         EVENTS[0],

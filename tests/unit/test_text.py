@@ -28,6 +28,9 @@ def test_folds_every_kind_of_line_break_to_a_newline():
         "zero\u200bwidth\u2060joiner\ufeff",  # ZWSP, word joiner, BOM
         "soft\u00adhyphen",
         "tag\U000e0041\U000e0042chars",  # the tag block smuggles ASCII invisibly
+        "a\u2061b\u2064c",  # invisible mathematical operators
+        "d\u206ae\u206ff",  # deprecated format controls
+        "g\ufff9h\ufffbi\u180ej",  # interlinear annotation marks, Mongolian vowel separator
     ],
 )
 def test_strips_invisible_characters(hidden):

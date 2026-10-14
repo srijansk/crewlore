@@ -18,13 +18,15 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)
 # Characters with no visible width that can hide text or reorder what a reader sees:
 # C0 controls except tab and newline, DEL and the C1 range, the bidirectional
 # embedding, override and isolate controls behind Trojan-source attacks, zero-width
-# space, word joiner, soft hyphen and byte-order mark, and the Unicode tag block that
-# smuggles ASCII invisibly. Zero-width joiner and non-joiner stay: Indic and Persian
-# text and emoji sequences depend on them, and so do the left-to-right and
-# right-to-left marks that mixed-direction text needs.
+# space, word joiner, soft hyphen and byte-order mark, the invisible operators,
+# deprecated format controls, interlinear annotation marks and Mongolian vowel
+# separator, and the Unicode tag block that smuggles ASCII invisibly. Zero-width
+# joiner and non-joiner stay: Indic and Persian text and emoji sequences depend on
+# them, and so do the left-to-right and right-to-left marks that mixed-direction
+# text needs.
 _INVISIBLE = re.compile(
     "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u00ad\u200b\u2060\u202a-\u202e"
-    "\u2066-\u2069\ufeff\U000e0000-\U000e007f]"
+    "\u2061-\u2064\u2066-\u2069\u206a-\u206f\ufeff\ufff9-\ufffb\u180e\U000e0000-\U000e007f]"
 )
 
 # Every line break a model or a web form can produce, folded to one newline.
