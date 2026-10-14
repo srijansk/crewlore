@@ -2,9 +2,19 @@
 using a fake extractor, and verify claims, conflicts, and the book are written.
 """
 
+import subprocess
 from datetime import datetime, timezone
 
-from lore.compile.run import run_compile
+import pytest
+
+from lore.compile.run import (
+    CompileInProgress,
+    HeadMoved,
+    compile_lock,
+    current_head,
+    run_compile,
+    run_render,
+)
 from lore.schemas import Anchor, Claim, NSFEvent, Provenance
 from lore.store import LoreStore
 
@@ -81,3 +91,95 @@ def test_run_compile_is_idempotent_across_runs(tmp_path):
     second = run_compile(store, extractor)  # prior claims loaded from store
     assert [c.id for c in second.claims] == [c.id for c in first.claims]
     assert len(store.load_claims()) == 1
+
+
+def _git(repo, *args):
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+# GUARDS: a rebase fires one post-commit hook per commit. Only one compile may touch
+# the store at a time, and the one that steps aside must write nothing.
+def test_a_second_compile_steps_aside_while_the_lock_is_held(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    run_compile(store, DictExtractor({"ses_1": [_claim("dedupe on idempotency key", "ses_1")]}))
+    before = store.claims_path.read_bytes()
+    newer = DictExtractor({"ses_1": [_claim("dedupe on the Stripe event id", "ses_1")]})
+
+    with compile_lock(store):
+        with pytest.raises(CompileInProgress, match="another compile is running"):
+            run_compile(store, newer, rebuild=True)
+    assert store.claims_path.read_bytes() == before
+
+    run_compile(store, newer, rebuild=True)  # the lock is released again
+    assert len(store.load_claims()) == 2
+
+
+# GUARDS: `git commit && git checkout main` is routine. A compile that finishes after
+# the checkout must not write into the other branch's working tree; the extraction it
+# paid for is kept in the cache so the next compile costs nothing.
+def test_nothing_is_written_when_head_moved_during_the_compile(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "one")
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    extractor = DictExtractor({"ses_1": [_claim("dedupe on idempotency key", "ses_1")]})
+
+    with pytest.raises(HeadMoved, match="HEAD moved"):
+        run_compile(store, extractor, expect_head="0" * 40)
+    assert not store.claims_path.exists()
+    assert not (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+    assert store.load_extraction("ses_1") is not None
+
+    head = current_head(tmp_path)
+    assert head and len(head) == 40
+    run_compile(store, extractor, expect_head=head)
+    assert len(store.load_claims()) == 1
+    assert current_head(tmp_path / "nowhere") is None
+
+
+# GUARDS: a render reproduces the stored claims and nothing else — not a cached
+# extraction `lore compile` has not committed yet, not a claim a teammate removed in
+# review that this machine's gitignored cache still holds.
+def test_render_uses_the_stored_claims_only(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    committed = [_claim(f"stored claim {i}", "ses_1") for i in range(4)]
+    store.write_claims(committed)
+    before = store.claims_path.read_bytes()
+    _signal_session(store, "ses_2", "use idempotency key")
+    store.save_extraction("ses_2", [_claim("cached but never compiled", "ses_2")])
+    _signal_session(store, "ses_3", "never extracted at all")
+
+    result = run_render(store)
+    assert result.rendered and result.changed_lines == 0
+    assert {c.statement for c in result.claims} == {c.statement for c in committed}
+    assert store.claims_path.read_bytes() == before
+    assert result.unextracted_sessions == 1  # ses_3; ses_2 has its cache entry
+    book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
+    assert book.count("**[gotcha]** stored claim") == 4 and "never compiled" not in book
+
+    again = run_render(store)  # byte-stable on repeat
+    assert again.changed_lines == 0 and store.claims_path.read_bytes() == before
+
+    run_compile(store, DictExtractor({}))  # compile is what brings the cached session in
+    assert len(store.load_claims()) == 5
+
+
+def test_render_creates_nothing_in_a_store_without_claims(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    result = run_render(store)
+    assert not result.rendered and result.claims == []
+    for path in (
+        store.claims_path,
+        store.conflicts_path,
+        tmp_path / ".lore" / "knowledge" / "README.md",
+    ):
+        assert not path.exists()

@@ -3,6 +3,8 @@
     lore init        create .lore/ in the repo
     lore compile     ingest new transcripts -> distill -> prune (one pass)
     lore watch       do that automatically on an interval (--once for cron)
+    lore render      rebuild the book + conflicts from the stored claims, no model
+    lore hook        install/uninstall/status of the post-commit and post-merge hooks
     lore import-prs  compile a GitHub repo's pull-request threads
     lore query       task-conditioned retrieval (records usage)
     lore feedback    mark served claims influential or overridden
@@ -15,12 +17,13 @@ from __future__ import annotations
 import time
 from datetime import timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
 from lore import __version__
 from lore.serve.server import KnowledgeServer, claim_label
-from lore.store import LoreStore
+from lore.store import DEFAULT_CONFIG, LoreStore
 
 app = typer.Typer(
     help=(
@@ -42,6 +45,16 @@ RebuildOpt = typer.Option(
     False, "--rebuild", help="Ignore the extraction cache and re-extract all sessions."
 )
 ClaimIdsArg = typer.Argument(..., help="Claim ids, as shown by `lore query`.")
+ExpectHeadOpt = typer.Option(
+    None,
+    "--expect-head",
+    metavar="SHA",
+    help=(
+        "Write nothing if HEAD is no longer this commit by the time the work is done. "
+        "The git hooks pass the commit they fired on, so a compile that outlives a "
+        "`git checkout` cannot land in the other branch."
+    ),
+)
 
 _INIT_HINT = "No .lore/ here yet — run `lore init` in the repo root first."
 
@@ -100,6 +113,22 @@ def _compile_settings(store: LoreStore) -> dict:
         "interval": int(cfg.get("watch_interval_seconds", 300)),
         "max_unused_age": timedelta(days=float(cfg.get("max_unused_days", 30))),
     }
+
+
+def _settle(store: LoreStore) -> timedelta:
+    """How long a transcript must go unmodified before it is captured
+    (`capture.settle_minutes`); a store written by an older version takes the default."""
+    cfg = store.load_config().get("capture", {}) or {}
+    minutes = cfg.get("settle_minutes", DEFAULT_CONFIG["capture"]["settle_minutes"])
+    return timedelta(minutes=float(minutes))
+
+
+def _stepped_aside(exc: Exception) -> NoReturn:
+    """A compile that stepped aside — another compile holds the lock, or HEAD moved — is
+    not an error: one line says so and the exit is clean, so a hook log shows what
+    happened without a traceback."""
+    typer.echo(f"skipped: {exc}")
+    raise typer.Exit(0)
 
 
 def _require_store(store: LoreStore) -> None:
@@ -226,8 +255,16 @@ def feedback(
 
 
 def _compile_once(
-    store: LoreStore, transcript_dir: Path, *, rebuild: bool = False, adapter=None
+    store: LoreStore,
+    transcript_dir: Path,
+    *,
+    rebuild: bool = False,
+    adapter=None,
+    settle: timedelta | None = None,
+    expect_head: str | None = None,
 ) -> dict:
+    """One ingest -> compile -> prune pass. Raises `CompileInProgress` / `HeadMoved`
+    (from `lore.compile.run`) when the pass stepped aside without writing."""
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
     from lore.compile.extractor import FatalExtractionError
     from lore.compile.run import auto_compile
@@ -243,12 +280,15 @@ def _compile_once(
             transcript_dir,
             rebuild=rebuild,
             max_unused_age=settings["max_unused_age"],
+            settle=settle,
+            expect_head=expect_head,
         )
     except FatalExtractionError as exc:
         # Without this the run would report success having compiled nothing.
         typer.echo(f"error: {exc}")
         raise typer.Exit(1) from exc
     stats["gate"] = dict(extractor.stats)
+    stats["settle_minutes"] = settle.total_seconds() / 60 if settle else 0
     return stats
 
 
@@ -265,6 +305,12 @@ def _report(stats: dict) -> None:
             f"  ! {failed} session(s) failed to extract and were skipped; "
             "they will be retried on the next pass"
         )
+    if settling := stats.get("settling"):
+        typer.echo(
+            f"  {settling} transcript(s) modified in the last {stats['settle_minutes']:g} min "
+            "are still being written and were left for a later pass "
+            "(capture.settle_minutes in .lore/config.yaml; 0 captures at once)"
+        )
 
 
 @app.command()
@@ -272,11 +318,26 @@ def compile(  # noqa: A001
     repo: Path = RepoOpt,
     transcripts: Path = TranscriptsOpt,
     rebuild: bool = RebuildOpt,
+    expect_head: str = ExpectHeadOpt,
 ):
-    """Ingest new transcripts, distill to claims + book, and prune (one pass)."""
+    """Ingest new transcripts, distill to claims + book, and prune (one pass).
+
+    One compile runs per store at a time; a second one says so and exits cleanly.
+    """
+    from lore.compile.run import CompileInProgress, HeadMoved
+
     store = LoreStore(repo)
     _require_store(store)
-    stats = _compile_once(store, _transcript_dir(store, transcripts), rebuild=rebuild)
+    try:
+        stats = _compile_once(
+            store,
+            _transcript_dir(store, transcripts),
+            rebuild=rebuild,
+            settle=_settle(store),
+            expect_head=expect_head or None,
+        )
+    except (CompileInProgress, HeadMoved) as exc:
+        _stepped_aside(exc)
     typer.echo(
         f"ingested {stats['ingested']} new sessions "
         f"({stats['redactions']} redactions); "
@@ -285,38 +346,41 @@ def compile(  # noqa: A001
     _report(stats)
 
 
-class _NoModel:
-    """An extractor that refuses: `lore render` must never call a model. Sessions with a
-    cached extraction are served from the cache; the rest are counted and left for
-    `lore compile`."""
-
-    def extract(self, events, session_id, known_topics=None):
-        raise RuntimeError("lore render makes no model calls; run `lore compile` to extract")
-
-
 @app.command()
-def render(repo: Path = RepoOpt):
+def render(repo: Path = RepoOpt, expect_head: str = ExpectHeadOpt):
     """Rebuild the book and the conflict list from the claims already compiled, no model.
 
-    For a fresh clone or after a merge or pull: the committed claims are re-deduplicated,
-    conflicts re-detected, and .lore/knowledge/README.md rewritten. Needs no API key.
+    For a fresh clone or after a merge or pull: the stored claims are re-deduplicated,
+    conflicts re-detected, and .lore/knowledge/README.md rewritten. Nothing else is
+    read — not captured sessions, not this machine's extraction cache — so a render
+    adds no claim that `lore compile` has not committed. Needs no API key.
     """
-    from lore.compile.run import run_compile
+    from lore.compile.run import CompileInProgress, HeadMoved, run_render
 
     store = LoreStore(repo)
     if not store.is_initialised:
         typer.echo(_INIT_HINT)
         raise typer.Exit(1)
-    result = run_compile(store, _NoModel())
-    active = sum(c.status == "active" for c in result.claims)
-    typer.echo(
-        f"rendered {active} active claims and {len(result.conflicts)} conflicts "
-        f"into {store.lore / 'knowledge' / 'README.md'}"
-    )
-    if result.failed_sessions:
+    try:
+        result = run_render(store, expect_head=expect_head or None)
+    except (CompileInProgress, HeadMoved) as exc:
+        _stepped_aside(exc)
+    if result.rendered:
+        active = sum(c.status == "active" for c in result.claims)
         typer.echo(
-            f"  {result.failed_sessions} captured session(s) have no cached extraction yet; "
-            "run `lore compile` to extract them"
+            f"rendered {active} active claims and {len(result.conflicts)} conflicts "
+            f"into {store.lore / 'knowledge' / 'README.md'}; "
+            f"{result.changed_lines} claim line(s) changed"
+        )
+    else:
+        typer.echo(
+            f"nothing to render: no compiled claims at {store.claims_path} "
+            "(`lore compile` writes them)"
+        )
+    if result.unextracted_sessions:
+        typer.echo(
+            f"  {result.unextracted_sessions} captured session(s) have no cached extraction "
+            "yet; run `lore compile` to extract them"
         )
 
 
@@ -346,6 +410,7 @@ def import_prs(
     """
     from lore.capture.adapters.github_pr import GitHubPRAdapter
     from lore.capture.sources.github import GitHubError, GitHubPRSource
+    from lore.compile.run import CompileInProgress
 
     if state not in ("closed", "open", "all"):
         typer.echo("error: --state must be closed, open, or all")
@@ -371,7 +436,11 @@ def import_prs(
     if not stats["written"]:
         return
 
-    result = _compile_once(store, out_dir, rebuild=rebuild, adapter=GitHubPRAdapter())
+    # Exported threads are complete files, so no settle time applies to them.
+    try:
+        result = _compile_once(store, out_dir, rebuild=rebuild, adapter=GitHubPRAdapter())
+    except CompileInProgress as exc:
+        _stepped_aside(exc)
     typer.echo(
         f"ingested {result['ingested']} new sessions; "
         f"{result['active']} active claims, {result['conflicts']} conflicts"
@@ -396,17 +465,25 @@ def watch(
     Extraction is cached per session, so each pass only sends newly-ingested
     sessions to the model; cost is incremental, not per-corpus-per-interval.
     """
+    from lore.compile.run import CompileInProgress
+
     store = LoreStore(repo)
     _require_store(store)
     tdir = _transcript_dir(store, transcripts)
     sleep_for = interval if interval is not None else _compile_settings(store)["interval"]
+    settle = _settle(store)
     while True:
-        stats = _compile_once(store, tdir, rebuild=rebuild)
-        typer.echo(
-            f"[watch] +{stats['ingested']} sessions, "
-            f"{stats['active']} active claims, {stats['conflicts']} conflicts"
-        )
-        _report(stats)
+        try:
+            stats = _compile_once(store, tdir, rebuild=rebuild, settle=settle)
+        except CompileInProgress as exc:
+            # A hook's compile is running; this pass has nothing to add.
+            typer.echo(f"[watch] skipped: {exc}")
+        else:
+            typer.echo(
+                f"[watch] +{stats['ingested']} sessions, "
+                f"{stats['active']} active claims, {stats['conflicts']} conflicts"
+            )
+            _report(stats)
         if once:
             break
         try:

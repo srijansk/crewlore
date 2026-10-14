@@ -1,4 +1,7 @@
+import os
 from datetime import datetime, timezone
+
+import pytest
 
 from lore.schemas import Anchor, Claim, Conflict, NSFEvent, Provenance
 from lore.store import LoreStore
@@ -189,4 +192,35 @@ def test_default_config_has_no_dead_keys(tmp_path):
     cfg = yaml.safe_load((tmp_path / ".lore" / "config.yaml").read_text())
     assert set(cfg) == {"model", "capture", "compile"}
     assert cfg["capture"]["transcripts"] == "auto"
+    assert cfg["capture"]["settle_minutes"] == 10
     assert cfg["compile"] == {"watch_interval_seconds": 300, "max_unused_days": 30}
+
+
+# GUARDS: a reader that overlaps a write (two hook compiles from one rebase) must see
+# the old file or the new one, never a truncated one — so every write lands through a
+# replace, and a write that fails leaves the old file in place with no temp file behind.
+def test_claims_are_replaced_in_one_step_and_a_failed_write_keeps_the_old_file(
+    tmp_path, monkeypatch
+):
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([_claim("a")])
+    before = store.claims_path.read_text()
+    real_replace = os.replace
+    replaced = []
+
+    def failing_replace(src, dst):
+        replaced.append(os.path.basename(dst))
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    with pytest.raises(OSError):
+        store.write_claims([_claim("b")])
+    assert store.claims_path.read_text() == before
+    assert "claims.jsonl" in replaced  # the write went through a replace, not a truncate
+
+    monkeypatch.setattr(os, "replace", real_replace)
+    store.write_claims([_claim("b")])
+    assert len(store.load_claims()) == 1 and store.load_claims()[0].statement == "b"
+    leftovers = [p.name for p in store.claims_path.parent.iterdir() if p.name.endswith(".tmp")]
+    assert leftovers == []

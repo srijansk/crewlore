@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timezone
 
 from lore.schemas import Claim, Conflict
-from lore.store import LoreStore
+from lore.store import LoreStore, atomic_write_text
 
 # Common words carry no retrieval signal and cause false matches across unrelated
 # topics (the lab's concept-vs-identifier-vocabulary observation). Drop them so
@@ -114,8 +114,7 @@ class KnowledgeServer:
         conflicts = self.store.load_conflicts()
         book = render_book(claims, conflicts)
         path = self.store.lore / "knowledge" / "README.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(book)
+        atomic_write_text(path, book)
         return book
 
     def _bump(self, claim_ids: list[str], field: str) -> None:

@@ -8,7 +8,9 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,15 +20,40 @@ from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
     "model": {"provider": "anthropic", "name": "claude-sonnet-5-5"},
-    # "auto" = only this repo's own Claude Code transcripts. Set a directory to
-    # read transcripts from somewhere else.
-    "capture": {"transcripts": "auto"},
+    "capture": {
+        # "auto" = only this repo's own Claude Code transcripts. Set a directory to
+        # read transcripts from somewhere else.
+        "transcripts": "auto",
+        # A transcript modified more recently than this is still being written by a
+        # running session and is left for a later pass: a session is captured once,
+        # so capturing it mid-way would keep only its first half for good. 0 captures
+        # immediately.
+        "settle_minutes": 10,
+    },
     "compile": {"watch_interval_seconds": 300, "max_unused_days": 30},
 }
 
 # Never committed: raw sessions and raw source exports can carry secrets or PII,
 # the extraction cache is local, and usage stats are volatile.
 GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl")
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` so a concurrent reader sees the old file or the new one, never a
+    truncated one: the content goes to a sibling temp file that then replaces `path`.
+
+    Two compiles that overlap (a rebase fires one post-commit hook per commit) would
+    otherwise read each other's half-written claims and persist an empty store.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 
 class LoreStore:
@@ -69,7 +96,7 @@ class LoreStore:
         (self.lore / "knowledge").mkdir(parents=True, exist_ok=True)
         (self.lore / "sessions").mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
-            self.config_path.write_text(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
+            atomic_write_text(self.config_path, yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
         self.ensure_gitignore()
 
     def ensure_gitignore(self) -> None:
@@ -84,8 +111,7 @@ class LoreStore:
         existing = path.read_text().splitlines() if path.exists() else []
         missing = [line for line in GITIGNORE_LINES if line not in existing]
         if not existing or missing:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("".join(f"{line}\n" for line in [*existing, *missing]))
+            atomic_write_text(path, "".join(f"{line}\n" for line in [*existing, *missing]))
 
     def load_config(self) -> dict:
         if not self.config_path.exists():
@@ -100,8 +126,9 @@ class LoreStore:
         ordered = sorted(stamped, key=lambda c: c.id)
         # Committed truth excludes volatile usage stats — they live in a gitignored
         # sidecar, so retrieval (which bumps usage) leaves claims.jsonl byte-stable.
-        self.claims_path.write_text(
-            "".join(c.model_dump_json(exclude={"usage"}) + "\n" for c in ordered)
+        atomic_write_text(
+            self.claims_path,
+            "".join(c.model_dump_json(exclude={"usage"}) + "\n" for c in ordered),
         )
         self._write_usage(ordered)
 
@@ -150,8 +177,7 @@ class LoreStore:
             for c in claims
             if c.usage != UsageStats()
         ]
-        self.usage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.usage_path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        atomic_write_text(self.usage_path, "".join(json.dumps(r) + "\n" for r in rows))
 
     def _load_usage(self) -> dict[str, UsageStats]:
         out: dict[str, UsageStats] = {}
@@ -208,7 +234,7 @@ class LoreStore:
     # --- jsonl helpers ---
     @staticmethod
     def _write_jsonl(path: Path, models) -> None:
-        path.write_text("".join(m.model_dump_json() + "\n" for m in models))
+        atomic_write_text(path, "".join(m.model_dump_json() + "\n" for m in models))
 
     @staticmethod
     def _read_jsonl(path: Path) -> list[str]:

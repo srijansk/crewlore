@@ -3,10 +3,15 @@ exercised only for its graceful no-credentials error; compile orchestration
 itself is covered in test_run_compile.py.
 """
 
-from datetime import datetime, timezone
+import os
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from typer.testing import CliRunner
 
+import lore
 from lore.cli import app
 from lore.schemas import Anchor, Claim, Provenance
 from lore.store import LoreStore
@@ -62,7 +67,11 @@ def test_compile_without_credentials_errors_clearly(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     LoreStore(tmp_path).init()
     result = runner.invoke(
-        app, ["compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")]
+        app,
+        [
+            "compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none"),
+            "--expect-head", "0" * 40,  # accepted: the hooks pass it
+        ],
     )
     assert result.exit_code != 0
     assert "key" in result.stdout.lower() or "key" in str(result.exception).lower()
@@ -182,6 +191,7 @@ def test_render_rebuilds_the_book_without_a_model(tmp_path, monkeypatch):
     result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
     assert result.exit_code == 0, result.stdout
     assert "rendered 1 active claims" in result.stdout
+    assert "0 claim line(s) changed" in result.stdout
     book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
     assert "dedupe billing webhook" in book
 
@@ -224,3 +234,106 @@ def test_hook_commands_round_trip(tmp_path):
     assert result.exit_code == 0 and "removed" in result.stdout
     result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path / "nowhere")])
     assert result.exit_code == 2 and "not inside a git repository" in result.stdout
+
+
+def _git(repo, *args):
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_render_in_a_store_without_claims_creates_no_files(tmp_path):
+    LoreStore(tmp_path).init()
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "nothing to render" in result.stdout
+    lore_dir = tmp_path / ".lore"
+    assert not (lore_dir / "claims" / "claims.jsonl").exists()
+    assert not (lore_dir / "claims" / "conflicts.jsonl").exists()
+    assert not (lore_dir / "knowledge" / "README.md").exists()
+
+
+def test_render_steps_aside_while_another_compile_holds_the_store(tmp_path):
+    from lore.compile.run import compile_lock
+
+    _seed_claim(tmp_path)
+    with compile_lock(LoreStore(tmp_path)):
+        result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "another compile is running" in result.stdout
+    assert not (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+
+def test_render_with_expect_head_writes_nothing_once_head_moved(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "one")
+    _seed_claim(tmp_path)
+    book = tmp_path / ".lore" / "knowledge" / "README.md"
+
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path), "--expect-head", "0" * 40])
+    assert result.exit_code == 0, result.stdout
+    assert "HEAD moved" in result.stdout and not book.exists()
+
+    head = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path), "--expect-head", head])
+    assert result.exit_code == 0, result.stdout
+    assert "rendered 1 active claims" in result.stdout and book.exists()
+
+
+# GUARDS: renders that overlap (post-merge hooks from a rebase, a teammate's watch
+# loop) must leave claims.jsonl exactly as it was: never empty, never truncated.
+RENDER_PROCESSES = 6
+
+
+def test_concurrent_renders_leave_the_claims_file_byte_identical(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims(
+        [
+            Claim(
+                statement=f"claim number {i} about the billing webhook",
+                kind="gotcha", scope="services/billing",
+                provenance=Provenance(session="s", author="a", harness="claude-code"),
+                anchors=[Anchor(source_kind="transcript", ref=f"s#{i}", quote="fires twice")],
+                observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            )
+            for i in range(20)
+        ]
+    )
+    before = store.claims_path.read_bytes()
+    assert before
+    env = {**os.environ, "PYTHONPATH": str(Path(lore.__file__).resolve().parents[1])}
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-m", "lore.cli", "render", "--repo", str(tmp_path)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+        )
+        for _ in range(RENDER_PROCESSES)
+    ]
+    outputs = [p.communicate(timeout=120)[0] for p in procs]
+    assert all(p.returncode == 0 for p in procs), outputs
+    assert store.claims_path.read_bytes() == before
+    assert all(o.startswith("rendered") or "another compile is running" in o for o in outputs)
+    assert any(o.startswith("rendered") for o in outputs), outputs
+
+
+def test_settle_time_comes_from_config_with_a_default_for_older_configs(tmp_path):
+    import yaml
+
+    from lore.cli import _settle
+
+    store = LoreStore(tmp_path)
+    store.init()
+    assert _settle(store) == timedelta(minutes=10)
+    cfg = yaml.safe_load(store.config_path.read_text())
+    cfg["capture"]["settle_minutes"] = 0
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    assert _settle(store) == timedelta(0)
+    del cfg["capture"]["settle_minutes"]  # written by an older version
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    assert _settle(store) == timedelta(minutes=10)
