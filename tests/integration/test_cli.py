@@ -4,11 +4,16 @@ itself is covered in test_run_compile.py.
 """
 
 import json
-from datetime import datetime, timezone
+import os
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+import lore
 from lore.cli import app
 from lore.schemas import Anchor, Claim, Conflict, Provenance
 from lore.serve.server import Explanation, claim_to_dict
@@ -65,7 +70,11 @@ def test_compile_without_credentials_errors_clearly(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     LoreStore(tmp_path).init()
     result = runner.invoke(
-        app, ["compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")]
+        app,
+        [
+            "compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none"),
+            "--expect-head", "0" * 40,  # accepted: the hooks pass it
+        ],
     )
     assert result.exit_code != 0
     assert "key" in result.stdout.lower() or "key" in str(result.exception).lower()
@@ -176,6 +185,252 @@ def test_default_transcript_dir_is_scoped_to_this_repo(tmp_path, monkeypatch):
     store.config_path.write_text(yaml.safe_dump(cfg))
     assert _transcript_dir(store, None) == tmp_path / "elsewhere"
     assert _transcript_dir(store, tmp_path / "override") == tmp_path / "override"
+
+
+def test_render_rebuilds_the_book_without_a_model(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _seed_claim(tmp_path)
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "rendered 1 active claims" in result.stdout
+    assert "0 claim line(s) changed" in result.stdout
+    book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
+    assert "dedupe billing webhook" in book
+
+
+def test_render_counts_sessions_that_still_need_extraction(tmp_path):
+    from lore.schemas import NSFEvent
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_session(
+        "ses_new",
+        [
+            NSFEvent(
+                session="ses_new", actor="user", kind="user_message",
+                timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+                content="the billing webhook fires twice; we must dedupe it on the key",
+            ),
+            NSFEvent(
+                session="ses_new", actor="agent", kind="agent_message",
+                timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+                content="Right, dedupe on the idempotency key before processing.",
+            ),
+        ],
+    )
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "1 captured session(s) have no cached extraction yet" in result.stdout
+
+
+def test_hook_commands_round_trip(tmp_path, monkeypatch):
+    import lore.hooks as hooks_module
+
+    monkeypatch.setattr(hooks_module, "_import_problem", lambda python: None)  # not the subject
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    for name in ("post-commit", "post-merge", "post-rewrite"):
+        assert f"{name}: written" in result.stdout
+    assert "any non-empty value" in result.stdout
+    for flags in ([], ["--probe"]):
+        result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path), *flags])
+        assert result.exit_code == 0, result.stdout
+        for name in ("post-commit", "post-merge", "post-rewrite"):
+            assert f"{name}: installed\n" in result.stdout
+    assert "last hook output: (no hook has run yet)" in result.stdout
+    log = tmp_path / ".lore" / "cache" / "hook.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("rendered 3 active claims and 0 conflicts\n")
+    result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path)])
+    assert "last hook output: rendered 3 active claims" in result.stdout
+    result = runner.invoke(app, ["hook", "uninstall", "--repo", str(tmp_path)])
+    assert result.exit_code == 0 and "removed" in result.stdout
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path / "nowhere")])
+    assert result.exit_code == 2 and "not inside a git repository" in result.stdout
+
+
+def test_hook_install_refuses_a_hook_it_cannot_safely_edit(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    hook = tmp_path / ".git" / "hooks" / "post-merge"
+    hook.write_text("#!/usr/bin/env node\nconsole.log('mine')\n")
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "error:" in result.stdout and "node script" in result.stdout
+    assert not (tmp_path / ".git" / "hooks" / "post-commit").exists()
+
+
+def _git(repo, *args):
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_render_in_a_store_without_claims_creates_no_files(tmp_path):
+    LoreStore(tmp_path).init()
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "nothing to render" in result.stdout
+    lore_dir = tmp_path / ".lore"
+    assert not (lore_dir / "claims" / "claims.jsonl").exists()
+    assert not (lore_dir / "claims" / "conflicts.jsonl").exists()
+    assert not (lore_dir / "knowledge" / "README.md").exists()
+
+
+def test_render_steps_aside_while_another_compile_holds_the_store(tmp_path):
+    from lore.compile.run import compile_lock
+
+    _seed_claim(tmp_path)
+    with compile_lock(LoreStore(tmp_path)):
+        result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "another compile is running" in result.stdout
+    assert not (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+
+def test_render_with_expect_head_writes_nothing_once_head_moved(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "one")
+    _seed_claim(tmp_path)
+    book = tmp_path / ".lore" / "knowledge" / "README.md"
+
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path), "--expect-head", "0" * 40])
+    assert result.exit_code == 0, result.stdout
+    assert "HEAD moved" in result.stdout and not book.exists()
+
+    head = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path), "--expect-head", head])
+    assert result.exit_code == 0, result.stdout
+    assert "rendered 1 active claims" in result.stdout and book.exists()
+
+
+# GUARDS: renders that overlap (post-merge hooks from a rebase, a teammate's watch
+# loop) must leave claims.jsonl exactly as it was: never empty, never truncated. The
+# first batch runs while this process holds the lock, so every one of them must step
+# aside: a lock that did not exclude other processes would show up here as a render.
+RENDER_PROCESSES = 6
+
+
+def _render_processes(repo):
+    env = {**os.environ, "PYTHONPATH": str(Path(lore.__file__).resolve().parents[1])}
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-m", "lore.cli", "render", "--repo", str(repo)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+        )
+        for _ in range(RENDER_PROCESSES)
+    ]
+    outputs = [p.communicate(timeout=120)[0] for p in procs]
+    assert all(p.returncode == 0 for p in procs), outputs
+    return outputs
+
+
+def test_concurrent_renders_leave_the_claims_file_byte_identical(tmp_path):
+    from lore.compile.run import compile_lock
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims(
+        [
+            Claim(
+                statement=f"claim number {i} about the billing webhook",
+                kind="gotcha", scope="services/billing",
+                provenance=Provenance(session="s", author="a", harness="claude-code"),
+                anchors=[Anchor(source_kind="transcript", ref=f"s#{i}", quote="fires twice")],
+                observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            )
+            for i in range(20)
+        ]
+    )
+    before = store.claims_path.read_bytes()
+    assert before
+
+    with compile_lock(store):
+        held = _render_processes(tmp_path)
+    assert all("skipped: another compile is running" in o for o in held), held
+    assert store.claims_path.read_bytes() == before
+    assert not (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+    free = _render_processes(tmp_path)
+    assert all(o.startswith("rendered") or "another compile is running" in o for o in free), free
+    assert any(o.startswith("rendered") for o in free), free
+    assert store.claims_path.read_bytes() == before
+    assert (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+
+def test_settle_time_comes_from_config_with_a_default_for_older_configs(tmp_path):
+    import yaml
+
+    from lore.cli import _settle
+
+    store = LoreStore(tmp_path)
+    store.init()
+    assert _settle(store) == timedelta(minutes=10)
+    cfg = yaml.safe_load(store.config_path.read_text())
+    cfg["capture"]["settle_minutes"] = 0
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    assert _settle(store) == timedelta(0)
+    del cfg["capture"]["settle_minutes"]  # written by an older version
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    assert _settle(store) == timedelta(minutes=10)
+
+
+# GUARDS: a settle time that is not a number used to be a traceback out of `float()`.
+# It is a config error, and the message names the setting.
+@pytest.mark.parametrize("bad", [None, "abc", -1, True, "inf"])
+def test_an_invalid_settle_time_is_a_clear_error_not_a_traceback(tmp_path, bad):
+    import yaml
+
+    store = LoreStore(tmp_path)
+    store.init()
+    cfg = yaml.safe_load(store.config_path.read_text())
+    cfg["capture"]["settle_minutes"] = bad
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")]
+    )
+    assert result.exit_code == 2, result.stdout
+    assert "capture.settle_minutes" in result.stdout and repr(bad) in result.stdout
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# GUARDS: a manual compile right after a session should not have to wait out the
+# configured settle time or edit the config: `--settle` overrides it for one run.
+def test_settle_can_be_overridden_for_one_run(tmp_path, monkeypatch):
+    import lore.cli as cli_module
+
+    calls = []
+
+    def fake_compile_once(store, transcript_dir, **kwargs):
+        calls.append(kwargs["settle"])
+        return {"ingested": 0, "redactions": 0, "active": 0, "conflicts": 0}
+
+    monkeypatch.setattr(cli_module, "_compile_once", fake_compile_once)
+    LoreStore(tmp_path).init()
+    tdir = str(tmp_path / "none")
+    result = runner.invoke(app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir])
+    assert result.exit_code == 0, result.stdout
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "0"]
+    )
+    assert result.exit_code == 0, result.stdout
+    result = runner.invoke(
+        app, ["watch", "--once", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "2.5"]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert calls == [timedelta(minutes=10), timedelta(0), timedelta(minutes=2.5)]
+
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "-1"]
+    )
+    assert result.exit_code == 2 and "--settle must be a number of minutes" in result.stdout
+    assert len(calls) == 3
 
 
 def test_query_output_strips_terminal_escapes(tmp_path):

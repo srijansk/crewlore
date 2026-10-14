@@ -2,6 +2,10 @@
 
 `crewlore` ships an optional [MCP](https://modelcontextprotocol.io/) server that exposes the compiled knowledge layer to any MCP-speaking agent (Claude Desktop, Claude Code, Cursor, custom clients). The agent pulls the relevant slice of the team's knowledge into its context on demand, and can report back which claims helped.
 
+## Skill or MCP?
+
+If your assistant can run shell commands (Claude Code, Codex, Gemini CLI, Cursor), `lore install` gives it a `/lore` skill that runs `lore query` and `lore feedback` itself, with no server to configure. The MCP server is for clients that cannot run commands, such as Claude Desktop, or that prefer structured tool calls. Both read the same `.lore/`.
+
 ## Install the optional extra
 
 The server lives behind the `serve` extra so the base install stays light:
