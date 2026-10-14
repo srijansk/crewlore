@@ -147,6 +147,87 @@ def test_nothing_is_written_when_head_moved_during_the_compile(tmp_path):
     assert current_head(tmp_path / "nowhere") is None
 
 
+class _ActingExtractor:
+    """Stands in for a model call during which git moves on: runs `act` once, then
+    answers with `claims`."""
+
+    def __init__(self, act, claims):
+        self._act = act
+        self._claims = claims
+
+    def extract(self, events, session_id, known_topics=None):
+        if self._act is not None:
+            self._act()
+            self._act = None
+        return list(self._claims)
+
+
+# GUARDS: a fixup commit, or the later commits of a cherry-pick, land while the model is
+# working; their own hook compiles are skipped by the lock. The first compile is still
+# for the same line of work with the same committed claims, so throwing it away would
+# leave nothing landed until some later commit.
+def test_a_commit_that_follows_the_compiled_one_on_the_same_branch_is_accepted(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "one")
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    compiled_for = current_head(tmp_path)
+
+    def fixup():
+        _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "fixup during the model call")
+
+    extractor = _ActingExtractor(fixup, [_claim("dedupe on idempotency key", "ses_1")])
+    run_compile(store, extractor, expect_head=compiled_for)
+    assert current_head(tmp_path) != compiled_for  # the fixup did land first
+    assert len(store.load_claims()) == 1
+    assert (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+
+# GUARDS: following on the same branch is not enough on its own. A switch to a branch
+# that does not descend from the compiled commit, or a descendant on which the committed
+# claims file differs (a review edit landed meanwhile), means the claims this compile
+# started from are not the ones it would write over.
+def test_a_branch_switch_or_a_changed_claims_file_during_the_compile_is_refused(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "one")
+    _git(tmp_path, "checkout", "-q", "-b", "other")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "other work")
+    _git(tmp_path, "checkout", "-q", "-")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "two")
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    claims = [_claim("dedupe on idempotency key", "ses_1")]
+
+    def switch():
+        _git(tmp_path, "checkout", "-q", "other")
+
+    compiled_for = current_head(tmp_path)
+    with pytest.raises(HeadMoved, match="HEAD moved") as refused:
+        run_compile(store, _ActingExtractor(switch, claims), expect_head=compiled_for)
+    assert "claims file" not in str(refused.value)
+    assert not store.claims_path.exists()
+
+    _git(tmp_path, "checkout", "-q", "-")
+    run_compile(store, DictExtractor({"ses_1": claims}), expect_head=current_head(tmp_path))
+    _git(tmp_path, "add", ".lore/claims/claims.jsonl")
+    _git(tmp_path, "commit", "-q", "-m", "commit the compiled claims")
+    compiled_for = current_head(tmp_path)
+
+    def review():
+        reviewed = store.claims_path.read_text().replace('"status":"active"', '"status":"archived"')
+        assert reviewed != store.claims_path.read_text()
+        store.claims_path.write_text(reviewed)
+        _git(tmp_path, "commit", "-q", "-am", "review: archive the claim")
+
+    newer = [_claim("retry the webhook with backoff", "ses_1")]
+    with pytest.raises(HeadMoved, match="committed claims file changed"):
+        run_compile(store, _ActingExtractor(review, newer), rebuild=True, expect_head=compiled_for)
+    assert all(c.status == "archived" for c in store.load_claims())  # the review stands
+    assert "backoff" not in store.claims_path.read_text()
+
+
 # GUARDS: a render reproduces the stored claims and nothing else — not a cached
 # extraction `lore compile` has not committed yet, not a claim a teammate removed in
 # review that this machine's gitignored cache still holds.

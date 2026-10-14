@@ -51,9 +51,10 @@ ExpectHeadOpt = typer.Option(
     "--expect-head",
     metavar="SHA",
     help=(
-        "Write nothing git tracks if HEAD is no longer this commit by the time the work is "
-        "done (captured sessions and the extraction cache, both gitignored, are kept). The "
-        "git hooks pass the commit they fired on, so a compile that outlives a "
+        "Write nothing git tracks unless, by the time the work is done, HEAD is still this "
+        "commit or follows it on the same branch with the committed claims file unchanged "
+        "(captured sessions and the extraction cache, both gitignored, are kept either "
+        "way). The git hooks pass the commit they fired on, so a compile that outlives a "
         "`git checkout` cannot land in the other branch."
     ),
 )

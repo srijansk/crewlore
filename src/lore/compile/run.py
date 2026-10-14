@@ -5,8 +5,10 @@ model seam) is injected so this is testable end-to-end without a live LLM.
 One compile runs per store at a time (`compile_lock`): a rebase or cherry-pick fires
 the post-commit hook once per commit, and overlapping compiles would otherwise read
 each other's half-written files. A caller that knows which commit it is compiling
-for passes `expect_head`, and nothing git tracks is written if HEAD has moved by the
-time the model answers: the checkout the result belongs to is gone. Serving never
+for passes `expect_head`, and nothing git tracks is written if HEAD has left that
+commit's line of work by the time the model answers (a branch switch, or a commit that
+changed the claims file): the checkout the result belongs to is gone. A commit that
+merely follows it, a fixup landing during the model call, is accepted. Serving never
 takes the lock; it writes only the usage sidecar, and a compile re-reads that sidecar
 just before it persists, so a query served during the model call keeps its count.
 """
@@ -53,14 +55,16 @@ class CompileInProgress(RuntimeError):
 
 
 class HeadMoved(RuntimeError):
-    """HEAD is no longer the commit the caller compiled for; nothing git tracks was
-    written. The captured sessions and the extraction cache, both gitignored, were
-    written before the check and are kept, so the next compile costs nothing."""
+    """HEAD is no longer the commit the caller compiled for, nor a descendant of it with
+    the same committed claims file; nothing git tracks was written. The captured
+    sessions and the extraction cache, both gitignored, were written before the check
+    and are kept, so the next compile costs nothing."""
 
-    def __init__(self, expected: str, actual: str | None):
+    def __init__(self, expected: str, actual: str | None, *, claims_changed: bool = False):
+        why = ", and the committed claims file changed with it" if claims_changed else ""
         super().__init__(
             f"HEAD moved from {expected[:12]} to {actual[:12] if actual else 'no commit'} "
-            "while compiling; nothing tracked written"
+            f"while compiling{why}; nothing tracked written"
         )
         self.expected = expected
         self.actual = actual
@@ -201,11 +205,50 @@ def current_head(repo: Path) -> str | None:
 
 
 def _check_head(store: LoreStore, expect_head: str | None) -> None:
+    """Raise `HeadMoved` unless HEAD is still `expect_head`, or has moved on from it along
+    the same line of work: `expect_head` is an ancestor of HEAD and the claims file is
+    the same blob at both commits (missing at both counts), so the claims this compile
+    started from are the ones it is about to write over. A fixup commit, or the later
+    commits of a cherry-pick, landing during the model call pass; a branch switch, an
+    amend (which replaces the commit rather than following it) or a `claims.jsonl`
+    committed meanwhile do not."""
     if not expect_head:
         return
     actual = current_head(store.root)
-    if actual is None or not actual.startswith(expect_head):
+    if actual is None:
         raise HeadMoved(expect_head, actual)
+    if actual.startswith(expect_head):
+        return
+    if not _is_ancestor(store.root, expect_head, actual):
+        raise HeadMoved(expect_head, actual)
+    if _claims_blob(store, expect_head) != _claims_blob(store, actual):
+        raise HeadMoved(expect_head, actual, claims_changed=True)
+
+
+def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    """Whether `ancestor` is reachable from `descendant` (a commit is its own ancestor).
+    Exit 1 means it is not; any other failure means one of them is not a commit here."""
+    return _git_ok(repo, "merge-base", "--is-ancestor", ancestor, descendant) is not None
+
+
+def _claims_blob(store: LoreStore, commit: str) -> str | None:
+    """The blob id of the claims file as committed at `commit`, or None when that commit
+    has none. The `./` makes git resolve the path from the store's root, which need not
+    be the repository's."""
+    relative = store.claims_path.relative_to(store.root).as_posix()
+    return _git_ok(store.root, "rev-parse", "-q", "--verify", f"{commit}:./{relative}")
+
+
+def _git_ok(repo: Path, *args: str) -> str | None:
+    """git's stdout, stripped, when the command succeeds; None when it fails or git is
+    not there."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True
+        )
+    except OSError:
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
 
 
 # --- compile ----------------------------------------------------------------------
@@ -249,8 +292,9 @@ def run_compile(
     persist claims, conflicts and the book.
 
     Raises `CompileInProgress` if another compile holds the store, and `HeadMoved`,
-    after the model work but before any tracked write, if `expect_head` no longer
-    names HEAD (the extraction cache, gitignored, is already written by then).
+    after the model work but before any tracked write, if HEAD is no longer
+    `expect_head` or a descendant of it with the same committed claims file (see
+    `_check_head`; the extraction cache, gitignored, is already written by then).
     """
     with compile_lock(store):
         result = _compile(store, extractor, rebuild=rebuild)
