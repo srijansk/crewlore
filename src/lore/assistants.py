@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -249,6 +250,8 @@ def install(
     """
     from lore.assistant_hooks import install_hooks, load_settings, settings_path
 
+    if hooks and "claude" not in platforms:
+        raise AssistantsError("--hooks installs Claude Code hooks; add claude to --platform")
     targets = [target(name, project=project, repo=repo) for name in platforms]
     settings = settings_path(project=project, repo=Path(repo)) if hooks else None
     for tgt in targets:
@@ -281,6 +284,12 @@ def install(
                     lines.append(f"claude: hooks {outcome} in {settings}")
                 else:
                     lines.append(f"{tgt.platform}: hooks are available for Claude Code only")
+            if shutil.which("lore") is None:
+                lines.append(
+                    "note: `lore` is not on this shell's PATH. Claude Code runs hooks with the "
+                    "PATH it was started with, so until crewlore is installed where that shell "
+                    "finds it (`pipx ensurepath`), the hooks stay silent."
+                )
     except OSError as exc:
         done = "; ".join(lines) or "nothing"
         raise AssistantsError(f"{exc}. Already written: {done}") from exc

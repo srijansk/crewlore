@@ -116,7 +116,7 @@ class KnowledgeServer:
                 c.usage.times_served += 1
                 c.usage.last_served_at = now
         if served_ids:
-            self.store.write_claims(claims)
+            self.store.write_usage(claims)
         return {c.id: c for c in claims if c.id in served_ids}
 
     def mark_influential(self, claim_ids: list[str]) -> None:
@@ -140,4 +140,4 @@ class KnowledgeServer:
         for c in claims:
             if c.id in ids:
                 setattr(c.usage, field, getattr(c.usage, field) + 1)
-        self.store.write_claims(claims)
+        self.store.write_usage(claims)

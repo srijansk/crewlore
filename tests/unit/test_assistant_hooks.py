@@ -1,9 +1,12 @@
 """`lore install --hooks` puts two Claude Code hooks into the settings file, and
-`lore claude-hook` answers them: the claims for the edited file's scope, once per scope
-per session, or the claims relevant to a prompt, as facts. Silence everywhere else."""
+`lore claude-hook` answers them: the claims for a read or edited file's scope, once per
+scope per conversation, or the claims relevant to a prompt, as facts. Silence everywhere
+else, and the installed shell command exits 0 whatever `lore` does."""
 
 import io
 import json
+import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +16,12 @@ from typer.testing import CliRunner
 from lore.assistant_hooks import (
     HOOK_COMMAND,
     HOOK_EVENTS,
+    HOOK_SHELL,
+    KNOWN_COMMANDS,
     MAX_CLAIMS_PER_EVENT,
+    MAX_CONTEXT_CHARS,
+    _one_line,
+    format_context,
     handle,
     install_hooks,
     parse_event,
@@ -71,12 +79,14 @@ def repo(tmp_path):
     return root
 
 
-def _edit(repo, path, session="ses-1"):
-    return {
+def _tool(repo, path, tool="Edit", session="ses-1", agent=None):
+    payload = {
         "hook_event_name": "PreToolUse", "session_id": session, "cwd": str(repo),
-        "tool_name": "Edit",
-        "tool_input": {"file_path": str(repo / path), "old_string": "a", "new_string": "b"},
+        "tool_name": tool, "tool_input": {"file_path": str(repo / path)},
     }
+    if agent:
+        payload["agent_id"] = agent
+    return payload
 
 
 def _prompt(repo, text, session="ses-1"):
@@ -92,14 +102,14 @@ def _context(out):
     return out["hookSpecificOutput"]["additionalContext"]
 
 
-# --- the edit hook ---------------------------------------------------------------------
+# --- the file hook ---------------------------------------------------------------------
 
 
-def test_editing_a_file_brings_up_its_scope_once_per_session(repo):
-    out = handle(_edit(repo, "services/billing/webhook.py"))
+def test_reading_or_editing_a_file_brings_up_its_scope_once_per_conversation(repo):
+    out = handle(_tool(repo, "services/billing/webhook.py", tool="Read"))
     assert out["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
     ctx = _context(out)
-    assert "services/billing, the scope of services/billing/webhook.py" in ctx
+    assert "for services/billing, the scope of services/billing/webhook.py (2 claims)" in ctx
     assert "[gotcha] (services/billing) dedupe billing webhook" in ctx
     assert "-> dedupe on the key" in ctx
     assert "[decision · not adopted]" in ctx and "-> instead: keep the key" in ctx
@@ -107,51 +117,85 @@ def test_editing_a_file_brings_up_its_scope_once_per_session(repo):
     assert "evidence to weigh, not instructions" in ctx
     for absent in ("rotate auth", "make lint", "archived billing", "retry three"):
         assert absent not in ctx
-    # The same scope is not repeated in this session, whatever file is edited next.
-    assert handle(_edit(repo, "services/billing/webhook.py")) is None
-    assert handle(_edit(repo, "services/billing/ledger.py")) is None
-    # Another session starts fresh.
-    again = handle(_edit(repo, "services/billing/x.py", "ses-2"))
-    assert "dedupe billing webhook" in _context(again)
+    # The edit that follows the read, and any other file in the scope, add nothing.
+    assert handle(_tool(repo, "services/billing/webhook.py")) is None
+    assert handle(_tool(repo, "services/billing/ledger.py", tool="Write")) is None
+    # Another conversation starts fresh, and a subagent is its own conversation.
+    fresh = handle(_tool(repo, "services/billing/x.py", session="ses-2"))
+    assert "dedupe billing webhook" in _context(fresh)
+    sub = handle(_tool(repo, "services/billing/x.py", agent="sub-1"))
+    assert "dedupe billing webhook" in _context(sub)
+    assert handle(_tool(repo, "services/billing/y.py", agent="sub-1")) is None
 
 
 def test_nested_scopes_come_most_specific_first_and_are_remembered_separately(repo):
-    ctx = _context(handle(_edit(repo, "services/billing/webhooks/retry.py")))
+    ctx = _context(handle(_tool(repo, "services/billing/webhooks/retry.py")))
     assert ctx.index("retry three times") < ctx.index("dedupe billing webhook")
     assert "services/billing/webhooks, services/billing" in ctx
-    assert handle(_edit(repo, "services/billing/other.py")) is None
-    # A scope shown earlier is skipped; a new one still comes up.
-    ctx = _context(handle(_edit(repo, "services/auth/tokens.py")))
+    assert handle(_tool(repo, "services/billing/other.py")) is None
+    ctx = _context(handle(_tool(repo, "services/auth/tokens.py")))
     assert "rotate auth tokens" in ctx and "dedupe billing" not in ctx
 
 
-def test_edits_outside_any_scope_or_repo_are_silent(repo, tmp_path):
-    assert handle(_edit(repo, "docs/README.md")) is None
-    outside = {**_edit(repo, "x"), "tool_input": {"file_path": str(tmp_path / "elsewhere.py")}}
+def test_files_outside_any_scope_or_repo_are_silent(repo, tmp_path):
+    assert handle(_tool(repo, "docs/README.md")) is None
+    outside = {**_tool(repo, "x"), "tool_input": {"file_path": str(tmp_path / "elsewhere.py")}}
     assert handle(outside) is None
     bare = tmp_path / "bare"
     bare.mkdir()
-    assert handle(_edit(bare, "services/billing/webhook.py")) is None
+    assert handle(_tool(bare, "services/billing/webhook.py")) is None
 
 
-def test_the_edit_hook_counts_as_serving(repo):
-    handle(_edit(repo, "services/billing/webhook.py"))
-    served = {c.statement: c.usage.times_served for c in LoreStore(repo).load_claims()}
+def test_the_sessions_repo_wins_over_a_vendored_checkout_with_its_own_store(repo):
+    vendored = repo / "services" / "billing" / "vendor" / "inner"
+    vendored.mkdir(parents=True)
+    LoreStore(vendored).init()
+    ctx = _context(handle(_tool(repo, "services/billing/vendor/inner/src/x.py")))
+    assert "dedupe billing webhook" in ctx
+
+
+def test_the_file_hook_counts_as_serving_without_rewriting_the_claims_file(repo):
+    store = LoreStore(repo)
+    before = store.claims_path.read_bytes()
+    mtime = store.claims_path.stat().st_mtime_ns
+    handle(_tool(repo, "services/billing/webhook.py"))
+    served = {c.statement: c.usage.times_served for c in store.load_claims()}
     assert served["dedupe billing webhook on idempotency key"] == 1
     assert served["Redis for the idempotency key was tried and not adopted"] == 1
     assert served["rotate auth tokens hourly"] == 0
+    assert store.claims_path.read_bytes() == before
+    assert store.claims_path.stat().st_mtime_ns == mtime
 
 
-def test_a_scope_with_many_claims_is_capped(tmp_path):
+def test_many_claims_are_capped_as_whole_claims_with_an_honest_count(tmp_path):
     root = tmp_path / "big"
     root.mkdir()
     store = LoreStore(root)
     store.init()
-    store.write_claims([_claim(f"claim number {i} about billing", "services/billing")
-                        for i in range(MAX_CLAIMS_PER_EVENT + 5)])
-    ctx = _context(handle(_edit(root, "services/billing/a.py")))
-    assert ctx.count("\n- [") == MAX_CLAIMS_PER_EVENT
-    assert f"({MAX_CLAIMS_PER_EVENT} of {MAX_CLAIMS_PER_EVENT + 5} claims)" in ctx
+    store.write_claims([
+        _claim(f"claim number {i} about billing " + "detail " * 150, "services/billing",
+               kind="decision", adoption="not_adopted", action="do the other thing " * 40)
+        for i in range(MAX_CLAIMS_PER_EVENT + 5)
+    ])
+    ctx = _context(handle(_tool(root, "services/billing/a.py")))
+    shown = ctx.count("\n- [")
+    assert 0 < shown < MAX_CLAIMS_PER_EVENT and len(ctx) <= MAX_CONTEXT_CHARS
+    assert f"({shown} of {MAX_CLAIMS_PER_EVENT + 5} claims)" in ctx
+    assert ctx.count("-> instead:") == shown  # never a statement without its action
+    assert f"- {MAX_CLAIMS_PER_EVENT + 5 - shown} more not shown" in ctx
+    assert "lore explain" not in ctx
+    served = sum(c.usage.times_served for c in store.load_claims())
+    assert served == shown
+
+
+def test_format_context_counts_and_footer():
+    claims = [_claim(f"c{i}", "s") for i in range(MAX_CLAIMS_PER_EVENT + 2)]
+    text, shown = format_context("for s", claims)
+    assert len(shown) == MAX_CLAIMS_PER_EVENT
+    assert f"({MAX_CLAIMS_PER_EVENT} of {MAX_CLAIMS_PER_EVENT + 2} claims)" in text
+    assert "2 more not shown" in text
+    text, shown = format_context("for s", claims[:3])
+    assert "(3 claims)" in text and "more not shown" not in text
 
 
 def test_scopes_covering_normalises_spellings_and_orders_by_specificity():
@@ -159,7 +203,7 @@ def test_scopes_covering_normalises_spellings_and_orders_by_specificity():
         _claim("a", "./services/billing/"),
         _claim("b", "services\\billing\\webhooks"),
         _claim("c", "services/billing-v2"),
-        _claim("d", "services"),
+        _claim("d", "/services"),
         _claim("e", "."),
         _claim("f", "services/billing", status="archived"),
     ]
@@ -167,6 +211,13 @@ def test_scopes_covering_normalises_spellings_and_orders_by_specificity():
     assert list(covering) == ["services/billing/webhooks", "services/billing", "services"]
     assert [c.statement for c in covering["services/billing"]] == ["a"]
     assert scopes_covering("lib/x.py", claims) == {}
+
+
+def test_one_line_strips_controls_and_format_characters_but_keeps_joiners():
+    noisy = "Dedupe\x1b[31m on\n the key" + chr(0x200B) + chr(0x202E)
+    assert _one_line(noisy) == "Dedupe on the key"
+    assert _one_line("क्" + chr(0x200D) + "ष") == "क्" + chr(0x200D) + "ष"
+    assert _one_line(None) == "" and _one_line(42) == "42"
 
 
 # --- the prompt hook ---------------------------------------------------------------------
@@ -179,8 +230,7 @@ def test_a_prompt_brings_up_relevant_claims_when_enough_words_overlap(repo):
     assert "dedupe billing webhook" in ctx and "rotate auth" not in ctx
     served = {c.statement: c.usage.times_served for c in LoreStore(repo).load_claims()}
     assert served["dedupe billing webhook on idempotency key"] == 1
-    # One shared word is not enough to interrupt every prompt.
-    assert handle(_prompt(repo, "billing")) is None
+    assert handle(_prompt(repo, "billing")) is None  # one shared word is not enough
     assert handle(_prompt(repo, "   ")) is None
     assert handle(_prompt(repo, "write a haiku about the sea")) is None
 
@@ -191,17 +241,18 @@ def test_a_prompt_brings_up_relevant_claims_when_enough_words_overlap(repo):
 @pytest.mark.parametrize(
     "payload",
     [None, "junk", [], {"hook_event_name": "PostToolUse", "cwd": "."},
-     {"hook_event_name": "PreToolUse", "cwd": "."}, {"hook_event_name": "PreToolUse",
-     "tool_input": {"file_path": 7}}],
+     {"hook_event_name": "PreToolUse", "cwd": "."},
+     {"hook_event_name": "PreToolUse", "tool_input": {"file_path": 7}}],
 )
 def test_unknown_events_and_malformed_payloads_are_silent(payload):
     assert handle(payload) is None
 
 
 def test_parse_event_reads_the_fields_the_hooks_use(repo):
-    event = parse_event(_edit(repo, "services/billing/webhook.py", session="abc"))
-    assert (event.name, event.session, event.cwd) == ("PreToolUse", "abc", repo)
+    event = parse_event(_tool(repo, "services/billing/webhook.py", session="abc", agent="sub"))
+    assert (event.name, event.session, event.agent, event.cwd) == ("PreToolUse", "abc", "sub", repo)
     assert event.file_path == repo / "services/billing/webhook.py"
+    assert parse_event(_tool(repo, "x")).agent == "main"
     assert parse_event({"hook_event_name": "SessionStart"}) is None
 
 
@@ -209,7 +260,7 @@ def test_run_from_stdin_never_fails_and_prints_one_json_line(repo):
     out = io.StringIO()
     assert run_from_stdin(io.StringIO("this is not json"), out) == 0 and out.getvalue() == ""
     out = io.StringIO()
-    assert run_from_stdin(io.StringIO(json.dumps(_edit(repo, "services/billing/w.py"))), out) == 0
+    assert run_from_stdin(io.StringIO(json.dumps(_tool(repo, "services/billing/w.py"))), out) == 0
     lines = out.getvalue().splitlines()
     assert len(lines) == 1
     context = json.loads(lines[0])["hookSpecificOutput"]["additionalContext"]
@@ -217,13 +268,39 @@ def test_run_from_stdin_never_fails_and_prints_one_json_line(repo):
 
 
 def test_cli_claude_hook_reads_the_event_on_stdin(repo):
-    event = json.dumps(_edit(repo, "services/auth/t.py"))
+    event = json.dumps(_tool(repo, "services/auth/t.py"))
     result = runner.invoke(app, ["claude-hook"], input=event)
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert "rotate auth tokens hourly" in payload["hookSpecificOutput"]["additionalContext"]
-    result = runner.invoke(app, ["claude-hook"], input=json.dumps(_edit(repo, "docs/x.md")))
+    result = runner.invoke(app, ["claude-hook"], input=json.dumps(_tool(repo, "docs/x.md")))
     assert result.exit_code == 0 and result.stdout == ""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the installed command is for a POSIX shell")
+def test_the_installed_shell_command_exits_0_whatever_lore_does(tmp_path):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+
+    def run(fake_lore: str | None):
+        if fake_lore is not None:
+            (bindir / "lore").write_text("#!/bin/sh\n" + fake_lore)
+            (bindir / "lore").chmod(0o755)
+        elif (bindir / "lore").exists():
+            (bindir / "lore").unlink()
+        return subprocess.run(
+            ["sh", "-c", HOOK_SHELL], input=b"{}", capture_output=True,
+            env={"PATH": f"{bindir}:/usr/bin:/bin"}, timeout=30,
+        )
+
+    older = run('echo "Usage: lore [OPTIONS] COMMAND\\nError: No such command" >&2; exit 2')
+    assert older.returncode == 0 and older.stdout == b""
+    broken = run("exit 1")
+    assert broken.returncode == 0
+    answer = run("cat >/dev/null; echo '{\"hookSpecificOutput\": {}}'; exit 0")
+    assert answer.returncode == 0 and json.loads(answer.stdout) == {"hookSpecificOutput": {}}
+    absent = run(None)
+    assert absent.returncode == 0 and absent.stdout == b""
 
 
 # --- the settings file -----------------------------------------------------------------
@@ -244,8 +321,8 @@ def test_install_hooks_merges_into_existing_settings_and_is_idempotent(tmp_path)
     assert data["permissions"] == existing["permissions"]
     assert data["hooks"]["PreToolUse"][0] == existing["hooks"]["PreToolUse"][0]
     ours = data["hooks"]["PreToolUse"][1]
-    assert ours["matcher"] == HOOK_EVENTS["PreToolUse"]
-    assert HOOK_COMMAND in ours["hooks"][0]["command"] and ours["hooks"][0]["timeout"] > 0
+    assert ours["matcher"] == HOOK_EVENTS["PreToolUse"] == "Read|Edit|Write"
+    assert ours["hooks"][0]["command"] == HOOK_SHELL and ours["hooks"][0]["timeout"] > 0
     assert "matcher" not in data["hooks"]["UserPromptSubmit"][0]
     assert path.read_text().splitlines()[1].startswith("    ")  # the file's own indent
     assert install_hooks(path, tmp_path) == "already current"
@@ -253,6 +330,20 @@ def test_install_hooks_merges_into_existing_settings_and_is_idempotent(tmp_path)
     data = json.loads(path.read_text())
     assert data["hooks"] == existing["hooks"] and HOOK_COMMAND not in path.read_text()
     assert uninstall_hooks(path, tmp_path) == "absent"
+
+
+def test_install_hooks_keeps_line_endings_tabs_and_non_ascii(tmp_path):
+    path = tmp_path / "settings.json"
+    original = '{\r\n\t"permissions": {"allow": ["Bash(echo ✓ — ready)"]}\r\n}\r\n'
+    path.write_bytes(original.encode("utf-8"))
+    assert install_hooks(path, tmp_path) == "written"
+    text = path.read_bytes().decode("utf-8")
+    assert "\r\n" in text and "\n" not in text.replace("\r\n", "")
+    assert '\t"permissions"' in text and "✓ — ready" in text and "\\u" not in text
+    assert uninstall_hooks(path, tmp_path) == "removed"
+    after = path.read_bytes().decode("utf-8")
+    assert json.loads(after) == json.loads(original)  # the data, in the file's own style
+    assert "\r\n" in after and '\t"permissions"' in after and "✓ — ready" in after
 
 
 def test_install_hooks_creates_and_uninstall_removes_a_file_that_held_only_ours(tmp_path):
@@ -263,17 +354,29 @@ def test_install_hooks_creates_and_uninstall_removes_a_file_that_held_only_ours(
     assert not path.exists() and not path.parent.exists()
 
 
+def test_ownership_is_exact_so_a_users_own_entry_survives(tmp_path):
+    path = tmp_path / "settings.json"
+    theirs = {"type": "command", "command": f"my-audit-log && {HOOK_COMMAND} | tee -a log"}
+    path.write_text(json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [theirs]}]}}))
+    install_hooks(path, tmp_path)
+    assert uninstall_hooks(path, tmp_path) == "removed"
+    assert json.loads(path.read_text())["hooks"]["UserPromptSubmit"] == [{"hooks": [theirs]}]
+    assert HOOK_SHELL in KNOWN_COMMANDS
+
+
 def test_install_hooks_refuses_what_it_cannot_safely_edit(tmp_path):
     path = tmp_path / "settings.json"
-    path.write_text("{not json")
-    with pytest.raises(AssistantsError, match="not valid JSON"):
-        install_hooks(path, tmp_path)
-    path.write_text("[]")
-    with pytest.raises(AssistantsError, match="JSON object"):
-        install_hooks(path, tmp_path)
-    path.write_text('{"hooks": "nope"}')
-    with pytest.raises(AssistantsError, match="'hooks' is not an object"):
-        install_hooks(path, tmp_path)
+    for bad, message in (
+        ("{not json", "not valid JSON"),
+        ("[]", "JSON object"),
+        ('{"hooks": "nope"}', "'hooks' is not an object"),
+        ('{"hooks": {"PreToolUse": {"matcher": "Edit"}}}', "not a list of hook groups"),
+        ('{"hooks": {"PreToolUse": ["text"]}}', "not a list of hook groups"),
+    ):
+        path.write_text(bad)
+        with pytest.raises(AssistantsError, match=message):
+            install_hooks(path, tmp_path)
+        assert path.read_text() == bad
     link = tmp_path / "link.json"
     link.symlink_to(path)
     with pytest.raises(AssistantsError, match="symbolic link"):
@@ -282,10 +385,21 @@ def test_install_hooks_refuses_what_it_cannot_safely_edit(tmp_path):
         uninstall_hooks(link, tmp_path)
 
 
-def test_install_with_hooks_through_the_installer_and_cli(home, repo):
+def test_a_bad_settings_file_is_refused_before_the_skill_is_written(home, repo):
+    settings = repo / ".claude" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"hooks": {"PreToolUse": {"matcher": "Edit"}}}')
+    with pytest.raises(AssistantsError, match="not a list of hook groups"):
+        install(["claude"], project=True, repo=repo, hooks=True)
+    assert not (repo / ".claude" / "skills").exists()
+
+
+def test_install_with_hooks_through_the_installer_and_cli(home, repo, monkeypatch):
+    monkeypatch.setattr("lore.assistants.shutil.which", lambda name: "/usr/local/bin/lore")
     lines = install(["claude", "codex"], project=True, repo=repo, hooks=True)
     assert any("claude: hooks written" in ln for ln in lines)
     assert any("codex: hooks are available for Claude Code only" in ln for ln in lines)
+    assert not any("note:" in ln for ln in lines)
     settings = settings_path(project=True, repo=repo)
     assert settings == repo / ".claude" / "settings.json" and HOOK_COMMAND in settings.read_text()
     lines = uninstall(["claude"], project=True, repo=repo)
@@ -296,3 +410,12 @@ def test_install_with_hooks_through_the_installer_and_cli(home, repo):
     assert settings_path(project=False, repo=repo) == home / ".claude" / "settings.json"
     result = runner.invoke(app, ["uninstall", "--platform", "claude"])
     assert result.exit_code == 0 and not (home / ".claude" / "settings.json").exists()
+
+
+def test_hooks_need_claude_and_warn_when_lore_is_off_path(home, repo, monkeypatch):
+    with pytest.raises(AssistantsError, match="add claude to --platform"):
+        install(["codex"], project=True, repo=repo, hooks=True)
+    assert not (repo / ".agents").exists() and not (repo / ".claude").exists()
+    monkeypatch.setattr("lore.assistants.shutil.which", lambda name: None)
+    lines = install(["claude"], project=True, repo=repo, hooks=True)
+    assert any("not on this shell's PATH" in ln for ln in lines)

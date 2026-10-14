@@ -143,6 +143,11 @@ class LoreStore:
                 out[row["id"]] = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
         return out
 
+    def write_usage(self, claims: list[Claim]) -> None:
+        """Persist usage alone. Serving and feedback change nothing but usage, so they
+        leave the committed claims file untouched instead of rewriting it."""
+        self._write_usage(claims)
+
     def _write_usage(self, claims: list[Claim]) -> None:
         # Only persist non-default usage, keyed by claim id, to keep the sidecar small.
         rows = [

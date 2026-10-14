@@ -448,9 +448,10 @@ def install(
         False,
         "--hooks",
         help=(
-            "Also install Claude Code hooks that put the claims for a file's scope in front "
-            "of the assistant before it edits the file, and the claims relevant to each "
-            "prompt (writes .claude/settings.json with --project, else ~/.claude/settings.json)."
+            "Also install Claude Code hooks: when the assistant reads or edits a file, the "
+            "claims for that file's scope join its context (once per scope per conversation), "
+            "and each prompt brings up the claims relevant to it. Writes .claude/settings.json "
+            "with --project, else ~/.claude/settings.json; needs a POSIX shell."
         ),
     ),
 ):

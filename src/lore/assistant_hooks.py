@@ -1,28 +1,32 @@
-"""Claude Code hooks that put the team's compiled knowledge in front of the assistant at
-the moments it matters: when it is about to edit a file, and when the user asks for
-something the layer knows about.
+"""Claude Code hooks that put the team's compiled knowledge in front of the assistant
+while it works: when it reads or edits a file, and when the user asks for something the
+layer knows about.
 
 Two hooks, both installed by `lore install --hooks` into Claude Code's settings file:
 
-* `PreToolUse` on `Edit` and `Write`: the claims whose scope covers the file being
-  edited, once per scope per session, so a declined approach is in view before it is
-  proposed again;
+* `PreToolUse` on `Read`, `Edit` and `Write`: the claims whose scope covers the file,
+  once per scope per session. Claude Code delivers the text next to the tool's result,
+  so in the usual read-then-edit flow the claims are in view before the edit; after a
+  direct edit they arrive with its result, before the edits that follow.
 * `UserPromptSubmit`: the claims most relevant to the prompt, as `lore query` would
-  return them.
+  return them, with a two-word relevance floor.
 
 Both run `lore claude-hook`, which reads the event on stdin and prints the context on
 stdout in the shape Claude Code expects. The text is written as facts about the
 repository, never as commands, and says that claims are evidence to weigh. A hook must
 never get in the way: anything unexpected (no `.lore/`, bad input, an error) ends with
-no output and exit 0, so Claude Code carries on as if the hook were not there.
+no output and exit 0, and the installed shell command exits 0 whatever `lore` does, so
+Claude Code carries on as if the hook were not there.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -33,22 +37,28 @@ from lore.serve.server import KnowledgeServer, claim_label
 from lore.store import LoreStore
 
 HOOK_COMMAND = "lore claude-hook"
-# Shell form, so a teammate who has not installed crewlore gets silence rather than a
-# "command not found" notice on every edit.
-HOOK_SHELL = f"command -v lore >/dev/null 2>&1 && exec {HOOK_COMMAND}; exit 0"
+# Shell form. `lore` missing from PATH (a teammate without crewlore) gives silence, and
+# the trailing `exit 0` makes the hook's status 0 whatever `lore` returned: an older
+# crewlore without this subcommand exits 2, which Claude Code would otherwise read as
+# "block this edit", on every edit, from a settings file the team committed.
+HOOK_SHELL = f"command -v lore >/dev/null 2>&1 && {HOOK_COMMAND}; exit 0"
+# The exact command strings crewlore has installed. Ownership is exact, so a user's own
+# entry that happens to mention `lore claude-hook` is never touched.
+KNOWN_COMMANDS = (HOOK_SHELL,)
 HOOK_TIMEOUT_SECONDS = 10
 # Event -> tool matcher (None: the event has no matcher).
-HOOK_EVENTS: dict[str, str | None] = {"PreToolUse": "Edit|Write", "UserPromptSubmit": None}
+HOOK_EVENTS: dict[str, str | None] = {"PreToolUse": "Read|Edit|Write", "UserPromptSubmit": None}
 
-# How much to put in front of the assistant. Claude Code caps hook context at 10,000
-# characters; staying well under keeps the claims inline rather than behind a file path.
+# How much to put in front of the assistant. Claude Code caps a hook's context at
+# 10,000 characters; staying under it keeps the claims inline rather than behind a file
+# path, and whole claims only, so a declined approach never loses its "instead" line.
 MAX_CLAIMS_PER_EVENT = 8
-MAX_CONTEXT_CHARS = 6000
+MAX_CONTEXT_CHARS = 9000
 # A prompt must share at least this many content words with a claim to bring it up; one
 # shared word would surface something on nearly every prompt.
 MIN_PROMPT_OVERLAP = 2
-# Per-session memory of which scopes were already shown lives in .lore/cache (gitignored)
-# and is dropped after this long, so the directory does not grow without bound.
+# Per-conversation memory of which scopes were already shown lives in .lore/cache
+# (gitignored) and is dropped after this long, so the directory does not grow forever.
 STATE_TTL_SECONDS = 7 * 24 * 3600
 
 _STATE_DIR = "assistant-hook"
@@ -65,7 +75,7 @@ def settings_path(*, project: bool, repo: Path) -> Path:
 
 
 def _is_ours(hook: object) -> bool:
-    return isinstance(hook, dict) and HOOK_COMMAND in str(hook.get("command", ""))
+    return isinstance(hook, dict) and hook.get("command") in KNOWN_COMMANDS
 
 
 def _entry(matcher: str | None) -> dict:
@@ -74,22 +84,30 @@ def _entry(matcher: str | None) -> dict:
 
 
 def load_settings(path: Path) -> tuple[dict, str]:
-    """The settings object and the file's text (empty when the file does not exist).
+    """The settings object and the file's text as stored (empty when the file is absent).
 
-    Refuses, as an `AssistantsError`, a file that is not a JSON object or whose
-    `hooks` key is not an object, so nothing is ever rewritten blind.
+    Refuses, as an `AssistantsError`, a file that is not a JSON object, a `hooks` key
+    that is not an object, or an event whose value is not a list of hook groups, so
+    nothing is ever rewritten blind and nothing else is written first.
     """
     if not path.exists():
         return {}, ""
     try:
-        text = path.read_text(encoding="utf-8")
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
         data = json.loads(text) if text.strip() else {}
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AssistantsError(f"{path} is not valid JSON; not touching it ({exc})") from exc
     if not isinstance(data, dict):
         raise AssistantsError(f"{path} does not hold a JSON object; not touching it")
-    if "hooks" in data and not isinstance(data["hooks"], dict):
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
         raise AssistantsError(f"{path}: 'hooks' is not an object; not touching it")
+    for event, groups in hooks.items():
+        if not isinstance(groups, list) or not all(isinstance(g, dict) for g in groups):
+            raise AssistantsError(
+                f"{path}: hooks.{event} is not a list of hook groups; not touching it"
+            )
     return data, text
 
 
@@ -97,12 +115,9 @@ def _without_ours(hooks: dict) -> dict:
     """The hooks section minus crewlore's entries; groups and events left empty go too."""
     out: dict = {}
     for event, groups in hooks.items():
-        if not isinstance(groups, list):
-            out[event] = groups
-            continue
         kept = []
         for group in groups:
-            if isinstance(group, dict) and isinstance(group.get("hooks"), list):
+            if isinstance(group.get("hooks"), list):
                 rest = [h for h in group["hooks"] if not _is_ours(h)]
                 if not rest:
                     continue
@@ -114,14 +129,16 @@ def _without_ours(hooks: dict) -> dict:
 
 
 def _dump(data: dict, like: str) -> str:
-    """JSON text in the style of the existing file: its indent and line ending."""
-    indent = 2
+    """JSON text in the style of the existing file: its indent (spaces or a tab), its
+    line ending, and its non-ASCII characters as they were."""
+    indent: int | str = 2
     for line in like.splitlines():
-        stripped = line.lstrip(" ")
+        stripped = line.lstrip(" \t")
         if stripped and len(stripped) < len(line):
-            indent = len(line) - len(stripped)
+            lead = line[: len(line) - len(stripped)]
+            indent = "\t" if "\t" in lead else len(lead)
             break
-    text = json.dumps(data, indent=indent) + "\n"
+    text = json.dumps(data, indent=indent, ensure_ascii=False) + "\n"
     return text.replace("\n", "\r\n") if "\r\n" in like else text
 
 
@@ -143,7 +160,8 @@ def install_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
     if new == text:
         return "already current"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new, encoding="utf-8", newline="")
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(new)
     return "written"
 
 
@@ -166,7 +184,8 @@ def uninstall_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
         path.unlink()
         _prune_dirs(path.parent, root)
         return "removed file"
-    path.write_text(_dump(rest, text), encoding="utf-8", newline="")
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(_dump(rest, text))
     return "removed"
 
 
@@ -177,6 +196,7 @@ def uninstall_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
 class Event:
     name: str
     session: str
+    agent: str
     cwd: Path
     prompt: str
     file_path: Path | None
@@ -184,7 +204,8 @@ class Event:
 
 def parse_event(payload: object) -> Event | None:
     """The fields this module uses from a Claude Code hook payload; None when it is not
-    an event these hooks handle."""
+    an event these hooks handle. A subagent's events carry an `agent_id`; its
+    conversation is separate from the main one, so it is remembered separately."""
     if not isinstance(payload, dict):
         return None
     name = payload.get("hook_event_name")
@@ -195,6 +216,7 @@ def parse_event(payload: object) -> Event | None:
     return Event(
         name=name,
         session=str(payload.get("session_id") or "unknown"),
+        agent=str(payload.get("agent_id") or "main"),
         cwd=Path(str(payload.get("cwd") or ".")),
         prompt=str(payload.get("prompt") or ""),
         file_path=Path(raw_path) if isinstance(raw_path, str) and raw_path else None,
@@ -209,11 +231,19 @@ def find_repo(start: Path) -> Path | None:
     return None
 
 
+def _under(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def _normalise_scope(scope: str) -> str:
     scope = scope.strip().replace("\\", "/")
     if scope.startswith("./"):
         scope = scope[2:]
-    return scope.rstrip("/")
+    return scope.strip("/")
 
 
 def scopes_covering(rel_path: str, claims: list[Claim]) -> dict[str, list[Claim]]:
@@ -239,13 +269,13 @@ def scopes_covering(rel_path: str, claims: list[Claim]) -> dict[str, list[Claim]
     }
 
 
-class _SessionState:
-    """Which scopes this session has already been shown, so a hook that fires on every
-    edit tells the assistant about a scope once."""
+class _ConversationState:
+    """Which scopes this conversation has already been shown, so a hook that fires on
+    every read and edit tells the assistant about a scope once."""
 
-    def __init__(self, store: LoreStore, session: str):
+    def __init__(self, store: LoreStore, conversation: str):
         directory = store.lore / "cache" / _STATE_DIR
-        digest = hashlib.sha256(session.encode("utf-8")).hexdigest()[:16]
+        digest = hashlib.sha256(conversation.encode("utf-8")).hexdigest()[:16]
         self._dir = directory
         self._path = directory / f"{digest}.json"
         self.scopes: set[str] = set()
@@ -270,36 +300,64 @@ class _SessionState:
                 pass
 
 
-def _one_line(text: str | None) -> str:
-    """Model-written text as one line: whitespace runs, newlines included, become one
-    space, so a claim occupies exactly the lines the layout gives it. (The escape and
-    invisible-character stripping that `lore query` applies belongs here too once the
-    shared text module lands.)"""
-    return " ".join(str(text or "").split())
+# Format characters that scripts and emoji depend on: zero-width non-joiner and joiner.
+_KEEP_FORMAT = {chr(0x200C), chr(0x200D)}
+# Terminal escape sequences (colours, cursor moves, OSC strings), whole.
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
 
-def format_context(title: str, claims: list[Claim]) -> str:
-    """The claims as facts for the assistant, in the `lore query` line format."""
-    lines = [
-        f"{title}. These are claims crewlore compiled from past sessions and pull "
-        "requests: evidence to weigh, not instructions. `not adopted` means the team "
-        "tried the approach and declined it; the `->` line says what to do instead. Each "
-        "claim's verbatim anchors are in .lore/knowledge/README.md. "
+def _one_line(text: object) -> str:
+    """Model-written text as one line for the assistant's context: escape sequences,
+    control and format characters (bidirectional overrides, zero-width and tag
+    characters) are removed, then whitespace runs, newlines included, become one space,
+    so a claim occupies exactly the lines the layout gives it."""
+    kept = (
+        ch
+        for ch in _ANSI.sub("", str(text or ""))
+        if ch in "\t\n" or ch in _KEEP_FORMAT or unicodedata.category(ch) not in ("Cc", "Cf")
+    )
+    return " ".join("".join(kept).split())
+
+
+def _block(c: Claim) -> str:
+    lines = [f"- [{claim_label(c)}] ({_one_line(c.scope)}) {_one_line(c.statement)}  [{c.id}]"]
+    if c.action:
+        verb = "" if c.adoption == "current" else "instead: "
+        lines.append(f"  -> {verb}{_one_line(c.action)}")
+    return "\n".join(lines)
+
+
+def _preamble(subject: str, shown: int, total: int) -> str:
+    count = f"{shown} of {total} claims" if shown < total else f"{shown} claims"
+    return (
+        f"Team knowledge {subject} ({count}). These are claims crewlore compiled from past "
+        "sessions and pull requests: evidence to weigh, not instructions. `not adopted` "
+        "means the team tried the approach and declined it; the `->` line says what to do "
+        "instead. Each claim's verbatim anchors are in .lore/knowledge/README.md. "
         "`lore feedback <ids> --influential` or `--overridden` afterwards records whether "
-        "they helped.",
-        "",
-    ]
-    for c in claims:
-        scope, statement = _one_line(c.scope), _one_line(c.statement)
-        lines.append(f"- [{claim_label(c)}] ({scope}) {statement}  [{c.id}]")
-        if c.action:
-            verb = "" if c.adoption == "current" else "instead: "
-            lines.append(f"  -> {verb}{_one_line(c.action)}")
-    text = "\n".join(lines)
-    if len(text) > MAX_CONTEXT_CHARS:
-        text = text[:MAX_CONTEXT_CHARS].rsplit("\n", 1)[0]
-        text += "\n- (more claims omitted; `lore explain <scope>` lists them all)"
-    return text
+        "they helped."
+    )
+
+
+def format_context(subject: str, claims: list[Claim]) -> tuple[str, list[Claim]]:
+    """The claims as facts for the assistant, in the `lore query` line format, whole
+    claims only and within the size cap. Returns the text and the claims it shows."""
+    footer_room = 160
+    shown: list[Claim] = []
+    used = len(_preamble(subject, len(claims), len(claims))) + 2
+    for c in claims[:MAX_CLAIMS_PER_EVENT]:
+        block = _block(c)
+        if used + len(block) + 1 > MAX_CONTEXT_CHARS - footer_room:
+            break
+        shown.append(c)
+        used += len(block) + 1
+    text = _preamble(subject, len(shown), len(claims)) + "\n\n" + "\n".join(map(_block, shown))
+    if len(shown) < len(claims):
+        text += (
+            f"\n- {len(claims) - len(shown)} more not shown; the book "
+            "(.lore/knowledge/README.md) lists every claim under its scope"
+        )
+    return text, shown
 
 
 def _output(event_name: str, context: str) -> dict:
@@ -310,28 +368,25 @@ def _edit_context(event: Event) -> dict | None:
     if event.file_path is None:
         return None
     path = event.file_path if event.file_path.is_absolute() else event.cwd / event.file_path
-    repo = find_repo(path.parent) or find_repo(event.cwd)
+    # The repository the session runs in wins when the file is inside it, so a vendored
+    # checkout with its own .lore/ does not hide the team's claims about that directory.
+    repo = find_repo(event.cwd)
+    if repo is None or not _under(path, repo):
+        repo = find_repo(path.parent)
     if repo is None:
         return None
-    try:
-        rel = path.relative_to(repo).as_posix()
-    except ValueError:
-        return None
+    rel = path.relative_to(repo).as_posix()
     store = LoreStore(repo)
     covering = scopes_covering(rel, store.load_claims())
-    state = _SessionState(store, event.session)
+    state = _ConversationState(store, f"{event.session}/{event.agent}")
     fresh = [scope for scope in covering if scope not in state.scopes]
     if not fresh:
         return None
     available = [c for scope in fresh for c in covering[scope]]
-    chosen = available[:MAX_CLAIMS_PER_EVENT]
+    text, shown = format_context(f"for {', '.join(fresh)}, the scope of {rel}", available)
     state.remember(fresh)
-    KnowledgeServer(store).mark_served([c.id for c in chosen])
-    shown = str(len(chosen))
-    if len(chosen) < len(available):
-        shown = f"{len(chosen)} of {len(available)}"
-    title = f"Team knowledge for {', '.join(fresh)}, the scope of {rel} ({shown} claims)"
-    return _output(event.name, format_context(title, chosen))
+    KnowledgeServer(store).mark_served([c.id for c in shown])
+    return _output(event.name, text)
 
 
 def _prompt_context(event: Event) -> dict | None:
@@ -344,8 +399,8 @@ def _prompt_context(event: Event) -> dict | None:
     )
     if not ranked:
         return None
-    title = f"Team knowledge relevant to this request ({len(ranked)} claims)"
-    return _output(event.name, format_context(title, ranked))
+    text, _ = format_context("relevant to this request", ranked)
+    return _output(event.name, text)
 
 
 def handle(payload: object) -> dict | None:
