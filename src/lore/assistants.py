@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -238,21 +239,35 @@ def install(
     repo: Path = Path("."),
     always_on: bool = False,
     force: bool = False,
+    hooks: bool = False,
 ) -> list[str]:
-    """Write the skill (and, when asked, the instruction block or rule).
+    """Write the skill (and, when asked, the instruction block or rule, and the hooks).
 
     Every target is resolved and checked before anything is written (symbolic links
-    on a project install, ownership, UTF-8, that the path can be created and written),
-    so one platform's refusal cannot leave another half-installed. Returns one line per
-    file.
+    on a project install, ownership, UTF-8, that the path can be created and written,
+    that an existing settings file is valid JSON), so one platform's refusal cannot
+    leave another half-installed. Returns one line per file.
     """
+    from lore.assistant_hooks import (
+        install_hooks,
+        load_settings,
+        posix_shell_available,
+        settings_path,
+    )
+
+    if hooks and "claude" not in platforms:
+        raise AssistantsError("--hooks installs Claude Code hooks; add claude to --platform")
     targets = [target(name, project=project, repo=repo) for name in platforms]
+    settings = settings_path(project=project, repo=Path(repo)) if hooks else None
     for tgt in targets:
         instruction = tgt.instruction_path if always_on else None
         rule = tgt.rule_path if always_on else None
         for path in (tgt.skill_path, instruction, rule):
             if path is not None:
                 _check_writable(path, tgt.root, strict=project)
+        if settings is not None and tgt.platform == "claude":
+            _check_writable(settings, tgt.root, strict=project)
+            load_settings(settings)  # refuse invalid JSON before anything is written
         if tgt.skill_path is not None and not force and not _owned_or_absent(tgt.skill_path):
             raise AssistantsError(
                 f"{tgt.skill_path} exists and was not written by crewlore; "
@@ -267,6 +282,24 @@ def install(
     lines: list[str] = []
     try:
         _write_targets(targets, always_on, lines)
+        if settings is not None:
+            for tgt in targets:
+                if tgt.platform == "claude":
+                    outcome = install_hooks(settings, tgt.root, strict=project)
+                    lines.append(f"claude: hooks {outcome} in {settings}")
+                else:
+                    lines.append(f"{tgt.platform}: hooks are available for Claude Code only")
+            if shutil.which("lore") is None:
+                lines.append(
+                    "note: `lore` is not on this shell's PATH. Claude Code runs hooks with the "
+                    "PATH it was started with, so until crewlore is installed where that shell "
+                    "finds it (`pipx ensurepath`), the hooks stay silent."
+                )
+            if not posix_shell_available():
+                lines.append(
+                    "note: the hook command is for a POSIX shell. On Windows it runs only "
+                    "where Claude Code has Git Bash; without it, each event reports a hook error."
+                )
     except OSError as exc:
         done = "; ".join(lines) or "nothing"
         raise AssistantsError(f"{exc}. Already written: {done}") from exc
@@ -315,6 +348,16 @@ def _put(path: Path, text: str) -> str:
 def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(".")) -> list[str]:
     """Remove what install wrote and nothing else."""
     lines: list[str] = []
+    if "claude" in platforms:
+        # First, so a settings file crewlore cannot parse stops the uninstall before any
+        # skill file is gone.
+        from lore.assistant_hooks import settings_path, uninstall_hooks
+
+        settings = settings_path(project=project, repo=Path(repo))
+        root = Path(repo) if project else _claude_config_dir()
+        outcome = uninstall_hooks(settings, root, strict=project)
+        if outcome != "absent":
+            lines.append(f"claude: hooks {outcome} ({settings})")
     for tgt in (target(name, project=project, repo=repo) for name in platforms):
         for path in (tgt.skill_path, tgt.rule_path):
             if path is None or not (path.exists() or path.is_symlink()):
@@ -429,9 +472,20 @@ def _read_text(path: Path) -> str:
 
 
 def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(text)
+    """Write the whole file at once: the text goes to a sibling temp file that then
+    replaces the target, so a crash mid-write cannot leave a truncated instruction
+    or settings file. A symbolic link (a user's dotfiles) is written through, so the
+    link itself stays."""
+    target = path.resolve() if path.is_symlink() else path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _line_ending(text: str) -> str:

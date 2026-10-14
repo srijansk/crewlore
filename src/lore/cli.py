@@ -772,6 +772,16 @@ def install(
     force: bool = typer.Option(
         False, "--force", help="Replace a skill or rule file that crewlore did not write."
     ),
+    hooks: bool = typer.Option(
+        False,
+        "--hooks",
+        help=(
+            "Also install Claude Code hooks: when the assistant reads or edits a file, the "
+            "claims for that file's scope join its context (once per scope per conversation), "
+            "and each prompt brings up the claims relevant to it. Writes .claude/settings.json "
+            "with --project, else ~/.claude/settings.json; needs a POSIX shell."
+        ),
+    ),
 ):
     """Put the /lore skill into your coding assistant, so it queries the layer itself."""
     from lore.assistants import AssistantsError, UsageError, parse_platforms
@@ -780,7 +790,7 @@ def install(
     try:
         platforms = parse_platforms(platform)
         lines = install_skill(
-            platforms, project=project, repo=repo, always_on=always_on, force=force
+            platforms, project=project, repo=repo, always_on=always_on, force=force, hooks=hooks
         )
     except UsageError as exc:
         typer.echo(f"error: {exc}")
@@ -796,6 +806,18 @@ def install(
         "Next: open your assistant in a repo that has .lore/ and invoke the skill "
         "(/lore in Claude Code, $lore in Codex; Cursor and Gemini pick it up from its description)."
     )
+
+
+@app.command("claude-hook")
+def claude_hook():
+    """Claude Code hook entry point: reads one event on stdin, prints context on stdout.
+
+    Installed by `lore install --hooks`; it exits 0 with no output whenever it has
+    nothing to add, so it never gets in the assistant's way.
+    """
+    from lore.assistant_hooks import run_from_stdin
+
+    raise typer.Exit(run_from_stdin())
 
 
 @app.command()

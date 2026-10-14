@@ -13,6 +13,8 @@ import glob
 import json
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,6 +80,28 @@ def _sweep_stale_tmp(path: Path) -> None:
         with contextlib.suppress(OSError):
             if stale.stat().st_mtime < cutoff:
                 stale.unlink()
+
+
+def _lock_exclusive(fd: int) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def _unlock(fd: int) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 class LoreStore:
@@ -215,6 +239,24 @@ class LoreStore:
             if stamp := row.get("compiled_at"):
                 out[row["id"]] = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
         return out
+
+    @contextmanager
+    def locked(self, name: str) -> Iterator[None]:
+        """Hold an exclusive lock on `.lore/cache/<name>.lock` around a read-modify-write
+        of a small shared file (the usage sidecar, a hook's state). Hooks run in
+        parallel and a query can overlap a compile; without this, one writer's bump is
+        lost under another's. The wait is short: these writes take milliseconds."""
+        path = self.lore / "cache" / f"{name}.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            _lock_exclusive(fd)
+            try:
+                yield
+            finally:
+                _unlock(fd)
+        finally:
+            os.close(fd)
 
     def _write_usage(self, claims: list[Claim]) -> None:
         # Only persist non-default usage, keyed by claim id, to keep the sidecar small.
