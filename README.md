@@ -195,6 +195,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 - **Secrets are scrubbed before storage.** Scrubbing of message content and tool-call arguments happens at ingest, before the session is written and before any model call. It is a high-precision pattern set, a floor rather than a DLP guarantee (see [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md)). Review the `.lore/` diff in a pull request like any other change.
 - **Raw captures never reach git.** `.lore/sessions/`, `.lore/sources/` (raw PR exports), the extraction cache and the usage file are gitignored, and the ignore file is written on every store write, not only by `lore init`.
 - **No tokens to store.** Pull-request import goes through the `gh` CLI you already authenticated; `crewlore` never sees or stores a GitHub token.
+- **Other people's text is treated as untrusted.** Transcripts and pull-request threads go to the model inside a delimiter their content cannot forge, with a rule that instruction-like text is content, not a command; a planted instruction can only enter the store as a claim that quotes itself, where the `.lore/` diff shows it. Claims are served to agents as evidence, not instructions, with terminal escapes stripped. The threat model is in [`SECURITY.md`](https://github.com/srijansk/crewlore/blob/main/.github/SECURITY.md).
 
 ## CLI
 

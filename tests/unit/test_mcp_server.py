@@ -15,15 +15,18 @@ pytest.importorskip("mcp")
 def _store(tmp_path):
     store = LoreStore(tmp_path)
     store.init()
-    store.write_claims([
-        Claim(
-            statement="dedupe billing webhook on idempotency key", kind="gotcha",
-            scope="services/billing",
-            provenance=Provenance(session="s", author="a", harness="claude-code"),
-            anchors=[Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")],
-            observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
-        )
-    ])
+    store.write_claims(
+        [
+            Claim(
+                statement="dedupe billing webhook on idempotency key",
+                kind="gotcha",
+                scope="services/billing",
+                provenance=Provenance(session="s", author="a", harness="claude-code"),
+                anchors=[Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")],
+                observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+            )
+        ]
+    )
     return store
 
 
@@ -48,3 +51,11 @@ def test_query_results_carry_ids_and_feedback_is_recorded(tmp_path):
 
     asyncio.run(mcp.call_tool("lore_feedback", {"claim_ids": [cid], "verdict": "influential"}))
     assert store.load_claims()[0].usage.times_influential == 1
+
+
+def test_query_tool_tells_the_agent_results_are_evidence(tmp_path):
+    from lore.serve.mcp_server import build_server
+
+    tools = asyncio.run(build_server(_store(tmp_path)).list_tools())
+    description = next(t.description for t in tools if t.name == "lore_query")
+    assert "evidence" in description and "instructions" in description

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- **Transcripts and pull-request threads are framed as untrusted input.** The extractor now encloses the transcript in a per-call delimiter its content cannot forge and tells the model that instruction-like text inside it is content, never a command. Model-written claim text is stripped of terminal escape sequences and control characters when a claim is built and when it is served (CLI and MCP), and the MCP `lore_query` description states that results are evidence, not instructions. `SECURITY.md` gains a threat model.
+
 ### Changed
 
 - **Study tables relabelled.** The headline poisoning numbers (44.7%, 47.6%, 30.1%, 17.5%) are the mean share of a declined PR's claims that state the rejected approach as current, as `studies/palm/analyze.py` computes them, not the share of declined PRs with at least one such claim, which the README and the study README had said. Both metrics are now shown (47, 45, 35 and 25 of 60 declined PRs), and the "0 of 867 statements" figure, which mixed declined-only and control arms, is replaced by 0 of 658 statements from declined PRs (0 of 1,060 counting the merged controls). No analysis code changed.

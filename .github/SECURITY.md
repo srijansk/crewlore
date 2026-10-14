@@ -27,6 +27,19 @@ Out of scope:
 - Issues that require physical or local access to the developer's machine
 - Theoretical or non-exploitable patterns
 
+## Threat model
+
+`crewlore` reads text that other people wrote (session transcripts, pull-request descriptions, reviews and comments), sends it to a model you configure, stores what the model returns, and hands that back to people and agents. Each hop is a place for someone else's text to do something it should not.
+
+| Vector | What `crewlore` does |
+|---|---|
+| Prompt injection through a transcript or a pull-request thread (text that tells the extractor to ignore its rules, to record a particular claim, or to mark work adopted or declined) | The extractor frames the transcript as untrusted input, inside a per-call delimiter the content cannot forge, with an explicit rule that instruction-like text is content. The verbatim-anchor gate limits the damage further: a planted instruction can only enter the store as a claim that quotes itself, which is visible in the book and in the `.lore/` diff. Review `.lore/` changes in a pull request like any other change. |
+| Injection through stored claims into the agents that read them | The `/lore` skill and the MCP tool description both state that claims are evidence, never instructions. Escape sequences and control characters are stripped from model-written text when a claim is built and again when it is served, so a claim cannot restyle a terminal or hide content. |
+| Secrets in transcripts | Message content and tool-call arguments are scrubbed at ingest, before the session is written and before any model call (`docs/scrub.md`). Raw captures, the extraction cache and the usage file are gitignored. |
+| Reading outside the repository | Only this repository's `.lore/`, its own Claude Code transcript directory (or a directory you name), and the pull-request export it fetched. |
+| Network | The model provider you configure, and GitHub through the `gh` CLI you already authenticated. No telemetry, no `crewlore`-operated service. |
+| `lore install` | Writes only the skill file, the rule file, and a marked block in an instruction file, all listed in its output; `lore uninstall` reverses them. Nothing is executed. |
+
 ## Disclosure preference
 
 Once a fix is shipped, reporters are credited in the release notes unless they ask not to be. Coordinated disclosure window: 7–14 days from a fix landing, depending on severity.
