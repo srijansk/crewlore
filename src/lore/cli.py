@@ -343,23 +343,28 @@ def review(
     )
     from lore.review import review as review_change
 
+    if comment and number is None:
+        typer.echo("error: --comment needs a pull request number", err=True)
+        raise typer.Exit(2)
     store = _open_store(repo)
     try:
-        change = github_change(number, github) if number is not None else local_change(repo, base)
+        if number is not None:
+            change = github_change(number, github, cwd=repo)
+        else:
+            change = local_change(repo, base)
     except ChangeError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
+    if change.label.startswith("working tree of "):
+        typer.echo(f"note: {change.label}; commits were not reviewed", err=True)
     report = review_change(store.load_claims(), change)
     if json_out:
         typer.echo(json.dumps(to_json(report), indent=2))
     else:
         typer.echo(render_text(report))
     if comment:
-        if number is None:
-            typer.echo("error: --comment needs a pull request number", err=True)
-            raise typer.Exit(2)
         try:
-            post_comment(number, render_markdown(report), github)
+            post_comment(number, render_markdown(report), github, cwd=repo)
         except ChangeError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(1) from exc

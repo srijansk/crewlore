@@ -11,7 +11,7 @@ lore review --json           # for scripts and hooks
 lore review --exit-code      # exit 5 when a declined approach is flagged (0 otherwise)
 ```
 
-The change is the branch's commits since the merge base, the uncommitted edits, and untracked files; the text matched against claims is the commit messages. The exit code stays 0 unless you pass `--exit-code`, so an assistant running the command through a shell tool does not see a flag as a failed command; a pre-push hook or a script asks for it.
+The change is the branch's commits since the merge base with origin's default branch (`origin/main` as the remote-tracking ref, or `--base`), the uncommitted edits, and untracked files; the text matched against claims is the commit messages. When the base cannot be found locally (a single-branch clone), only the working tree is reviewed and the report says so. The exit code stays 0 unless you pass `--exit-code`, so an assistant running the command through a shell tool does not see a flag as a failed command; a pre-push hook or a script asks for it. Reviewing does not count as reading for the lifecycle: nothing a review touches is marked served, since a CI checkout is throwaway.
 
 ## A pull request on GitHub
 
@@ -21,11 +21,11 @@ lore review 42 --github owner/repo      # another repository
 lore review 42 --comment                # also post the Markdown report as a comment on the PR
 ```
 
-Without `--comment` nothing is posted; the report is printed. With it, one comment is added each time the command runs, so wire it to run once per push rather than per commit. Every claim field in the comment is rendered inside a code span, so model-written text cannot mention a person, link out, or restyle the comment.
+Without `--comment` nothing is posted; the report is printed. With it, one comment is added each time the command runs, so wire it to run once per push rather than per commit. Every claim field in the comment is rendered inside a code span and never inside a table (GitHub splits table cells on `|` before it reads inline code), so model-written text cannot mention a person, link out, or restyle the comment. The file list comes from `gh pr diff --name-only`, which is complete; `gh pr view` stops at 100 files without saying so.
 
 ## In GitHub Actions
 
-Runs on every pull request, posts the report when a declined approach is flagged, and never fails the build: the claims are evidence, not verdicts.
+Runs on every pull request, posts the report when a declined approach is flagged, and never fails the build: the claims are evidence, not verdicts. It needs a crewlore release that includes `lore review`. On a pull request from a fork the workflow token is read-only, so the comment step reports that it could not post instead of failing.
 
 ```yaml
 name: crewlore review
@@ -46,9 +46,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! lore review ${{ github.event.pull_request.number }} --exit-code >/dev/null; then
-            lore review ${{ github.event.pull_request.number }} --comment
-          fi
+          set +e
+          lore review ${{ github.event.pull_request.number }} --exit-code --json > review.json
+          rc=$?
+          set -e
+          case "$rc" in
+            5) lore review ${{ github.event.pull_request.number }} --comment \
+                 || echo "could not post the comment (a fork's token is read-only)" ;;
+            0) echo "no declined approach flagged" ;;
+            *) echo "lore review did not run (exit $rc); not failing the build" ;;
+          esac
 ```
 
 No model is called: `lore review` reads the committed `.lore/claims/claims.jsonl` and the pull request's metadata only. Nothing leaves the runner except the comment it posts.
@@ -57,4 +64,4 @@ No model is called: `lore review` reads the committed `.lore/claims/claims.jsonl
 
 A claim's scope is a repository path or area (`services/billing`, `.github/`, `pydantic_ai_slim/pydantic_ai/models`); it covers a file that is the scope or sits under it. A scope that names several areas, comma-separated, counts for each. The repository-wide scope `.` is ignored here: it would match every file and say nothing. Scopes the model wrote as prose rather than paths match nothing, which fails closed.
 
-A declined claim is flagged when at least 40% of its content words (statement, topic and action, minus stopwords) appear in the change's title and description. That is lexical, like retrieval, so treat a flag as "read this before merging" rather than "this is the same approach".
+A declined claim is flagged when at least half of its content words appear in the change's title and description, and at least two words are shared. The content words are the statement and topic minus stopwords and the extractor's own template words (tried, adopted, declined, instead, and the like). The action is left out on purpose: it is the recommended alternative, and a change that does the recommended thing must not be flagged for matching it. The match is lexical, like retrieval, so treat a flag as "read this before merging" rather than "this is the same approach".

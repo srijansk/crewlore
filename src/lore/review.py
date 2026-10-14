@@ -24,13 +24,23 @@ from lore.serve.server import _tokens, anchor_attribution, claim_label, claim_to
 from lore.text import sanitize_line
 
 # Share of a declined claim's content words that also appear in the change's title and
-# description before the change is flagged as re-proposing it. Lexical, like retrieval;
-# the flag says "look at this", not "this is the same approach".
-REPROPOSAL_MIN_OVERLAP = 0.4
+# description before the change is flagged as re-proposing it, and the least number of
+# shared words, so a one-word claim is not flagged by one word. Lexical, like retrieval;
+# the flag says "look at this", not "this is the same approach". Only the statement and
+# topic count: the action is the recommended alternative, and a change that does the
+# recommended thing must not be flagged for matching it.
+REPROPOSAL_MIN_OVERLAP = 0.5
+REPROPOSAL_MIN_SHARED_WORDS = 2
+# The extractor's own template words for declined work carry no signal about a change.
+_TEMPLATE_WORDS = frozenset(
+    "tried adopted declined rejected reverted proposed merged instead approach was".split()
+)
 # Anchors quoted per flagged claim in the Markdown report.
 MARKDOWN_ANCHORS = 2
 # Uncovered files named in the text report before "…".
 UNCOVERED_LISTED = 8
+# GitHub rejects comments over 65,536 characters; stop well short and say so.
+MARKDOWN_MAX_CHARS = 60_000
 
 
 class ChangeError(RuntimeError):
@@ -89,18 +99,29 @@ def scope_parts(scope: str) -> list[str]:
     return parts
 
 
+def _covered_by(parts: list[str], path: str) -> bool:
+    file = _norm(path)
+    return any(file == part or file.startswith(part + "/") for part in parts)
+
+
 def scope_covers(scope: str, path: str) -> bool:
     """True when the file is the scope or sits under it."""
-    file = _norm(path)
-    return any(file == part or file.startswith(part + "/") for part in scope_parts(scope))
+    return _covered_by(scope_parts(scope), path)
+
+
+def _content_words(claim: Claim) -> set[str]:
+    return _tokens(" ".join(filter(None, [claim.statement, claim.topic]))) - _TEMPLATE_WORDS
 
 
 def overlap(claim: Claim, text: str) -> float:
-    """Share of the claim's content words present in the change text."""
-    words = _tokens(" ".join(filter(None, [claim.statement, claim.topic, claim.action])))
-    if not words:
+    """Share of the claim's content words (statement and topic, minus the extractor's
+    template words) present in the change text; 0 when fewer than
+    `REPROPOSAL_MIN_SHARED_WORDS` are shared."""
+    words = _content_words(claim)
+    shared = words & _tokens(text)
+    if not words or len(shared) < REPROPOSAL_MIN_SHARED_WORDS:
         return 0.0
-    return len(words & _tokens(text)) / len(words)
+    return len(shared) / len(words)
 
 
 def review(claims: list[Claim], change: Change) -> Report:
@@ -110,7 +131,8 @@ def review(claims: list[Claim], change: Change) -> Report:
     for c in claims:
         if c.status != "active":
             continue
-        files = [f for f in change.files if scope_covers(c.scope, f)]
+        parts = scope_parts(c.scope)
+        files = [f for f in change.files if _covered_by(parts, f)]
         if not files:
             continue
         covered.update(files)
@@ -134,26 +156,33 @@ def _run(cmd: list[str], cwd: Path | None = None, stdin: str | None = None) -> s
     except FileNotFoundError as exc:
         raise ChangeError(f"{cmd[0]} is not installed") from exc
     if proc.returncode != 0:
-        detail = proc.stderr.strip() or proc.stdout.strip()
+        detail = sanitize_line(proc.stderr.strip() or proc.stdout.strip())
         raise ChangeError(f"{' '.join(cmd[:3])} failed: {detail}")
     return proc.stdout
 
 
+def _paths(output: str) -> list[str]:
+    """File paths from a NUL-separated git listing: spaces, quotes and non-ASCII intact."""
+    return [p for p in output.split("\0") if p]
+
+
 def default_base(repo: Path) -> str:
-    """The branch the local change will merge into: origin's HEAD if known, else main."""
+    """The ref the local change will merge into: origin's default branch as the
+    remote-tracking ref (it exists whenever origin's HEAD is known; a local copy of
+    that branch may not), else `main`."""
     try:
         ref = _run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=repo)
     except ChangeError:
         return "main"
-    ref = ref.strip()
-    return ref.split("/", 1)[1] if "/" in ref else ref
+    return ref.strip() or "main"
 
 
 def local_change(repo: Path, base: str | None = None) -> Change:
     """The current branch against its base, plus uncommitted edits: what is about to land.
 
-    The text matched against claims is the commit messages since the merge base; when
-    the base is unknown locally, the working tree alone is reviewed.
+    The text matched against claims is the commit messages since the merge base. When
+    the base cannot be found locally, the working tree alone is reviewed and the label
+    says so, so a smaller review is never mistaken for the whole one.
     """
     repo = Path(repo)
     base = base or default_base(repo)
@@ -161,42 +190,53 @@ def local_change(repo: Path, base: str | None = None) -> Change:
     files: list[str] = []
     try:
         merge_base = _run(["git", "merge-base", base, "HEAD"], cwd=repo).strip()
-        files += _run(["git", "diff", "--name-only", f"{merge_base}..HEAD"], cwd=repo).split()
-        body = _run(["git", "log", "--format=%s%n%b", f"{merge_base}..HEAD"], cwd=repo)
     except ChangeError:
+        label = f"working tree of {sanitize_line(branch)} (base {sanitize_line(base)} not found)"
         body = ""
-    files += _run(["git", "diff", "--name-only", "HEAD"], cwd=repo).split()
-    files += _run(["git", "ls-files", "--others", "--exclude-standard"], cwd=repo).split()
-    return Change(
-        label=f"branch {sanitize_line(branch)} against {sanitize_line(base)}",
-        title=branch,
-        body=body,
-        files=list(dict.fromkeys(files)),
-    )
+    else:
+        label = f"branch {sanitize_line(branch)} against {sanitize_line(base)}"
+        span = f"{merge_base}..HEAD"
+        files += _paths(_run(["git", "diff", "--name-only", "--no-renames", "-z", span], cwd=repo))
+        body = _run(["git", "log", "--format=%s%n%b", span], cwd=repo)
+    files += _paths(_run(["git", "diff", "--name-only", "--no-renames", "-z", "HEAD"], cwd=repo))
+    files += _paths(_run(["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=repo))
+    return Change(label=label, title=branch, body=body, files=list(dict.fromkeys(files)))
 
 
-def github_change(number: int, repo_slug: str | None = None) -> Change:
-    """A pull request's title, description and files, through the `gh` CLI."""
-    cmd = ["gh", "pr", "view", str(number), "--json", "title,body,files,baseRefName,headRefName"]
-    if repo_slug:
-        cmd += ["--repo", repo_slug]
-    data = json.loads(_run(cmd))
-    files = [f["path"] for f in data.get("files", []) if isinstance(f, dict) and f.get("path")]
-    where = f" in {sanitize_line(repo_slug)}" if repo_slug else ""
+def github_change(number: int, repo_slug: str | None = None, cwd: Path | None = None) -> Change:
+    """A pull request's title, description and files, through the `gh` CLI, run in the
+    repository being reviewed so the pull request resolves against it."""
+    where = ["--repo", repo_slug] if repo_slug else []
+    fields = "title,body,baseRefName,headRefName,changedFiles,files"
+    data = json.loads(_run(["gh", "pr", "view", str(number), "--json", fields, *where], cwd=cwd))
+    # `gh pr view --json files` stops at 100 files without saying so; the diff listing
+    # is complete. Fall back to the capped list only on a gh too old for `--name-only`.
+    try:
+        listing = _run(["gh", "pr", "diff", str(number), "--name-only", *where], cwd=cwd)
+        files = [ln for ln in listing.splitlines() if ln]
+    except ChangeError:
+        files = [f["path"] for f in data.get("files", []) if isinstance(f, dict) and f.get("path")]
+        expected = data.get("changedFiles")
+        if isinstance(expected, int) and expected > len(files):
+            raise ChangeError(
+                f"gh listed {len(files)} of {expected} changed files; upgrade gh so "
+                "`gh pr diff --name-only` is available"
+            ) from None
+    place = f" in {sanitize_line(repo_slug)}" if repo_slug else ""
     head, into = sanitize_line(data.get("headRefName")), sanitize_line(data.get("baseRefName"))
     return Change(
-        label=f"pull request #{number}{where} ({head} into {into})",
+        label=f"pull request #{number}{place} ({head} into {into})",
         title=str(data.get("title") or ""),
         body=str(data.get("body") or ""),
         files=files,
     )
 
 
-def post_comment(number: int, body: str, repo_slug: str | None = None) -> None:
-    cmd = ["gh", "pr", "comment", str(number), "--body-file", "-"]
-    if repo_slug:
-        cmd += ["--repo", repo_slug]
-    _run(cmd, stdin=body)
+def post_comment(
+    number: int, body: str, repo_slug: str | None = None, cwd: Path | None = None
+) -> None:
+    where = ["--repo", repo_slug] if repo_slug else []
+    _run(["gh", "pr", "comment", str(number), "--body-file", "-", *where], cwd=cwd, stdin=body)
 
 
 # --- rendering ----------------------------------------------------------------------------
@@ -238,7 +278,11 @@ def render_text(report: Report) -> str:
 
 
 def code(text: object) -> str:
-    """Model-written text as a Markdown code span: never a mention, a link or markup."""
+    """Model-written text as a Markdown code span: never a mention, a link or markup.
+
+    The report never puts a code span in a table: GitHub splits table cells on `|`
+    before it reads inline code, so a `|` in a claim would end the span.
+    """
     cleaned = sanitize_line(text).replace("`", "'")
     return f"`{cleaned}`" if cleaned else "`(empty)`"
 
@@ -262,16 +306,19 @@ def render_markdown(report: Report) -> str:
     others = [m for m in report.matches if not m.flagged]
     if others:
         lines.append("")
-        lines.append("| | scope | claim |")
-        lines.append("|---|---|---|")
         for m in others:
-            cells = map(code, (claim_label(m.claim), m.claim.scope, m.claim.statement))
-            lines.append("| " + " | ".join(cells) + " |")
+            lines.append(
+                f"- {code(claim_label(m.claim))} {code(m.claim.scope)}: {code(m.claim.statement)}"
+            )
     lines.append("")
     lines.append(
         "<sub>Claims come from the repository's `.lore/`; they are evidence, not verdicts.</sub>"
     )
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if len(text) > MARKDOWN_MAX_CHARS:
+        cut = text[:MARKDOWN_MAX_CHARS].rsplit("\n", 1)[0]
+        text = cut + "\n\n<sub>Report cut here; `lore review` locally prints it in full.</sub>"
+    return text
 
 
 def _entry(m: Match) -> dict:

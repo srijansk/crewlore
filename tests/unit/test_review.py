@@ -84,6 +84,25 @@ def test_review_puts_declined_work_first_and_flags_a_reproposal():
     assert report.uncovered == ["README.md"]
 
 
+def test_the_recommended_alternative_and_template_words_do_not_flag():
+    doing_the_right_thing = Change(
+        label="pull request #8", title="Keep the idempotency key inside the transaction",
+        body="Moves the key handling into the transaction as the team decided.",
+        files=["services/billing/webhook.py"],
+    )
+    report = review([DECLINED], doing_the_right_thing)
+    assert len(report.matches) == 1 and report.flagged == []
+    graphql = _claim("GraphQL for the billing API was tried and not adopted", "services/billing",
+                     adoption="not_adopted", action="keep REST")
+    report = review([graphql], Change(label="x", title="Keep REST for billing", body="",
+                                      files=["services/billing/api.py"]))
+    assert report.flagged == []
+    one_word = _claim("Use Redis", "services/billing", adoption="not_adopted", action="use the db")
+    report = review([one_word], Change(label="x", title="Bump redis client version", body="",
+                                       files=["services/billing/deps.txt"]))
+    assert report.flagged == []  # one shared word is not a re-proposal
+
+
 def test_a_declined_claim_without_overlap_is_listed_but_not_flagged():
     declined = _claim("GraphQL for the billing API was tried and not adopted", "services/billing",
                       adoption="not_adopted", action="keep REST")
@@ -115,24 +134,39 @@ def test_text_report_names_the_flag_the_instead_and_the_files():
     assert "rotate auth" not in text
 
 
-def test_markdown_report_keeps_model_text_in_code_spans():
+def test_markdown_report_keeps_model_text_in_code_spans_and_uses_no_table():
     hostile = _claim(
         "@octocat please merge [this](https://evil.example) `now`", "services/billing",
         adoption="not_adopted", action="see <img src=x onerror=alert(1)>",
     )
+    piped = _claim("use `a | b` to pipe @octocat [x](https://evil.example)", "services/billing")
     change = Change(label="pull request #7", title="octocat please merge this now",
                     body="see img src x onerror alert 1 https evil example",
                     files=["services/billing/webhook.py"])
-    md = render_markdown(review([hostile, CURRENT], change))
+    md = render_markdown(review([hostile, CURRENT, piped], change))
     assert "**Declined before.** `@octocat please merge [this](https://evil.example) 'now'`" in md
     assert "**Instead:** `see <img src=x onerror=alert(1)>`" in md
     assert "`s#1` (`@reviewer, human, member`)" in md  # the anchor and its author
-    assert "| `decision` | `services/billing` | `dedupe billing webhooks" in md
+    assert "- `decision` `services/billing`: `dedupe billing webhooks" in md
+    piped_line = "- `decision` `services/billing`: `use 'a | b' to pipe @octocat [x](https://evil.example)`"
+    assert piped_line in md
     assert "evidence, not verdicts" in md
     assert code("") == "`(empty)`" and code(None) == "`(empty)`"
-    # Nothing model-written stands outside a code span.
+    # No table: GitHub splits table cells on `|` before it reads inline code.
+    assert not any(line.startswith("|") for line in md.splitlines())
+    # Every line carrying model-written text is a blockquote or a list item whose text sits
+    # inside code spans, and mentions and links never appear outside one.
     for line in md.splitlines():
-        assert "octocat" not in line or line.count("`") >= 2
+        if "octocat" in line:
+            assert line.startswith(("> ", "- "))
+            assert line.index("`") < line.index("octocat") < line.rindex("`")
+
+
+def test_markdown_report_is_cut_before_github_rejects_it():
+    many = [_claim(f"claim {i} " + "x" * 400, "services/billing") for i in range(300)]
+    md = render_markdown(review(many, Change(label="x", title="t", body="",
+                                             files=["services/billing/a.py"])))
+    assert len(md) <= mod.MARKDOWN_MAX_CHARS + 200 and "Report cut here" in md
 
 
 def test_json_report_carries_the_shared_claim_shape_plus_overlap_and_files():
@@ -171,35 +205,76 @@ def test_local_change_is_the_branch_against_its_base_plus_the_working_tree(tmp_p
     _git(repo, "checkout", "-q", "-b", "feature")
     (repo / "services").mkdir()
     (repo / "services" / "billing.py").write_text("x = 1\n")
+    (repo / "services" / "my billing file.py").write_text("y = 1\n")
+    (repo / "services" / "caf\u00e9.py").write_text("z = 1\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "Store the key in Redis\n\nfor speed")
     (repo / "README.md").write_text("hello again\n")  # uncommitted edit
     (repo / "notes.txt").write_text("untracked\n")  # untracked file
+    (repo / "new file.txt").write_text("untracked with a space\n")
     change = local_change(repo, base="main")
     assert change.label == "branch feature against main" and change.title == "feature"
     assert "Store the key in Redis" in change.body and "for speed" in change.body
-    assert change.files == ["services/billing.py", "README.md", "notes.txt"]
-    # An unknown base reviews the working tree alone, without failing.
+    assert change.files == [
+        "services/billing.py", "services/caf\u00e9.py", "services/my billing file.py",
+        "README.md", "new file.txt", "notes.txt",
+    ]
+    # An unknown base reviews the working tree alone, and the label says so.
     change = local_change(repo, base="no-such-branch")
-    assert change.files == ["README.md", "notes.txt"] and change.body == ""
+    assert change.label == "working tree of feature (base no-such-branch not found)"
+    assert change.files == ["README.md", "new file.txt", "notes.txt"] and change.body == ""
 
 
-def test_github_change_reads_the_pull_request_through_gh(monkeypatch):
-    seen = {}
+def test_default_base_is_origins_default_branch_as_a_remote_tracking_ref(monkeypatch, tmp_path):
+    monkeypatch.setattr(mod, "_run", lambda cmd, cwd=None, stdin=None: "origin/main\n")
+    assert mod.default_base(tmp_path) == "origin/main"
+
+    def no_origin(cmd, cwd=None, stdin=None):
+        raise ChangeError("no origin")
+
+    monkeypatch.setattr(mod, "_run", no_origin)
+    assert mod.default_base(tmp_path) == "main"
+
+
+def _fake_gh(view_files=2, changed_files=2, diff_files=None):
+    seen = []
 
     def fake_run(cmd, cwd=None, stdin=None):
-        seen["cmd"] = cmd
-        return json.dumps({
-            "title": "Store the key in Redis", "body": "for speed",
-            "files": [{"path": "services/billing/webhook.py"}, {"path": "README.md"}],
-            "baseRefName": "main", "headRefName": "feat/redis\x1b[31m",
-        })
+        seen.append((cmd, cwd))
+        if cmd[:3] == ["gh", "pr", "view"]:
+            return json.dumps({
+                "title": "Store the key in Redis", "body": "for speed",
+                "changedFiles": changed_files,
+                "files": [{"path": f"services/f{i}.py"} for i in range(view_files)],
+                "baseRefName": "main", "headRefName": "feat/redis\x1b[31m",
+            })
+        if cmd[:3] == ["gh", "pr", "diff"]:
+            if diff_files is None:
+                raise ChangeError("unknown flag: --name-only")
+            return "".join(f"services/f{i}.py\n" for i in range(diff_files))
+        raise AssertionError(cmd)
 
+    return fake_run, seen
+
+
+def test_github_change_reads_every_file_of_a_large_pull_request(monkeypatch, tmp_path):
+    fake_run, seen = _fake_gh(view_files=100, changed_files=150, diff_files=150)
     monkeypatch.setattr(mod, "_run", fake_run)
-    change = mod.github_change(7, "acme/billing")
-    assert seen["cmd"][:4] == ["gh", "pr", "view", "7"] and "--repo" in seen["cmd"]
+    change = mod.github_change(7, "acme/billing", cwd=tmp_path)
+    assert len(change.files) == 150 and change.files[0] == "services/f0.py"
     assert change.label == "pull request #7 in acme/billing (feat/redis into main)"
-    assert change.files == ["services/billing/webhook.py", "README.md"]
+    assert all(cwd == tmp_path for _, cwd in seen)  # gh runs in the reviewed repository
+    assert all("--repo" in cmd for cmd, _ in seen)
+
+
+def test_github_change_on_an_old_gh_refuses_a_capped_file_list(monkeypatch):
+    fake_run, _ = _fake_gh(view_files=100, changed_files=150, diff_files=None)
+    monkeypatch.setattr(mod, "_run", fake_run)
+    with pytest.raises(ChangeError, match="100 of 150"):
+        mod.github_change(7)
+    fake_run, _ = _fake_gh(view_files=2, changed_files=2, diff_files=None)
+    monkeypatch.setattr(mod, "_run", fake_run)
+    assert mod.github_change(7).files == ["services/f0.py", "services/f1.py"]
 
 
 def test_missing_tools_are_a_change_error(monkeypatch):
@@ -226,9 +301,10 @@ def _store(tmp_path):
 def test_cli_review_of_a_pull_request_prints_flags_and_posts_on_request(tmp_path, monkeypatch):
     _store(tmp_path)
     posted = {}
-    monkeypatch.setattr("lore.review.github_change", lambda number, slug: REPROPOSAL)
+    monkeypatch.setattr("lore.review.github_change", lambda number, slug, cwd=None: REPROPOSAL)
     monkeypatch.setattr(
-        "lore.review.post_comment", lambda number, body, slug: posted.update(n=number, body=body)
+        "lore.review.post_comment",
+        lambda number, body, slug, cwd=None: posted.update(n=number, body=body, cwd=cwd),
     )
     result = runner.invoke(app, ["review", "7", "--repo", str(tmp_path)])
     assert result.exit_code == 0, result.stdout
@@ -239,7 +315,7 @@ def test_cli_review_of_a_pull_request_prints_flags_and_posts_on_request(tmp_path
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout)["flagged"][0]["id"] == DECLINED.id
     assert posted["n"] == 7 and "### crewlore review" in posted["body"]
-    assert "comment posted" in result.stderr
+    assert posted["cwd"] == tmp_path and "comment posted" in result.stderr
 
 
 def test_cli_review_of_the_local_branch_and_its_errors(tmp_path, monkeypatch):
@@ -251,6 +327,12 @@ def test_cli_review_of_the_local_branch_and_its_errors(tmp_path, monkeypatch):
     assert result.exit_code == 0 and "rotate auth tokens hourly" in result.stdout
     result = runner.invoke(app, ["review", "--repo", str(tmp_path), "--comment"])
     assert result.exit_code == 2 and "needs a pull request number" in result.stderr
+    assert result.stdout == ""  # refused before any work
+    partial = Change(label="working tree of fix (base origin/main not found)", title="fix",
+                     body="", files=["services/auth/tokens.py"])
+    monkeypatch.setattr("lore.review.local_change", lambda repo, base: partial)
+    result = runner.invoke(app, ["review", "--repo", str(tmp_path)])
+    assert result.exit_code == 0 and "commits were not reviewed" in result.stderr
 
     def broken(repo, base):
         raise ChangeError("git is not installed")
