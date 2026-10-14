@@ -101,6 +101,17 @@ def test_the_recommended_alternative_and_template_words_do_not_flag():
     report = review([one_word], Change(label="x", title="Bump redis client version", body="",
                                        files=["services/billing/deps.txt"]))
     assert report.flagged == []  # one shared word is not a re-proposal
+    # Naming the subject the way the recommended alternative does is not a re-proposal;
+    # naming the declined approach itself is.
+    declined = _claim("Use Redis for the idempotency key", "services/billing",
+                      adoption="not_adopted", topic="idempotency-key",
+                      action="keep the key inside the transaction")
+    alternative = Change(label="x", title="Move the idempotency key into the transaction",
+                         body="", files=["services/billing/webhook.py"])
+    assert review([declined], alternative).flagged == []
+    reproposal = Change(label="x", title="Keep the idempotency key in Redis for speed",
+                        body="", files=["services/billing/webhook.py"])
+    assert review([declined], reproposal).flagged != []
 
 
 def test_a_declined_claim_without_overlap_is_listed_but_not_flagged():
@@ -234,6 +245,15 @@ def test_local_change_is_the_branch_against_its_base_plus_the_working_tree(tmp_p
     _git(empty, "init", "-q", "-b", "main")
     with pytest.raises(ChangeError, match="no commits yet"):
         local_change(empty, base="main")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.raises(ChangeError, match="not a git repository"):
+        local_change(plain, base="main")
+    # A subdirectory as --repo still lists paths from the repository root.
+    _git(repo, "checkout", "-q", "feature")
+    (repo / "services" / "untracked_in_sub.py").write_text("u\n")
+    sub = local_change(repo / "services", base="main")
+    assert "services/untracked_in_sub.py" in sub.files and "notes.txt" in sub.files
 
 
 def test_text_report_cleans_file_names_git_hands_over_raw():
@@ -302,9 +322,9 @@ def test_github_change_refuses_what_github_cannot_list_in_full(monkeypatch):
     monkeypatch.setattr(mod, "_run", fake_run)
     with pytest.raises(ChangeError, match="3001 files"):
         mod.github_change(7, "acme/billing")
-    fake_run, _ = _fake_gh(changed_files=5, api_lines=[])
+    fake_run, _ = _fake_gh(changed_files=5, api_lines=["a.py", "b.py"])
     monkeypatch.setattr(mod, "_run", fake_run)
-    with pytest.raises(ChangeError, match="listed no files"):
+    with pytest.raises(ChangeError, match="2 file\\(s\\) for a pull request that changes 5"):
         mod.github_change(7, "acme/billing")
 
     def failing(cmd, cwd=None, stdin=None):

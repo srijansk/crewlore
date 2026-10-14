@@ -120,13 +120,27 @@ def _content_words(claim: Claim) -> set[str]:
     return _tokens(" ".join(filter(None, [claim.statement, claim.topic]))) - _TEMPLATE_WORDS
 
 
+def _specific_words(claim: Claim) -> set[str]:
+    """The words that name the declined approach itself: in the statement, but in neither
+    the topic (the shared question) nor the action (the recommended alternative). A
+    change that only names the subject, as the recommended alternative does too, shares
+    none of them."""
+    subject = _tokens(" ".join(filter(None, [claim.topic, claim.action])))
+    return _tokens(claim.statement) - subject - _TEMPLATE_WORDS
+
+
 def overlap(claim: Claim, text: str) -> float:
     """Share of the claim's content words (statement and topic, minus the extractor's
     template words) present in the change text; 0 when fewer than
-    `REPROPOSAL_MIN_SHARED_WORDS` are shared."""
+    `REPROPOSAL_MIN_SHARED_WORDS` are shared, or when none of the shared words is
+    specific to the declined approach."""
     words = _content_words(claim)
-    shared = words & _tokens(text)
+    present = _tokens(text)
+    shared = words & present
     if not words or len(shared) < REPROPOSAL_MIN_SHARED_WORDS:
+        return 0.0
+    specific = _specific_words(claim)
+    if specific and not (specific & present):
         return 0.0
     return len(shared) / len(words)
 
@@ -192,12 +206,16 @@ def local_change(repo: Path, base: str | None = None) -> Change:
     the base cannot be found locally, the working tree alone is reviewed and the label
     says so, so a smaller review is never mistaken for the whole one.
     """
-    repo = Path(repo)
+    # Every git call runs from the repository root, so the paths it lists are what the
+    # claims' scopes are measured against even when `--repo` names a subdirectory.
+    repo = Path(_run(["git", "rev-parse", "--show-toplevel"], cwd=Path(repo)).strip())
     base = base or default_base(repo)
     try:
         branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).strip()
     except ChangeError as exc:
-        raise ChangeError(f"nothing to review: {repo} has no commits yet") from exc
+        if "ambiguous argument" in str(exc) or "single revision" in str(exc):
+            raise ChangeError(f"nothing to review: {repo} has no commits yet") from exc
+        raise
     if branch == "HEAD":  # detached: name the commit rather than the word HEAD
         short = _run(["git", "rev-parse", "--short", "HEAD"], cwd=repo).strip()
         branch = f"detached HEAD at {short}"
@@ -251,8 +269,10 @@ def github_change(number: int, repo_slug: str | None = None, cwd: Path | None = 
             f"the pull request changes {expected} files; GitHub lists at most "
             f"{GITHUB_FILES_CAP}, so it cannot be reviewed in full"
         )
-    if isinstance(expected, int) and not files and expected > 0:
-        raise ChangeError(f"gh listed no files for a pull request that changes {expected}")
+    if isinstance(expected, int) and len(files) < expected:
+        raise ChangeError(
+            f"gh listed {len(files)} file(s) for a pull request that changes {expected}"
+        )
     place = f" in {sanitize_line(repo_slug)}" if repo_slug else ""
     head, into = sanitize_line(data.get("headRefName")), sanitize_line(data.get("baseRefName"))
     return Change(
