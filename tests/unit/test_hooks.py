@@ -677,6 +677,48 @@ def test_a_hook_without_a_final_newline_gets_one_and_uninstall_keeps_it(repo):
     assert hook.read_text() == "#!/bin/sh\necho mine\n"
 
 
+# GUARDS: a hook that is a symlink (`.git/hooks/post-commit -> ../../scripts/post-commit`
+# is how teams share hooks) takes the block through the link, into a file that is usually
+# tracked, with this machine's interpreter pinned. Install must say where the block went
+# and give the shared-hook note when that file is tracked; uninstall must take the block
+# back out of that file rather than delete the link and leave it there; a link to a file
+# that does not exist is refused before anything is written.
+def test_a_symlinked_hook_is_edited_through_the_link_and_the_note_names_the_target(repo):
+    scripts = repo / "scripts"
+    scripts.mkdir()
+    target = (scripts / "post-commit").resolve()
+    original = "#!/bin/sh\necho shared\n"
+    target.write_text(original)
+    target.chmod(0o755)
+    _git(repo, "add", "scripts/post-commit")
+    hook = _hook(repo)
+    hook.symlink_to(os.path.join("..", "..", "scripts", "post-commit"))
+
+    lines = install(repo, python="/opt/py/bin/python")
+    assert hook.is_symlink() and START in target.read_text()
+    assert any(
+        ln.startswith("post-commit: written") and f"the block went into {target}" in ln
+        for ln in lines
+    )
+    assert any(
+        ln.startswith("note:") and f"symlink to {target}, which is tracked by git" in ln
+        for ln in lines
+    )
+    assert not any("post-merge is a symlink" in ln for ln in lines)
+    assert status(repo)["post-commit"].startswith("installed")
+
+    lines = uninstall(repo)
+    assert hook.is_symlink() and target.read_text() == original
+    assert any(
+        ln.startswith("post-commit:") and "rest kept" in ln and str(target) in ln for ln in lines
+    )
+
+    _hook(repo, "post-merge").symlink_to(os.path.join("..", "..", "scripts", "missing"))
+    with pytest.raises(HookRefused, match="symlink to .*missing, which does not exist"):
+        install(repo)
+    assert target.read_text() == original  # refused before writing the others
+
+
 # GUARDS: a committed core.hooksPath shares the hook file with the team. The pinned
 # interpreter is this machine's; everyone else needs the PATH fallback, and the
 # installer says so.

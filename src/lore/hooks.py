@@ -179,15 +179,20 @@ class _Plan:
     was_executable: bool
     placed_before: tuple[int, str] | None  # (line number, keyword) when moved before an exit
     added_newline: bool  # the hook's last line had no newline; one was added before the block
+    target: Path | None  # the file a symlinked hook points at: where the block really goes
 
 
 def install(repo: Path = Path("."), *, python: str | None = None) -> list[str]:
     """Write or refresh the marked block in each hook.
 
-    Returns one line per hook, plus a note when the hooks directory is tracked by git.
+    Returns one line per hook, plus a note when the hooks directory, or the file a
+    symlinked hook points at, is tracked by git: such hooks are shared, and the block
+    pins this machine's interpreter. A symlinked hook is edited through the link, and
+    its line says which file the block went into.
     Raises `HookRefused` before writing anything when a hook cannot safely take the
     block: it is not a shell script, has CRLF line endings, ends inside a construct the
-    block could not be placed after, or its existing block is damaged or duplicated.
+    block could not be placed after, its existing block is damaged or duplicated, or
+    it is a symlink to a file that does not exist.
     """
     directory = hooks_dir(repo)
     plans = [_plan(directory / name, spec, python) for name, spec in HOOKS.items()]
@@ -205,22 +210,31 @@ def install(repo: Path = Path("."), *, python: str | None = None) -> list[str]:
             notes.append("ended the hook's last line with a newline, which it lacked")
         if plan.existed and not plan.was_executable:
             notes.append("made executable; it was not")
+        if plan.target is not None:
+            notes.append(f"a symlink; the block went into {plan.target}")
         detail = f" ({'; '.join(notes)})" if notes else ""
         state = "written" if plan.changed else "already current"
         lines.append(f"{plan.name}: {state}{detail} ({plan.path})")
-    if _tracked(repo, directory):
+    shared = [f"{directory} is tracked by git"] if _tracked(repo, directory) else []
+    shared += [
+        f"{plan.name} is a symlink to {plan.target}, which is tracked by git"
+        for plan in plans
+        if plan.target is not None and _tracked(repo, plan.target)
+    ]
+    if shared:
         lines.append(
-            f"note: {directory} is tracked by git, so these hooks are shared: they pin this "
-            f"machine's interpreter ({python or sys.executable}) and fall back to `lore` on "
-            "PATH for everyone else."
+            f"note: {'; '.join(shared)}, so these hooks are shared: they pin this machine's "
+            f"interpreter ({python or sys.executable}) and fall back to `lore` on PATH for "
+            "everyone else."
         )
     return lines
 
 
 def uninstall(repo: Path = Path(".")) -> list[str]:
     """Remove the marked block, byte for byte, from each hook; delete a hook that held
-    nothing else. Refuses, before writing anything, when a block is damaged or
-    duplicated."""
+    nothing else. A symlinked hook is written back through the link, never deleted:
+    the file it points at is not ours. Refuses, before writing anything, when a block
+    is damaged or duplicated."""
     directory = hooks_dir(repo)
     plans = []
     for name in HOOKS:
@@ -234,12 +248,13 @@ def uninstall(repo: Path = Path(".")) -> list[str]:
     lines = []
     for name, path, remaining in plans:
         rest = remaining.strip()
-        if not rest or (rest.startswith("#!") and "\n" not in rest):
+        if not path.is_symlink() and (not rest or (rest.startswith("#!") and "\n" not in rest)):
             path.unlink()
             lines.append(f"{name}: removed ({path})")
         else:
             _write(path, remaining)
-            lines.append(f"{name}: crewlore block removed, rest kept ({path})")
+            where = f"{path.resolve()}, which {path} links to" if path.is_symlink() else path
+            lines.append(f"{name}: crewlore block removed, rest kept ({where})")
     return lines or ["nothing to remove"]
 
 
@@ -343,7 +358,14 @@ def last_log_line(repo: Path = Path(".")) -> str | None:
 
 
 def _plan(path: Path, spec: HookSpec, python: str | None) -> _Plan:
-    existed = path.exists()
+    existed = path.exists()  # follows a symlink: False for a dangling one
+    target = path.resolve() if path.is_symlink() else None
+    if target is not None and not existed:
+        raise HookRefused(
+            f"{path} is a symlink to {target}, which does not exist, so crewlore would be "
+            "writing a hook there through the link. Remove the link or create the file it "
+            "points at, then run `lore hook install` again."
+        )
     text = _read(path) if existed else SHEBANG
     if "\r\n" in text:
         raise HookRefused(
@@ -372,6 +394,7 @@ def _plan(path: Path, spec: HookSpec, python: str | None) -> _Plan:
         was_executable=existed and os.access(path, os.X_OK),
         placed_before=placed,
         added_newline=added_newline,
+        target=target,
     )
 
 
@@ -845,10 +868,11 @@ def _git(repo: Path, *args: str) -> str:
         raise NotAGitRepository(f"{repo} is not inside a git repository") from exc
 
 
-def _tracked(repo: Path, directory: Path) -> bool:
-    """Whether git tracks files under the hooks directory (a committed `core.hooksPath`)."""
+def _tracked(repo: Path, path: Path) -> bool:
+    """Whether git tracks `path`: a file, or any file under a directory (the hooks
+    directory of a committed `core.hooksPath`). A path outside the repository is not."""
     proc = subprocess.run(
-        ["git", "-C", str(repo), "ls-files", "--error-unmatch", "--", str(directory)],
+        ["git", "-C", str(repo), "ls-files", "--error-unmatch", "--", str(path)],
         capture_output=True,
         text=True,
     )
