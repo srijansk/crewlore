@@ -1,7 +1,10 @@
+import os
 from datetime import datetime, timezone
 
+import pytest
+
 from lore.schemas import Anchor, Claim, Conflict, NSFEvent, Provenance
-from lore.store import LoreStore
+from lore.store import GITIGNORE_LINES, LoreStore
 
 
 def _claim(statement, kind="gotcha", scope="services/billing"):
@@ -181,6 +184,34 @@ def test_ensure_gitignore_upgrades_an_older_shorter_list(tmp_path):
     assert (tmp_path / ".lore" / ".gitignore").read_text().splitlines() == lines
 
 
+# GUARDS: the writes a compile makes before its head check go to directories every
+# version has ignored. On a store from an older version, refreshing the tracked
+# `.lore/.gitignore` for them would be a tracked write made before the check; the
+# refresh belongs to the claims write, after it. A file that does lack the directory
+# being written to still gains it.
+def test_session_and_cache_writes_leave_an_older_gitignore_alone_until_claims_land(tmp_path):
+    store = LoreStore(tmp_path)
+    (tmp_path / ".lore").mkdir()
+    gitignore = tmp_path / ".lore" / ".gitignore"
+    older = "sessions/\ncache/\nclaims/usage.jsonl\n"
+    gitignore.write_text(older)
+    event = NSFEvent(
+        session="abc", actor="user", kind="user_message",
+        timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc), content="hi",
+    )
+    store.write_session("abc", [event])
+    store.save_extraction("abc", [])
+    assert gitignore.read_text() == older
+
+    store.write_claims([_claim("a")])
+    lines = gitignore.read_text().splitlines()
+    assert lines[:3] == older.splitlines() and set(lines) == set(GITIGNORE_LINES)
+
+    gitignore.write_text("cache/\n")
+    store.write_session("def", [event])
+    assert gitignore.read_text() == "cache/\nsessions/\n"
+
+
 def test_default_config_has_no_dead_keys(tmp_path):
     import yaml
 
@@ -189,4 +220,72 @@ def test_default_config_has_no_dead_keys(tmp_path):
     cfg = yaml.safe_load((tmp_path / ".lore" / "config.yaml").read_text())
     assert set(cfg) == {"model", "capture", "compile"}
     assert cfg["capture"]["transcripts"] == "auto"
+    assert cfg["capture"]["settle_minutes"] == 10
     assert cfg["compile"] == {"watch_interval_seconds": 300, "max_unused_days": 30}
+
+
+# GUARDS: a reader that overlaps a write (two hook compiles from one rebase) must see
+# the old file or the new one, never a truncated one — so every write lands through a
+# replace, and a write that fails leaves the old file in place with no temp file behind.
+def test_claims_are_replaced_in_one_step_and_a_failed_write_keeps_the_old_file(
+    tmp_path, monkeypatch
+):
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([_claim("a")])
+    before = store.claims_path.read_text()
+    real_replace = os.replace
+    replaced = []
+
+    def failing_replace(src, dst):
+        replaced.append(os.path.basename(dst))
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    with pytest.raises(OSError):
+        store.write_claims([_claim("b")])
+    assert store.claims_path.read_text() == before
+    assert "claims.jsonl" in replaced  # the write went through a replace, not a truncate
+
+    monkeypatch.setattr(os, "replace", real_replace)
+    store.write_claims([_claim("b")])
+    assert len(store.load_claims()) == 1 and store.load_claims()[0].statement == "b"
+    leftovers = [p.name for p in store.claims_path.parent.iterdir() if p.name.endswith(".tmp")]
+    assert leftovers == []
+
+
+# GUARDS: a writer that crashes between writing its temp file and the replace leaves
+# `.<name>.<pid>.tmp` behind. It must never show up as untracked, and the next write
+# of that path must sweep it; a young temp file may be another process's write in
+# progress and is left alone, as is any other path's temp file.
+def test_stale_temp_files_are_gitignored_and_swept_by_the_next_write(tmp_path):
+    import subprocess
+    import time
+
+    from lore.store import STALE_TMP_AGE_SECONDS
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([_claim("a")])
+    assert ".*.tmp" in (tmp_path / ".lore" / ".gitignore").read_text().splitlines()
+
+    old = time.time() - STALE_TMP_AGE_SECONDS - 1
+    stale = store.claims_path.with_name(".claims.jsonl.99999.tmp")
+    stale.write_text("half-written")
+    os.utime(stale, (old, old))
+    young = store.claims_path.with_name(".claims.jsonl.99998.tmp")
+    young.write_text("a write in progress elsewhere")
+    other = store.conflicts_path.with_name(".conflicts.jsonl.99997.tmp")
+    other.write_text("another path's leftover")
+    os.utime(other, (old, old))
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    untracked = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert ".tmp" not in untracked, untracked
+
+    store.write_claims([_claim("b")])
+    assert not stale.exists()
+    assert young.exists() and other.exists()

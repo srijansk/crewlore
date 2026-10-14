@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timezone
 
 from lore.schemas import Anchor, Claim, Conflict
-from lore.store import LoreStore
+from lore.store import LoreStore, atomic_write_text
 from lore.text import sanitize_line
 
 # Common words carry no retrieval signal and cause false matches across unrelated
@@ -132,7 +132,9 @@ class KnowledgeServer:
             if c.id in served_ids:
                 c.usage.times_served += 1
                 c.usage.last_served_at = now
-        self.store.write_claims(claims)
+        # Usage only: a query must never rewrite claims.jsonl, which would churn the
+        # committed file and could revert a compile finishing at the same moment.
+        self.store.write_usage(claims)
         # Return the freshly-incremented claim objects, preserving rank order.
         by_id = {c.id: c for c in claims}
         return [by_id[c.id] for c in ranked]
@@ -148,8 +150,7 @@ class KnowledgeServer:
         conflicts = self.store.load_conflicts()
         book = render_book(claims, conflicts)
         path = self.store.lore / "knowledge" / "README.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(book)
+        atomic_write_text(path, book)
         return book
 
     def _bump(self, claim_ids: list[str], field: str) -> None:
@@ -158,4 +159,4 @@ class KnowledgeServer:
         for c in claims:
             if c.id in ids:
                 setattr(c.usage, field, getattr(c.usage, field) + 1)
-        self.store.write_claims(claims)
+        self.store.write_usage(claims)
