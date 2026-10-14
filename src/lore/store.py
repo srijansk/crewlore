@@ -9,6 +9,7 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +28,9 @@ DEFAULT_CONFIG = {
 # Never committed: raw sessions and raw source exports can carry secrets or PII,
 # the extraction cache is local, and usage stats are volatile.
 GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl")
+# The corrections log is appended by every author in time order, so two branches that
+# each add a note conflict at its end; git's union driver keeps both lines.
+GITATTRIBUTES_LINES = ("claims/corrections.jsonl merge=union",)
 
 
 class LoreStore:
@@ -76,6 +80,16 @@ class LoreStore:
         if not self.config_path.exists():
             self.config_path.write_text(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
         self.ensure_gitignore()
+        self.ensure_gitattributes()
+
+    def ensure_gitattributes(self) -> None:
+        """Make sure `.lore/.gitattributes` merges the corrections log line by line."""
+        path = self.lore / ".gitattributes"
+        existing = path.read_text().splitlines() if path.exists() else []
+        missing = [line for line in GITATTRIBUTES_LINES if line not in existing]
+        if missing:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("".join(f"{line}\n" for line in [*existing, *missing]))
 
     def ensure_gitignore(self) -> None:
         """Make sure `.lore/.gitignore` exists and covers every local-only path.
@@ -176,16 +190,30 @@ class LoreStore:
 
     # --- corrections (committed reader feedback) ---
     def load_corrections(self) -> list[Correction]:
-        lines = self._read_jsonl(self.corrections_path)
-        return [Correction.model_validate_json(ln) for ln in lines]
+        """Every readable note. A line that does not parse (a merge marker, a hand edit)
+        is reported on stderr and skipped, so one bad line in a committed file never
+        takes retrieval, the book or the MCP tools down for the whole team."""
+        out: list[Correction] = []
+        for number, ln in enumerate(self._read_jsonl(self.corrections_path), start=1):
+            try:
+                out.append(Correction.model_validate_json(ln))
+            except ValueError:
+                print(
+                    f"crewlore: skipping unreadable line {number} of {self.corrections_path}",
+                    file=sys.stderr,
+                )
+        return out
 
     def add_corrections(self, corrections: list[Correction]) -> None:
-        """Append; a correction is never edited or removed by the tool, only by a person
-        editing the committed file."""
-        existing = self.load_corrections()
+        """Append one line per note. The file is append-only: the tool never edits or
+        removes a note (a person may, in the committed file), and appending whole
+        lines is how concurrent writers, two agents or a person and an agent, all keep
+        theirs."""
         self.corrections_path.parent.mkdir(parents=True, exist_ok=True)
         self.ensure_gitignore()
-        self._write_jsonl(self.corrections_path, existing + list(corrections))
+        self.ensure_gitattributes()
+        with open(self.corrections_path, "a", encoding="utf-8") as handle:
+            handle.write("".join(x.model_dump_json() + "\n" for x in corrections))
 
     # --- sessions (raw NSF capture) ---
     def write_session(self, session_id: str, events: list[NSFEvent]) -> None:

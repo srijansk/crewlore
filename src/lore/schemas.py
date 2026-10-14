@@ -162,6 +162,9 @@ class Correction(BaseModel):
     note: str
     author: str = "unknown"
     at: datetime | None = None
+    # Who typed it: "cli" for a person at the command line, "mcp" for an agent through
+    # the MCP tool, which carries the server's git identity as author.
+    via: str = "cli"
 
 
 class Conflict(BaseModel):

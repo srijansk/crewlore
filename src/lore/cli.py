@@ -28,6 +28,7 @@ from lore.serve.server import (
     anchor_attribution,
     claim_label,
     claim_to_dict,
+    correction_line,
     git_user,
 )
 from lore.store import LoreStore
@@ -166,8 +167,15 @@ def status(repo: Path = RepoOpt):
     served = [c for c in active if c.usage.times_served > 0]
     utilization = (len(served) / len(active)) if active else 0.0
 
-    corrected = {x.claim_id for x in store.load_corrections()} & {c.id for c in active}
+    notes = store.load_corrections()
+    corrected = {x.claim_id for x in notes} & {c.id for c in active}
+    orphaned = {x.claim_id for x in notes} - {c.id for c in claims}
     typer.echo(f"claims:    {len(claims)} ({len(active)} active, {len(corrected)} corrected)")
+    if orphaned:
+        typer.echo(
+            f"  ! {len(orphaned)} correction(s) refer to claims no longer in the store "
+            "(re-extracted under a new wording); edit .lore/claims/corrections.jsonl"
+        )
     typer.echo(f"conflicts: {len(conflicts)}")
     typer.echo(f"sessions:  {len(sessions)} captured")
     typer.echo(f"utilization: {utilization:.0%} of active claims have ever been served")
@@ -224,8 +232,7 @@ def _print_claim(c, *, show_scope: bool = True, corrections=()) -> None:
         verb = "" if c.adoption == "current" else "instead: "
         typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
     for x in corrections:
-        when = f" on {x.at.date().isoformat()}" if x.at else ""
-        typer.echo(f"    !! corrected by {sanitize_line(x.author)}{when}: {sanitize_line(x.note)}")
+        typer.echo(f"    !! {correction_line(x)}")
 
 
 def _print_explanation(found) -> None:
@@ -358,12 +365,19 @@ def feedback(
         typer.echo(f"marked {len(claim_ids)} claim(s) overridden")
     else:
         author = git_user(repo)
-        server.correct(claim_ids, note, author=author)
-        server.write_book()
+        try:
+            written = server.correct(claim_ids, note, author=author)
+        except ValueError as exc:
+            typer.echo(f"error: {exc}")
+            raise typer.Exit(1) from exc
         typer.echo(
-            f"recorded a correction by {author} on {len(claim_ids)} claim(s) in "
+            f"recorded a correction by {author} on {len(written)} claim(s) in "
             f"{store.corrections_path}; commit it with the book"
         )
+        try:
+            server.write_book()
+        except OSError as exc:
+            typer.echo(f"note: the book was not rebuilt ({exc}); run `lore render` later")
 
 
 def _compile_once(

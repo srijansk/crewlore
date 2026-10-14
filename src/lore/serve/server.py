@@ -72,6 +72,7 @@ def correction_to_dict(x: Correction) -> dict:
         "note": sanitize_line(x.note),
         "author": sanitize_line(x.author),
         "at": x.at.isoformat() if x.at else None,
+        "via": x.via,
     }
 
 
@@ -230,9 +231,21 @@ def claim_label(c: Claim, *, corrected: bool = False) -> str:
     return f"{label} · corrected" if corrected else label
 
 
-def _correction_line(x: Correction) -> str:
+_MARKDOWN_ACTIVE = re.compile(r"([\\`*_\[\]<>])")
+
+
+def markdown_escape(text: object) -> str:
+    """One line of someone's text as inert Markdown: no emphasis, link, image or tag."""
+    return _MARKDOWN_ACTIVE.sub(r"\\\1", sanitize_line(text))
+
+
+def correction_line(x: Correction, *, markdown: bool = False) -> str:
+    """`corrected on DATE by AUTHOR: note`, the date first so an author's name cannot
+    pose as a date, and `via MCP` when an agent wrote it through the tool."""
+    clean = markdown_escape if markdown else sanitize_line
     when = f" on {x.at.date().isoformat()}" if x.at else ""
-    return f"corrected by {sanitize_line(x.author)}{when}: {sanitize_line(x.note)}"
+    origin = " via MCP" if x.via == "mcp" else ""
+    return f"corrected{when} by {clean(x.author)}{origin}: {clean(x.note)}"
 
 
 _ACTOR_WORD = {"user": "human", "agent": "agent", "system": "system"}
@@ -288,7 +301,7 @@ def render_book(
                 verb = "Do" if c.adoption == "current" else "Instead"
                 lines.append(f"  - *{verb}:* {sanitize_line(c.action)}")
             for x in notes:
-                lines.append(f"  - _{_correction_line(x)}_")
+                lines.append(f"  - **{correction_line(x, markdown=True)}**")
             for a in c.anchors:
                 who = anchor_attribution(a)
                 by = f" ({who})" if who else ""
@@ -313,11 +326,13 @@ class KnowledgeServer:
 
     def query(self, text: str, limit: int = 5) -> list[Claim]:
         claims = self.store.load_claims()
-        ranked = rank_claims(claims, text, limit=limit)
         # A claim a reader has corrected is probably wrong: it is still served, with
-        # its note, but after the claims nobody has corrected.
+        # its note, but after every claim nobody has corrected, so the demotion is
+        # applied before the page is cut, not within it.
+        ranked = rank_claims(claims, text, limit=len(claims))
         corrected = set(self.corrections_by_claim())
         ranked.sort(key=lambda c: c.id in corrected)
+        ranked = ranked[:limit]
         served_ids = {c.id for c in ranked}
         now = datetime.now(timezone.utc)
         for c in claims:
@@ -332,11 +347,27 @@ class KnowledgeServer:
     def corrections_by_claim(self) -> dict[str, list[Correction]]:
         return corrections_by_claim(self.store.load_corrections())
 
-    def correct(self, claim_ids: list[str], note: str, *, author: str) -> list[Correction]:
+    def correct(
+        self, claim_ids: list[str], note: str, *, author: str, via: str = "cli"
+    ) -> list[Correction]:
         """Record that these claims are wrong or outdated and what is true now. The
-        claims stay active and marked; nothing is archived on a reader's word alone."""
+        claims stay active and marked; nothing is archived on a reader's word alone.
+
+        Only active claims take a note: an archived one is rendered nowhere, so the
+        note would be written and never seen. Raises `ValueError` naming the ids that
+        are unknown or archived, so the CLI and the MCP tool refuse the same way.
+        """
+        ids = list(dict.fromkeys(claim_ids))
+        active = {c.id for c in self.store.load_claims() if c.status == "active"}
+        rejected = [cid for cid in ids if cid not in active]
+        if not ids:
+            raise ValueError("no claim ids given")
+        if rejected:
+            raise ValueError(f"unknown or archived claim id(s): {', '.join(rejected)}")
         now = datetime.now(timezone.utc)
-        new = [Correction(claim_id=cid, note=note, author=author, at=now) for cid in claim_ids]
+        new = [
+            Correction(claim_id=cid, note=note, author=author, at=now, via=via) for cid in ids
+        ]
         self.store.add_corrections(new)
         return new
 
