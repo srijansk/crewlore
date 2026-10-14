@@ -148,6 +148,25 @@ class Claim(BaseModel):
         return self
 
 
+class Correction(BaseModel):
+    """A reader's note that a claim is wrong or outdated, and what is true now.
+
+    Corrections are team knowledge, so they live in a tracked file beside the claims
+    and travel through git once committed, unlike usage counters. A corrected claim
+    stays in the book, marked, the way declined work does: the record of what was
+    believed and why it was corrected is worth more than its deletion, and retrieval
+    puts it after claims nobody has corrected.
+    """
+
+    claim_id: str
+    note: str
+    author: str = "unknown"
+    at: datetime | None = None
+    # Who typed it: "cli" for a person at the command line, "mcp" for an agent through
+    # the MCP tool, which carries the server's git identity as author.
+    via: Literal["cli", "mcp"] = "cli"
+
+
 class Conflict(BaseModel):
     """A first-class disagreement between claims. Conflicts are knowledge: we
     record them with both provenances rather than silently overwriting."""

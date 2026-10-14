@@ -28,11 +28,11 @@ Three tools are exposed:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `topic`, `action`, `authority`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it) |
+| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `topic`, `action`, `authority`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it), and `corrections` (reader notes: `note`, `author`, `at`, `via`) |
 | `lore_explain` | `scope: str` (a scope as shown in the book, or a prefix of one) | Always the same keys: `scope` (`null` when nothing matched or the name was ambiguous), `claims` (current practice first, then declined work, same claim shape), `conflicts` (`id`, `reason`, `claim_ids`), `ambiguous` (candidate scopes when several matched; call again with one), `narrower` (scopes nested under the matched one) |
-| `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
+| `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden" \| "corrected"`, `note: str` (required with `corrected`) | Records the verdict against those claims. A correction's note is written to the tracked file `.lore/claims/corrections.jsonl` (the response names it; you commit it with the book) under the repository's git identity, marked `via: "mcp"`, and returned in `corrections` on every claim it concerns, in `lore_query` and `lore_explain` alike; only active claims take a note |
 
-Every `lore_query` call, and every answered `lore_explain` call, records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
+Every `lore_query` call, and every answered `lore_explain` call, records that the returned claims were served; `lore_feedback` records whether they helped. Influential and overridden feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced. A correction does not archive anything; it marks the claim and moves it after uncorrected claims in retrieval.
 
 ## Claude Desktop
 
@@ -71,7 +71,7 @@ Once wired, an agent should call `lore_query` near the start of a session, right
 
 1. Call `lore_query("<the current task in natural language>")` and read the returned claims.
 2. Treat each claim as a citation, not an opinion: every claim carries anchors pointing at the line it came from, and an `adoption` of `not_adopted` means the team tried that approach and declined it.
-3. Call `lore_feedback` with the ids that shaped its work (`influential`) or that it had to override (`overridden`), rather than silently ignoring a claim that did not fit.
+3. Call `lore_feedback` with the ids that shaped its work (`influential`), that it had to override (`overridden`), or that it found to be wrong or outdated (`corrected`, with a one-line `note` saying what is true now), rather than silently ignoring a claim that did not fit.
 
 ## Troubleshooting
 

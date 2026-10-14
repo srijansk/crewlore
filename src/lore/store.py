@@ -12,6 +12,7 @@ import contextlib
 import glob
 import json
 import os
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
+from lore.schemas import Claim, Conflict, Correction, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
     "model": {"provider": "anthropic", "name": "claude-sonnet-5-5"},
@@ -45,6 +46,11 @@ DEFAULT_CONFIG = {
 SESSIONS_IGNORE = "sessions/"
 CACHE_IGNORE = "cache/"
 GITIGNORE_LINES = (SESSIONS_IGNORE, CACHE_IGNORE, "sources/", "claims/usage.jsonl", ".*.tmp")
+# The corrections log is appended by every author in time order, so two branches that
+# each add a note conflict at its end; git's union driver keeps both lines.
+GITATTRIBUTES_LINES = ("claims/corrections.jsonl merge=union",)
+# Files whose unreadable lines were already reported in this process.
+_WARNED_FILES: set[Path] = set()
 
 # A write's temp file exists for the milliseconds between writing it and replacing
 # the target, so a `.<name>.<pid>.tmp` sibling older than this is the leftover of a
@@ -63,7 +69,7 @@ def atomic_write_text(path: Path, text: str) -> None:
     _sweep_stale_tmp(path)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        tmp.write_text(text)
+        tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):
@@ -121,6 +127,11 @@ class LoreStore:
         return self.lore / "claims" / "usage.jsonl"
 
     @property
+    def corrections_path(self) -> Path:
+        # Committed, like the claims: a correction is the team's, not one machine's.
+        return self.lore / "claims" / "corrections.jsonl"
+
+    @property
     def conflicts_path(self) -> Path:
         return self.lore / "claims" / "conflicts.jsonl"
 
@@ -146,6 +157,19 @@ class LoreStore:
         if not self.config_path.exists():
             atomic_write_text(self.config_path, yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
         self.ensure_gitignore()
+        self.ensure_gitattributes()
+
+    def ensure_gitattributes(self) -> None:
+        """Make sure `.lore/.gitattributes` merges the corrections log line by line.
+        Lines are compared token-wise, so spacing variants are not duplicated."""
+        path = self.lore / ".gitattributes"
+        existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        present = {tuple(line.split()) for line in existing}
+        missing = [line for line in GITATTRIBUTES_LINES if tuple(line.split()) not in present]
+        if missing:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            text = "".join(f"{line}\n" for line in [*existing, *missing])
+            path.write_text(text, encoding="utf-8")
 
     def ensure_gitignore(self, *needed: str) -> None:
         """Make sure `.lore/.gitignore` exists and covers `needed` — every local-only
@@ -276,6 +300,49 @@ class LoreStore:
     def load_conflicts(self) -> list[Conflict]:
         return [Conflict.model_validate_json(ln) for ln in self._read_jsonl(self.conflicts_path)]
 
+    # --- corrections (committed reader feedback) ---
+    def load_corrections(self) -> list[Correction]:
+        """Every readable note. A line that does not parse (a merge marker, a hand edit)
+        is skipped and reported on stderr, once per process and file, so one bad line
+        in a committed file never takes retrieval, the book or the MCP tools down for
+        the whole team. Line numbers are the file's own, blank lines included."""
+        path = self.corrections_path
+        if not path.exists():
+            return []
+        out: list[Correction] = []
+        bad: list[int] = []
+        for number, raw in enumerate(path.read_bytes().splitlines(), start=1):
+            if not raw.strip():
+                continue
+            try:  # a line that is not UTF-8 is unreadable like one that is not JSON
+                out.append(Correction.model_validate_json(raw.decode("utf-8")))
+            except ValueError:
+                bad.append(number)
+        if bad and path not in _WARNED_FILES:
+            _WARNED_FILES.add(path)
+            lines = ", ".join(map(str, bad))
+            print(f"crewlore: skipping unreadable line(s) {lines} of {path}", file=sys.stderr)
+        return out
+
+    def add_corrections(self, corrections: list[Correction]) -> None:
+        """Append one line per note. The file is append-only: the tool never edits or
+        removes a note (a person may, in the committed file), and appending whole
+        lines is how concurrent writers, two agents or a person and an agent, all keep
+        theirs. A hand-edited file whose last line lacks a newline gets one first, so
+        two records are never glued into one unreadable line."""
+        path = self.corrections_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_gitignore()
+        self.ensure_gitattributes()
+        payload = "".join(x.model_dump_json() + "\n" for x in corrections).encode("utf-8")
+        with open(path, "a+b") as handle:
+            handle.seek(0, 2)
+            if handle.tell() > 0:
+                handle.seek(-1, 2)
+                if handle.read(1) != b"\n":
+                    payload = b"\n" + payload
+            handle.write(payload)
+
     # --- sessions (raw NSF capture) ---
     def write_session(self, session_id: str, events: list[NSFEvent]) -> None:
         path = self.session_path(session_id)
@@ -321,4 +388,4 @@ class LoreStore:
     def _read_jsonl(path: Path) -> list[str]:
         if not path.exists():
             return []
-        return [ln for ln in path.read_text().splitlines() if ln.strip()]
+        return [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
