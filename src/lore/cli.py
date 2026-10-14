@@ -5,6 +5,7 @@
     lore watch       do that automatically on an interval (--once for cron)
     lore import-prs  compile a GitHub repo's pull-request threads
     lore query       task-conditioned retrieval (records usage)
+    lore explain     everything known about one scope, declined work included
     lore feedback    mark served claims influential or overridden
     lore status      counts + how much of the layer is actually being read
     lore serve       MCP server for query-time retrieval
@@ -12,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -19,7 +21,7 @@ from pathlib import Path
 import typer
 
 from lore import __version__
-from lore.serve.server import KnowledgeServer, claim_label
+from lore.serve.server import KnowledgeServer, anchor_attribution, claim_label, claim_to_dict
 from lore.store import LoreStore
 from lore.text import sanitize_line
 
@@ -167,27 +169,129 @@ def status(repo: Path = RepoOpt):
         )
 
 
+JsonOpt = typer.Option(
+    False,
+    "--json",
+    help="Print JSON instead of text, with nothing else on stdout (for scripts and hooks).",
+)
+ExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help=(
+        "Exit 4 when nothing matched and 3 when a scope name is ambiguous, instead of 0 "
+        "(like `git diff --exit-code`)."
+    ),
+)
+# Exit codes behind --exit-code, shared by `lore query` and `lore explain`, so a script
+# can branch without parsing text. Off by default: an assistant that runs `lore query`
+# through a shell tool would otherwise see every miss reported as a failed command.
+EXIT_AMBIGUOUS = 3
+EXIT_NO_MATCH = 4
+
+
+def _open_store(repo: Path) -> LoreStore:
+    """The store at `repo`, or exit 1 with the hint on stderr so `--json` stdout stays JSON."""
+    store = LoreStore(repo)
+    if not store.is_initialised:
+        typer.echo(_INIT_HINT, err=True)
+        raise typer.Exit(1)
+    return store
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _print_claim(c, *, show_scope: bool = True) -> None:
+    where = f" ({sanitize_line(c.scope)})" if show_scope else ""
+    typer.echo(f"[{claim_label(c)}]{where} {sanitize_line(c.statement)}  [{c.id}]")
+    if c.action:
+        verb = "" if c.adoption == "current" else "instead: "
+        typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+
+
+def _print_explanation(found) -> None:
+    declined = sum(1 for c in found.claims if c.adoption != "current")
+    count = _plural(len(found.claims), "claim")
+    typer.echo(f"{sanitize_line(found.scope)}  ({count}, {declined} not adopted)")
+    for c in found.claims:
+        _print_claim(c, show_scope=False)
+        for a in c.anchors:
+            who = anchor_attribution(a)
+            by = f" ({who})" if who else ""
+            typer.echo(f'    anchor {sanitize_line(a.ref)}{by}: "{sanitize_line(a.quote)}"')
+    if found.conflicts:
+        typer.echo("")
+        typer.echo("conflicts:")
+        for cf in found.conflicts:
+            typer.echo(f"  {sanitize_line(cf.reason)} ({', '.join(cf.claim_ids)})")
+    if found.narrower:
+        typer.echo("")
+        names = ", ".join(sanitize_line(sc) for sc in found.narrower)
+        typer.echo(f"{_plural(len(found.narrower), 'narrower scope')}: {names}")
+
+
 @app.command()
 def query(
     text: str,
     repo: Path = RepoOpt,
     limit: int = typer.Option(5, "--limit", help="Maximum number of claims to return."),
+    json_out: bool = JsonOpt,
+    exit_code: bool = ExitCodeOpt,
 ):
-    """Retrieve the claims most relevant to a task (records usage)."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        return
+    """Retrieve the claims most relevant to a task (records usage).
+
+    Prints "(no relevant claims)" (or `[]` with --json) when nothing matched; add
+    --exit-code to also exit 4 in that case.
+    """
+    store = _open_store(repo)
     results = KnowledgeServer(store).query(text, limit=limit)
-    if not results:
+    if json_out:
+        typer.echo(json.dumps([claim_to_dict(c) for c in results], indent=2))
+    elif results:
+        for c in results:
+            _print_claim(c)
+    else:
         typer.echo("(no relevant claims)")
-        return
-    for c in results:
-        scope, statement = sanitize_line(c.scope), sanitize_line(c.statement)
-        typer.echo(f"[{claim_label(c)}] ({scope}) {statement}  [{c.id}]")
-        if c.action:
-            verb = "" if c.adoption == "current" else "instead: "
-            typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+    if not results and exit_code:
+        raise typer.Exit(EXIT_NO_MATCH)
+
+
+@app.command()
+def explain(
+    scope: str = typer.Argument(..., help="A scope as shown in the book, or a prefix of one."),
+    repo: Path = RepoOpt,
+    json_out: bool = JsonOpt,
+    exit_code: bool = ExitCodeOpt,
+):
+    """Everything known about one scope: current practice, declined work, conflicts.
+
+    A name matching several scopes is refused with the candidates listed rather than
+    guessed. With --json the output always has the keys scope, claims, conflicts,
+    ambiguous and narrower; add --exit-code to exit 3 on an ambiguous name and 4 on
+    no match.
+    """
+    if not scope.strip():
+        typer.echo(
+            "error: pass a scope name (the headings in .lore/knowledge/README.md)", err=True
+        )
+        raise typer.Exit(2)
+    store = _open_store(repo)
+    found = KnowledgeServer(store).explain(scope)
+    if json_out:
+        typer.echo(json.dumps(found.to_dict(), indent=2))
+    elif found.candidates:
+        typer.echo(f"{scope!r} matches {len(found.candidates)} scopes; pass one of them:")
+        for sc in found.candidates:
+            typer.echo(f"  {sanitize_line(sc)}")
+    elif not found.answered:
+        typer.echo(f"no active claims under a scope matching {scope!r}")
+    else:
+        _print_explanation(found)
+    if exit_code and found.candidates:
+        raise typer.Exit(EXIT_AMBIGUOUS)
+    if exit_code and not found.answered:
+        raise typer.Exit(EXIT_NO_MATCH)
 
 
 @app.command()

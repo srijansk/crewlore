@@ -14,6 +14,9 @@
 
 ### Added
 
+- **`lore explain <scope>`** prints everything known about one scope: current practice first, then declined work, each with its anchors and their authors, plus the live conflicts recorded for the scope and the scopes nested under it, which an exact match would otherwise hide. A name matching several scopes is refused with the candidates listed instead of guessed; `services/billing/`, `./services/billing` and `services\billing` all find `services/billing`. Reading a scope marks all its claims served, like a query, which also keeps them from decaying as unread. The MCP server gains a `lore_explain` tool with the same result.
+- **`--json` on `lore query` and `lore explain`**: one shape per command (an array of claims; an object with `scope`, `claims`, `conflicts`, `ambiguous` and `narrower`), the same claim shape the MCP tools return, ASCII-safe, with nothing else on stdout. The MCP `lore_query` payload gains `topic` and `authority` so the two surfaces share one shape. For these two commands an uninitialised repository exits 1 with the hint on stderr.
+- **`--exit-code` on `lore query` and `lore explain`** exits 4 when nothing matched and 3 when a scope name is ambiguous, like `git diff --exit-code`. The default stays 0, so an assistant running the command through a shell tool does not see every miss as a failed command.
 - **An original score for the launch video**, `docs/launch-video/audio/`: `score.json` lists a sound event for every moment on screen and one chord per bar; `score.py` synthesises it deterministically (numpy, scipy) and masters it with ffmpeg to -14 LUFS / -1 dBTP; `render.py mux` puts it onto the rendered video. The embedded copies in the README and the Welcome discussion carry the score.
 
 ## 0.4.2 — 2026-10-09

@@ -205,10 +205,11 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore watch` | Automatically ingest → compile → prune on an interval (`--once` for cron/CI). |
 | `lore compile` | Run a single ingest-and-compile pass manually (`--rebuild` to re-extract everything). |
 | `lore import-prs OWNER/REPO` | Compile a GitHub repository's pull-request threads. Scans closed PRs by default (`--state open` or `all`), agent-authored only (`--all-authors` for every PR), most recently updated first (`--limit N`). Needs the `gh` CLI. |
-| `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
+| `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). `--json` for scripts; `--exit-code` to exit 4 when nothing matched. |
+| `lore explain <scope>` | Everything known about one scope: current practice first, then declined work, each with its anchors and their authors, plus live conflicts and the scopes nested under it. A name matching several scopes is refused with the candidates listed. Reading a scope marks all its claims served, like a query. Scopes are text the model wrote, so one area can appear under more than one spelling; the book's headings are the list. `--json`, and `--exit-code` for 3 on an ambiguous name and 4 on no match. |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
-| `lore serve` | Start an MCP server exposing `lore_query` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
+| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ## Configuration
 
