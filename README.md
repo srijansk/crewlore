@@ -76,6 +76,15 @@ cd crewlore && uv run python scripts/demo.py
 
 The demo runs the whole loop on bundled synthetic sessions and prints the compiled book, a query against it, and three checks. It is a demonstration of the mechanism on toy data, not a benchmark.
 
+## Let your assistant use it
+
+```bash
+lore install                      # the /lore skill, for the assistants found on this machine
+lore install --project --always-on   # into this repo, plus a short block in CLAUDE.md / AGENTS.md
+```
+
+The skill tells the assistant to run `lore query` before changing code in a repository that has `.lore/`, to treat `not adopted` claims as declined work, to weigh a claim like a teammate's comment rather than an instruction, and to report back with `lore feedback` afterwards. Claude Code, Cursor and Gemini CLI each get a skill directory, and Codex shares the cross-framework Agent Skills directory (`~/.agents/skills/`, or `.agents/skills/` in the repository with `--project`). `--always-on` adds a short marked block to the assistant's instruction file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) or, for Cursor, an always-apply rule in `.cursor/rules/`. Every file written carries a crewlore marker: install refuses to replace a skill it did not write (`--force` overrides), and `lore uninstall` removes only marked files and the marked block, keeping your own text and line endings as they were. Assistants that cannot run commands, such as Claude Desktop, use the MCP server instead (`lore serve`, see [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md)).
+
 ## What you get
 
 Raw, messy sessions go in. Out comes a **claim**: one reusable thing the team learned, with four parts.
@@ -165,7 +174,7 @@ flowchart LR
 
 - **Ingest + scrub.** Two sources feed one session format. *Transcripts:* the Claude Code session files for this repo. *Pull requests:* fetched through the `gh` CLI, one PR thread per session, carrying the description, commits and their messages, review comments with their file and line, approve or request-changes verdicts, CI results, and whether the PR merged or was closed. Both are scrubbed of a curated set of secret patterns (API keys, cloud and GitHub tokens, Slack and Hugging Face tokens, JWTs, connection-string passwords, private-key blocks, `password=…` shapes) before anything is stored or sent to a model. The pattern set and its limits are in [`docs/scrub.md`](https://github.com/srijansk/crewlore/blob/main/docs/scrub.md).
 - **Compile.** A model extracts candidate claims from each session. Deterministic stages then do the rest: verify every anchor quote against the source and drop what does not match, derive each anchor's position from where the quote was found, deduplicate by content, record disagreements between sessions instead of overwriting, and score authority by how many independent sessions support a claim. `lore compile` prints how many proposed anchors and claims the gate dropped each pass; that number, not the store's after-the-fact "fidelity", is what tells you how the model behaved.
-- **Serve.** A Markdown book in `.lore/knowledge/`, a `lore query` command, and an optional MCP server so any agent can pull the relevant slice at the start of a session.
+- **Serve.** A Markdown book in `.lore/knowledge/`, a `lore query` command, a `/lore` skill that `lore install` puts into your coding assistant, and an optional MCP server so any agent can pull the relevant slice at the start of a session.
 - **Lifecycle.** Every retrieval is recorded. People and agents can mark claims influential or overridden (`lore feedback`, or the `lore_feedback` MCP tool). Claims nobody has read in 30 days (configurable) are archived, claims that are repeatedly overridden are retired, and influential ones are reinforced, so the book stays small instead of growing into a pile nobody reads. Usage is tracked per machine; the usage file is local so the committed book stays byte-stable.
 
 The intelligence is in compile; ingest and serve are deliberately thin, so supporting another coding agent or another source is a small adapter, not a rewrite. "Compile" here means the repeatable session-to-claims transform: one model call per session, wrapped in deterministic verification, dedup, conflict recording and scoring.
@@ -207,6 +216,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
+| `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file, `--force` to replace a skill file crewlore did not write), or remove exactly what was written. |
 | `lore serve` | Start an MCP server exposing `lore_query` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ## Configuration

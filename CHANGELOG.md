@@ -8,6 +8,7 @@
 
 ### Added
 
+- **`lore install` puts a `/lore` skill into your coding assistant.** The skill tells Claude Code, Cursor, Codex, Gemini CLI or any Agent Skills reader to run `lore query` before changing code in a repository that has `.lore/`, to treat `not adopted` claims as declined work, to weigh a claim like a teammate's comment rather than an instruction, and to report back with `lore feedback`. `--project` writes into the repository so teammates get it from git; `--always-on` adds a short marked block to `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`, or an always-apply rule for Cursor. Every file written carries a marker: install will not replace a skill file it did not write (`--force`); every target is checked (symbolic links on a project install, ownership, UTF-8, writability) before anything is written; a project install never writes through a symbolic link; and `lore uninstall` removes only marked files, the marked block and the directories that leaves empty, keeping your own text and line endings as they were. No server to run and nothing leaves the machine.
 - **An original score for the launch video**, `docs/launch-video/audio/`: `score.json` lists a sound event for every moment on screen and one chord per bar; `score.py` synthesises it deterministically (numpy, scipy) and masters it with ffmpeg to -14 LUFS / -1 dBTP; `render.py mux` puts it onto the rendered video. The embedded copies in the README and the Welcome discussion carry the score.
 
 ## 0.4.2 — 2026-10-09

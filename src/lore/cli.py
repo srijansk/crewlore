@@ -1,13 +1,14 @@
 """`lore` — the single user-facing surface.
 
-    lore init        create .lore/ in the repo
-    lore compile     ingest new transcripts -> distill -> prune (one pass)
-    lore watch       do that automatically on an interval (--once for cron)
-    lore import-prs  compile a GitHub repo's pull-request threads
-    lore query       task-conditioned retrieval (records usage)
-    lore feedback    mark served claims influential or overridden
-    lore status      counts + how much of the layer is actually being read
-    lore serve       MCP server for query-time retrieval
+lore init        create .lore/ in the repo
+lore compile     ingest new transcripts -> distill -> prune (one pass)
+lore watch       do that automatically on an interval (--once for cron)
+lore import-prs  compile a GitHub repo's pull-request threads
+lore query       task-conditioned retrieval (records usage)
+lore feedback    mark served claims influential or overridden
+lore status      counts + how much of the layer is actually being read
+lore serve       MCP server for query-time retrieval
+lore install     put the /lore skill into your coding assistant (uninstall to remove)
 """
 
 from __future__ import annotations
@@ -55,7 +56,10 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def _main(
     version: bool = typer.Option(
-        False, "--version", callback=_version_callback, is_eager=True,
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
         help="Show the crewlore version and exit.",
     ),
 ) -> None:
@@ -403,6 +407,86 @@ def serve(
         )
         raise typer.Exit(1) from None
     run_mcp(store)
+
+
+PlatformOpt = typer.Option(
+    "auto",
+    "--platform",
+    help=(
+        "Which assistant to set up: auto (detect from ~/.claude, ~/.cursor, ~/.codex, "
+        "~/.gemini, ~/.agents), claude, cursor, codex, gemini, agents, or a comma-separated list."
+    ),
+)
+ProjectOpt = typer.Option(
+    False,
+    "--project",
+    help=(
+        "Write into this repository (.claude/skills/, AGENTS.md, ...) instead of your home "
+        "directory."
+    ),
+)
+
+
+@app.command()
+def install(
+    platform: str = PlatformOpt,
+    project: bool = ProjectOpt,
+    repo: Path = RepoOpt,
+    always_on: bool = typer.Option(
+        False,
+        "--always-on",
+        help=(
+            "Also add a short marked block to the assistant's instruction file (CLAUDE.md, "
+            "AGENTS.md, GEMINI.md), or an always-apply rule for Cursor with --project, "
+            "telling it to query the layer before changing code."
+        ),
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Replace a skill or rule file that crewlore did not write."
+    ),
+):
+    """Put the /lore skill into your coding assistant, so it queries the layer itself."""
+    from lore.assistants import AssistantsError, UsageError, parse_platforms
+    from lore.assistants import install as install_skill
+
+    try:
+        platforms = parse_platforms(platform)
+        lines = install_skill(
+            platforms, project=project, repo=repo, always_on=always_on, force=force
+        )
+    except UsageError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+    except AssistantsError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
+    for line in lines:
+        typer.echo(line)
+    if project:
+        typer.echo("Commit the files above (`git add`) so teammates get the skill too.")
+    typer.echo(
+        "Next: open your assistant in a repo that has .lore/ and invoke the skill "
+        "(/lore in Claude Code, $lore in Codex; Cursor and Gemini pick it up from its description)."
+    )
+
+
+@app.command()
+def uninstall(platform: str = PlatformOpt, project: bool = ProjectOpt, repo: Path = RepoOpt):
+    """Remove the /lore skill and instruction block that `lore install` wrote."""
+    from lore.assistants import AssistantsError, UsageError, parse_platforms
+    from lore.assistants import uninstall as uninstall_skill
+
+    try:
+        platforms = parse_platforms(platform)
+        lines = uninstall_skill(platforms, project=project, repo=repo)
+    except UsageError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+    except AssistantsError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
+    for line in lines:
+        typer.echo(line)
 
 
 if __name__ == "__main__":
