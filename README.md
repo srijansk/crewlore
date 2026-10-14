@@ -203,13 +203,24 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore init` | Create the `.lore/` layout in your repo. |
 | `lore watch` | Automatically ingest → compile → prune on an interval (`--once` for cron/CI). |
 | `lore compile` | Run a single ingest-and-compile pass manually (`--rebuild` to re-extract everything). |
-| `lore render` | Rebuild the book and conflict list from the claims already compiled, with no model call: for a fresh clone, or after a merge or pull. |
-| `lore hook install` / `uninstall` / `status` | Git hooks that keep the layer current without a daemon: `lore compile` in the background after each commit, `lore render` after each merge. Honours `core.hooksPath`; `LORE_SKIP_HOOK=1` skips a run. |
+| `lore render` | Rebuild the book and conflict list from the claims already compiled, with no model call: for a fresh clone, or after a merge or pull. Reads the stored claims only (not sessions, not this machine's extraction cache), reports how many claim lines changed (normally none), and leaves a store with no claims untouched. |
+| `lore hook install` / `uninstall` / `status` | Git hooks that keep the layer current without a daemon: `lore compile` in the background after each commit, `lore render` after each merge. Honours `core.hooksPath`; `LORE_SKIP_HOOK` set to any non-empty value skips a run; `status` says why a hook would not run and shows the last hook output. Details under [Git hooks](#git-hooks). |
 | `lore import-prs OWNER/REPO` | Compile a GitHub repository's pull-request threads. Scans closed PRs by default (`--state open` or `all`), agent-authored only (`--all-authors` for every PR), most recently updated first (`--limit N`). Needs the `gh` CLI. |
 | `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
 | `lore serve` | Start an MCP server exposing `lore_query` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
+
+### Git hooks
+
+`lore hook install` adds a marked, removable block to the repository's `post-commit` and `post-merge` hooks. What to know before relying on it:
+
+- **The compile runs in the background and gives git its output back at once.** A commit returns in milliseconds; the model call happens afterwards and logs to `.lore/cache/hook.log` (truncated once it passes 1 MiB). `lore hook status` prints the last line of that log, so a failed run is visible.
+- **The interpreter is pinned, the key is not.** The block runs the Python that installed it and falls back to `lore` on PATH, so GUI git clients and CI runners work without the launcher on PATH, but `lore compile` still needs `ANTHROPIC_API_KEY` (or your provider's key) in the git client's environment. A GUI client started from the dock does not see your shell's exports; a client without the key logs a credentials error to `hook.log` and the commit itself is unaffected.
+- **One compile per store at a time.** A rebase or `pull --rebase` fires one post-commit hook per replayed commit; the first compile takes `.lore/cache/compile.lock` and the rest exit with "another compile is running". The compile also records the commit it fired on (`--expect-head`) and writes nothing if you have switched branches by the time it finishes.
+- **Sessions still in progress wait.** A transcript modified in the last `capture.settle_minutes` (default 10) is left for a later pass, so a session the agent commits mid-way is not captured half-finished (see Configuration).
+- **The post-merge render dirties the tree when the committed book lags the merged claims.** That is what it is for: review and commit `.lore/knowledge/README.md` and `.lore/claims/conflicts.jsonl` like any other change. It renders from the stored claims only, so nothing a teammate removed in review comes back from your cache.
+- **Existing hooks are edited carefully.** The block is placed before any `exit` or `exec` line that would otherwise end the hook first (install says where it went); a hook whose shebang is not a POSIX shell (`sh`, `bash`, `dash`, `ksh`, `zsh`) is refused untouched; a damaged or duplicated block is reported with "fix by hand", never edited; CRLF files keep their line endings; install re-enables the executable bit on a hook that had lost it and says so. With a committed `core.hooksPath` the hook file is shared, so install notes that the pinned interpreter is this machine's and the PATH fallback serves everyone else.
 
 ## Configuration
 
@@ -223,6 +234,7 @@ model:
   # base_url: http://localhost:11434/v1   # for provider: local — Ollama, LM Studio, vLLM
 capture:
   transcripts: auto            # this repo's own Claude Code transcripts, or a directory path
+  settle_minutes: 10           # a transcript modified more recently is still being written; wait for it
 compile:
   watch_interval_seconds: 300
   max_unused_days: 30          # claims nobody reads for this long are archived
