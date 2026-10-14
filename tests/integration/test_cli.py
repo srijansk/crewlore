@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import lore
@@ -221,14 +222,21 @@ def test_render_counts_sessions_that_still_need_extraction(tmp_path):
     assert "1 captured session(s) have no cached extraction yet" in result.stdout
 
 
-def test_hook_commands_round_trip(tmp_path):
+def test_hook_commands_round_trip(tmp_path, monkeypatch):
+    import lore.hooks as hooks_module
+
+    monkeypatch.setattr(hooks_module, "_import_problem", lambda python: None)  # not the subject
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
     assert result.exit_code == 0, result.stdout
-    assert "post-commit: written" in result.stdout and "post-merge: written" in result.stdout
+    for name in ("post-commit", "post-merge", "post-rewrite"):
+        assert f"{name}: written" in result.stdout
     assert "any non-empty value" in result.stdout
-    result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path)])
-    assert "post-commit: installed" in result.stdout
+    for flags in ([], ["--probe"]):
+        result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path), *flags])
+        assert result.exit_code == 0, result.stdout
+        for name in ("post-commit", "post-merge", "post-rewrite"):
+            assert f"{name}: installed\n" in result.stdout
     assert "last hook output: (no hook has run yet)" in result.stdout
     log = tmp_path / ".lore" / "cache" / "hook.log"
     log.parent.mkdir(parents=True)
@@ -301,11 +309,29 @@ def test_render_with_expect_head_writes_nothing_once_head_moved(tmp_path):
 
 
 # GUARDS: renders that overlap (post-merge hooks from a rebase, a teammate's watch
-# loop) must leave claims.jsonl exactly as it was: never empty, never truncated.
+# loop) must leave claims.jsonl exactly as it was: never empty, never truncated. The
+# first batch runs while this process holds the lock, so every one of them must step
+# aside: a lock that did not exclude other processes would show up here as a render.
 RENDER_PROCESSES = 6
 
 
+def _render_processes(repo):
+    env = {**os.environ, "PYTHONPATH": str(Path(lore.__file__).resolve().parents[1])}
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-m", "lore.cli", "render", "--repo", str(repo)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+        )
+        for _ in range(RENDER_PROCESSES)
+    ]
+    outputs = [p.communicate(timeout=120)[0] for p in procs]
+    assert all(p.returncode == 0 for p in procs), outputs
+    return outputs
+
+
 def test_concurrent_renders_leave_the_claims_file_byte_identical(tmp_path):
+    from lore.compile.run import compile_lock
+
     store = LoreStore(tmp_path)
     store.init()
     store.write_claims(
@@ -322,19 +348,18 @@ def test_concurrent_renders_leave_the_claims_file_byte_identical(tmp_path):
     )
     before = store.claims_path.read_bytes()
     assert before
-    env = {**os.environ, "PYTHONPATH": str(Path(lore.__file__).resolve().parents[1])}
-    procs = [
-        subprocess.Popen(
-            [sys.executable, "-m", "lore.cli", "render", "--repo", str(tmp_path)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
-        )
-        for _ in range(RENDER_PROCESSES)
-    ]
-    outputs = [p.communicate(timeout=120)[0] for p in procs]
-    assert all(p.returncode == 0 for p in procs), outputs
+
+    with compile_lock(store):
+        held = _render_processes(tmp_path)
+    assert all("skipped: another compile is running" in o for o in held), held
     assert store.claims_path.read_bytes() == before
-    assert all(o.startswith("rendered") or "another compile is running" in o for o in outputs)
-    assert any(o.startswith("rendered") for o in outputs), outputs
+    assert not (tmp_path / ".lore" / "knowledge" / "README.md").exists()
+
+    free = _render_processes(tmp_path)
+    assert all(o.startswith("rendered") or "another compile is running" in o for o in free), free
+    assert any(o.startswith("rendered") for o in free), free
+    assert store.claims_path.read_bytes() == before
+    assert (tmp_path / ".lore" / "knowledge" / "README.md").exists()
 
 
 def test_settle_time_comes_from_config_with_a_default_for_older_configs(tmp_path):
@@ -352,3 +377,55 @@ def test_settle_time_comes_from_config_with_a_default_for_older_configs(tmp_path
     del cfg["capture"]["settle_minutes"]  # written by an older version
     store.config_path.write_text(yaml.safe_dump(cfg))
     assert _settle(store) == timedelta(minutes=10)
+
+
+# GUARDS: a settle time that is not a number used to be a traceback out of `float()`.
+# It is a config error, and the message names the setting.
+@pytest.mark.parametrize("bad", [None, "abc", -1, True, "inf"])
+def test_an_invalid_settle_time_is_a_clear_error_not_a_traceback(tmp_path, bad):
+    import yaml
+
+    store = LoreStore(tmp_path)
+    store.init()
+    cfg = yaml.safe_load(store.config_path.read_text())
+    cfg["capture"]["settle_minutes"] = bad
+    store.config_path.write_text(yaml.safe_dump(cfg))
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", str(tmp_path / "none")]
+    )
+    assert result.exit_code == 2, result.stdout
+    assert "capture.settle_minutes" in result.stdout and repr(bad) in result.stdout
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# GUARDS: a manual compile right after a session should not have to wait out the
+# configured settle time or edit the config: `--settle` overrides it for one run.
+def test_settle_can_be_overridden_for_one_run(tmp_path, monkeypatch):
+    import lore.cli as cli_module
+
+    calls = []
+
+    def fake_compile_once(store, transcript_dir, **kwargs):
+        calls.append(kwargs["settle"])
+        return {"ingested": 0, "redactions": 0, "active": 0, "conflicts": 0}
+
+    monkeypatch.setattr(cli_module, "_compile_once", fake_compile_once)
+    LoreStore(tmp_path).init()
+    tdir = str(tmp_path / "none")
+    result = runner.invoke(app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir])
+    assert result.exit_code == 0, result.stdout
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "0"]
+    )
+    assert result.exit_code == 0, result.stdout
+    result = runner.invoke(
+        app, ["watch", "--once", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "2.5"]
+    )
+    assert result.exit_code == 0, result.stdout
+    assert calls == [timedelta(minutes=10), timedelta(0), timedelta(minutes=2.5)]
+
+    result = runner.invoke(
+        app, ["compile", "--repo", str(tmp_path), "--transcripts", tdir, "--settle", "-1"]
+    )
+    assert result.exit_code == 2 and "--settle must be a number of minutes" in result.stdout
+    assert len(calls) == 3

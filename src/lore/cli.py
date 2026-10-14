@@ -4,7 +4,7 @@
     lore compile     ingest new transcripts -> distill -> prune (one pass)
     lore watch       do that automatically on an interval (--once for cron)
     lore render      rebuild the book + conflicts from the stored claims, no model
-    lore hook        install/uninstall/status of the post-commit and post-merge hooks
+    lore hook        install/uninstall/status of the post-commit, post-merge, post-rewrite hooks
     lore import-prs  compile a GitHub repo's pull-request threads
     lore query       task-conditioned retrieval (records usage)
     lore feedback    mark served claims influential or overridden
@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -50,9 +51,19 @@ ExpectHeadOpt = typer.Option(
     "--expect-head",
     metavar="SHA",
     help=(
-        "Write nothing if HEAD is no longer this commit by the time the work is done. "
-        "The git hooks pass the commit they fired on, so a compile that outlives a "
+        "Write nothing git tracks if HEAD is no longer this commit by the time the work is "
+        "done (captured sessions and the extraction cache, both gitignored, are kept). The "
+        "git hooks pass the commit they fired on, so a compile that outlives a "
         "`git checkout` cannot land in the other branch."
+    ),
+)
+SettleOpt = typer.Option(
+    None,
+    "--settle",
+    metavar="MINUTES",
+    help=(
+        "Leave transcripts modified in the last MINUTES minutes for a later pass, instead of "
+        "capture.settle_minutes from the config; 0 captures every transcript at once."
     ),
 )
 
@@ -115,12 +126,28 @@ def _compile_settings(store: LoreStore) -> dict:
     }
 
 
-def _settle(store: LoreStore) -> timedelta:
-    """How long a transcript must go unmodified before it is captured
-    (`capture.settle_minutes`); a store written by an older version takes the default."""
-    cfg = store.load_config().get("capture", {}) or {}
-    minutes = cfg.get("settle_minutes", DEFAULT_CONFIG["capture"]["settle_minutes"])
-    return timedelta(minutes=float(minutes))
+def _settle(store: LoreStore, override: float | None = None) -> timedelta:
+    """How long a transcript must go unmodified before it is captured: `--settle` when
+    given, else `capture.settle_minutes` (a store written by an older version takes the
+    default). Anything but a finite number of minutes, 0 or more, is refused with a
+    message naming the setting instead of a traceback."""
+    if override is not None:
+        minutes, source = override, "--settle"
+    else:
+        cfg = store.load_config().get("capture", {}) or {}
+        minutes = cfg.get("settle_minutes", DEFAULT_CONFIG["capture"]["settle_minutes"])
+        source = "capture.settle_minutes in .lore/config.yaml"
+    try:
+        value = float(minutes)
+    except (TypeError, ValueError):
+        value = math.nan
+    if isinstance(minutes, bool) or not math.isfinite(value) or value < 0:
+        typer.echo(
+            f"error: {source} must be a number of minutes, 0 or more (0 captures at once); "
+            f"got {minutes!r}"
+        )
+        raise typer.Exit(2)
+    return timedelta(minutes=value)
 
 
 def _stepped_aside(exc: Exception) -> NoReturn:
@@ -264,7 +291,8 @@ def _compile_once(
     expect_head: str | None = None,
 ) -> dict:
     """One ingest -> compile -> prune pass. Raises `CompileInProgress` / `HeadMoved`
-    (from `lore.compile.run`) when the pass stepped aside without writing."""
+    (from `lore.compile.run`) when the pass stepped aside without writing anything git
+    tracks."""
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
     from lore.compile.extractor import FatalExtractionError
     from lore.compile.run import auto_compile
@@ -309,7 +337,7 @@ def _report(stats: dict) -> None:
         typer.echo(
             f"  {settling} transcript(s) modified in the last {stats['settle_minutes']:g} min "
             "are still being written and were left for a later pass "
-            "(capture.settle_minutes in .lore/config.yaml; 0 captures at once)"
+            "(capture.settle_minutes in .lore/config.yaml, or --settle; 0 captures at once)"
         )
 
 
@@ -319,6 +347,7 @@ def compile(  # noqa: A001
     transcripts: Path = TranscriptsOpt,
     rebuild: bool = RebuildOpt,
     expect_head: str = ExpectHeadOpt,
+    settle: float = SettleOpt,
 ):
     """Ingest new transcripts, distill to claims + book, and prune (one pass).
 
@@ -328,12 +357,13 @@ def compile(  # noqa: A001
 
     store = LoreStore(repo)
     _require_store(store)
+    settle_for = _settle(store, settle)
     try:
         stats = _compile_once(
             store,
             _transcript_dir(store, transcripts),
             rebuild=rebuild,
-            settle=_settle(store),
+            settle=settle_for,
             expect_head=expect_head or None,
         )
     except (CompileInProgress, HeadMoved) as exc:
@@ -459,6 +489,7 @@ def watch(
     ),
     once: bool = typer.Option(False, "--once", help="Run a single pass and exit (cron mode)."),
     rebuild: bool = RebuildOpt,
+    settle: float = SettleOpt,
 ):
     """Automatically compile on an interval — so nobody has to remember to.
 
@@ -469,12 +500,12 @@ def watch(
 
     store = LoreStore(repo)
     _require_store(store)
+    settle_for = _settle(store, settle)
     tdir = _transcript_dir(store, transcripts)
     sleep_for = interval if interval is not None else _compile_settings(store)["interval"]
-    settle = _settle(store)
     while True:
         try:
-            stats = _compile_once(store, tdir, rebuild=rebuild, settle=settle)
+            stats = _compile_once(store, tdir, rebuild=rebuild, settle=settle_for)
         except CompileInProgress as exc:
             # A hook's compile is running; this pass has nothing to add.
             typer.echo(f"[watch] skipped: {exc}")
@@ -495,8 +526,8 @@ def watch(
 
 hook_app = typer.Typer(
     help=(
-        "Git hooks that keep the layer current without a daemon: compile after each commit, "
-        "render after each merge, in the background."
+        "Git hooks that keep the layer current without a daemon: compile after each commit "
+        "and once after a rebase, render after each merge, in the background."
     )
 )
 app.add_typer(hook_app, name="hook")
@@ -504,10 +535,12 @@ app.add_typer(hook_app, name="hook")
 
 @hook_app.command("install")
 def hook_install(repo: Path = RepoOpt):
-    """Add the post-commit and post-merge hooks (idempotent; honours core.hooksPath).
+    """Add the post-commit, post-merge and post-rewrite hooks (idempotent; honours
+    core.hooksPath).
 
     The block is placed before any exit/exec that would end the hook first, and is only
-    added to a POSIX shell hook; a damaged block is reported, never edited.
+    added to a POSIX shell hook with LF line endings; a damaged block is reported, never
+    edited.
     """
     from lore.hooks import HOOK_LOG, HookRefused, NotAGitRepository
     from lore.hooks import install as install_hooks
@@ -539,13 +572,24 @@ def hook_uninstall(repo: Path = RepoOpt):
 
 
 @hook_app.command("status")
-def hook_status(repo: Path = RepoOpt):
+def hook_status(
+    repo: Path = RepoOpt,
+    probe: bool = typer.Option(
+        False,
+        "--probe",
+        help=(
+            "Also run each hook with LORE_HOOK_PROBE set, which makes the crewlore block "
+            "touch a file and exit instead of compiling, to confirm the hook reaches it. "
+            "This runs the hook's other commands too."
+        ),
+    ),
+):
     """Show whether each hook is installed, outdated, broken (and why), or missing, and
     what the last hook run wrote to the log."""
     from lore.hooks import NotAGitRepository, last_log_line, status
 
     try:
-        for name, state in status(repo).items():
+        for name, state in status(repo, probe=probe).items():
             typer.echo(f"{name}: {state}")
         last = last_log_line(repo)
     except NotAGitRepository as exc:
