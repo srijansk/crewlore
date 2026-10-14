@@ -77,14 +77,14 @@ def test_book_and_label_mark_corrected_claims(store):
                       at=datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc))
     book = render_book([REDIS, TXN], [], {REDIS.id: [note]})
     assert "**[gotcha · corrected]** the billing webhook key lives in Redis" in book
-    assert "  - **corrected on 2026-10-14 by alice: moved to the transaction**" in book
+    assert "  - **corrected on 2026-10-14 by `alice`: `moved to the transaction`**" in book
     assert "**[gotcha]** dedupe the billing webhook" in book
     assert claim_label(REDIS, corrected=True) == "gotcha · corrected"
     assert claim_label(_claim("x", adoption="not_adopted"), corrected=True) == (
         "gotcha · not adopted · corrected"
     )
     store.add_corrections([note])
-    assert "by alice: moved to the transaction" in KnowledgeServer(store).write_book()
+    assert "by `alice`: `moved to the transaction`" in KnowledgeServer(store).write_book()
 
 
 def test_book_renders_notes_and_authors_as_inert_markdown():
@@ -95,15 +95,20 @@ def test_book_renders_notes_and_authors_as_inert_markdown():
     )
     book = render_book([REDIS], [], {REDIS.id: [note]})
     (line,) = [ln for ln in book.splitlines() if "corrected on" in ln]
-    assert line.startswith("  - **corrected on 2026-10-14 by alice on 2020-01-01: forged author")
-    assert " via MCP: renamed to WEBHOOK\\_KEY\\_, see \\[ADR-12\\](https://evil.example) " in line
-    assert "\\<img src=x\\> \\*now\\***" in line
+    assert line.startswith("  - **corrected on 2026-10-14 by `alice on 2020-01-01: forged author")
+    expected_note = (
+        "`renamed to WEBHOOK_KEY_, see [ADR-12](https://evil.example) <img src=x> *now*`**"
+    )
+    assert ("` via MCP: " + expected_note) in line
+    # Author and note each sit in exactly one code span, with no backtick inside.
     inner = line[len("  - **") : -len("**")]
-    assert re.search(r"(?<!\\)[\[\]<>*_~]", inner) is None  # every active character escaped
-    struck = Correction(claim_id=REDIS.id, note="~~do not~~ use C:\\Users", author="a")
-    (line,) = [ln for ln in render_book([REDIS], [], {REDIS.id: [struck]}).splitlines()
+    spans = re.findall(r"`[^`]*`", inner)
+    assert len(spans) == 2 and inner.count("`") == 4
+    urls = "see https://evil.example/p?x=1 or www.evil.example, mail bob@evil.example `now`"
+    linky = Correction(claim_id=REDIS.id, author="a", note=urls)
+    (line,) = [ln for ln in render_book([REDIS], [], {REDIS.id: [linky]}).splitlines()
                if "corrected by" in ln]
-    assert "\\~\\~do not\\~\\~ use C:\\\\Users" in line
+    assert "`" + urls.replace("`", "'") + "`" in line  # one code span, no live links
 
 
 def test_explain_carries_corrections(store):
@@ -126,7 +131,7 @@ def test_cli_feedback_corrected_records_a_note_and_rebuilds_the_book(store, tmp_
     assert "recorded a correction by alice on 1 claim(s)" in result.stdout
     assert store.load_corrections()[0].note == "the key moved to the transaction"  # one line
     assert store.load_corrections()[0].via == "cli"
-    assert "by alice: the key moved" in (store.lore / "knowledge" / "README.md").read_text()
+    assert "by `alice`: `the key moved" in (store.lore / "knowledge" / "README.md").read_text()
     result = runner.invoke(app, ["query", "billing webhook", "--repo", str(tmp_path)])
     lines = result.stdout.splitlines()
     assert lines[0].startswith("[gotcha] (services/billing) dedupe")  # uncorrected first
@@ -185,6 +190,7 @@ def test_mcp_feedback_accepts_corrected_with_a_note(store, monkeypatch):
     out = call(claim_ids=[REDIS.id, REDIS.id], verdict="corrected", note="moved to the transaction")
     assert out["recorded"] == "corrected" and out["claims"] == [REDIS.id]
     assert out["written_to"].endswith("corrections.jsonl") and "commit" in out["next"]
+    assert "moved to the transaction" in (store.lore / "knowledge" / "README.md").read_text()
     (note,) = store.load_corrections()  # duplicate ids make one note
     assert (note.author, note.note, note.via) == ("alice", "moved to the transaction", "mcp")
     rows = asyncio.run(mcp.call_tool("lore_query", {"task": "billing webhook"}))
@@ -213,10 +219,12 @@ def test_an_unreadable_line_is_skipped_not_fatal(store, capsys):
     with open(store.corrections_path, "a") as handle:
         handle.write("\n" + Correction(claim_id=REDIS.id, note="x", author="a", via="cli")
                      .model_dump_json().replace('"cli"', '"telepathy"') + "\n")
+    with open(store.corrections_path, "ab") as handle:
+        handle.write(b'{"claim_id": "x", "note": "caf\xe9", "author": "latin-1 editor"}\n')
     notes = store.load_corrections()
-    assert [x.note for x in notes] == ["good note"]  # the bad line and the unknown origin
+    assert [x.note for x in notes] == ["good note"]  # bad JSON, unknown origin, bad bytes
     err = capsys.readouterr().err
-    assert "skipping unreadable line(s) 2, 4 of" in err  # the file's own line numbers
+    assert "skipping unreadable line(s) 2, 4, 5 of" in err  # the file's own line numbers
     store.load_corrections()
     assert capsys.readouterr().err == ""  # reported once per process, not on every read
     assert KnowledgeServer(store).query("billing webhook")  # retrieval still works

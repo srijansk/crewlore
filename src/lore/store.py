@@ -205,11 +205,11 @@ class LoreStore:
             return []
         out: list[Correction] = []
         bad: list[int] = []
-        for number, ln in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if not ln.strip():
+        for number, raw in enumerate(path.read_bytes().splitlines(), start=1):
+            if not raw.strip():
                 continue
-            try:
-                out.append(Correction.model_validate_json(ln))
+            try:  # a line that is not UTF-8 is unreadable like one that is not JSON
+                out.append(Correction.model_validate_json(raw.decode("utf-8")))
             except ValueError:
                 bad.append(number)
         if bad and path not in _WARNED_FILES:

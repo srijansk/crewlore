@@ -81,11 +81,16 @@ def build_server(store: LoreStore) -> FastMCP:
                 written = server.correct(claim_ids, cleaned, author=git_user(store.root), via="mcp")
             except ValueError as exc:
                 return {"error": str(exc)}
+            try:
+                server.write_book()
+                next_step = "commit the corrections file, .lore/.gitattributes and the book"
+            except OSError as exc:
+                next_step = f"the book was not rebuilt ({exc}); run `lore compile`, then commit"
             return {
                 "recorded": verdict,
                 "claims": [x.claim_id for x in written],
                 "written_to": str(store.corrections_path),
-                "next": "commit the corrections file, .lore/.gitattributes and the book",
+                "next": next_step,
             }
         else:
             return {"error": "verdict must be 'influential', 'overridden' or 'corrected'"}

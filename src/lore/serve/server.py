@@ -231,18 +231,19 @@ def claim_label(c: Claim, *, corrected: bool = False) -> str:
     return f"{label} · corrected" if corrected else label
 
 
-_MARKDOWN_ACTIVE = re.compile(r"([\\`*_~\[\]<>])")
-
-
-def markdown_escape(text: object) -> str:
-    """One line of someone's text as inert Markdown: no emphasis, link, image or tag."""
-    return _MARKDOWN_ACTIVE.sub(r"\\\1", sanitize_line(text))
+def code_span(text: object) -> str:
+    """Someone's text as a Markdown code span: no emphasis, link, image, tag, mention
+    or autolink can form inside one, which backslash escaping cannot promise (bare
+    URLs and e-mail addresses link on their own under GitHub's Markdown)."""
+    cleaned = sanitize_line(text).replace("`", "'")
+    return f"`{cleaned}`" if cleaned else "`(empty)`"
 
 
 def correction_line(x: Correction, *, markdown: bool = False) -> str:
     """`corrected on DATE by AUTHOR: note`, the date first so an author's name cannot
-    pose as a date, and `via MCP` when an agent wrote it through the tool."""
-    clean = markdown_escape if markdown else sanitize_line
+    pose as a date, and `via MCP` when an agent wrote it through the tool. In Markdown
+    the author and the note sit in code spans."""
+    clean = code_span if markdown else sanitize_line
     when = f" on {x.at.date().isoformat()}" if x.at else ""
     origin = " via MCP" if x.via == "mcp" else ""
     return f"corrected{when} by {clean(x.author)}{origin}: {clean(x.note)}"
