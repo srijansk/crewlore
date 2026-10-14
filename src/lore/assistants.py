@@ -248,7 +248,12 @@ def install(
     that an existing settings file is valid JSON), so one platform's refusal cannot
     leave another half-installed. Returns one line per file.
     """
-    from lore.assistant_hooks import install_hooks, load_settings, settings_path
+    from lore.assistant_hooks import (
+        install_hooks,
+        load_settings,
+        posix_shell_available,
+        settings_path,
+    )
 
     if hooks and "claude" not in platforms:
         raise AssistantsError("--hooks installs Claude Code hooks; add claude to --platform")
@@ -289,6 +294,11 @@ def install(
                     "note: `lore` is not on this shell's PATH. Claude Code runs hooks with the "
                     "PATH it was started with, so until crewlore is installed where that shell "
                     "finds it (`pipx ensurepath`), the hooks stay silent."
+                )
+            if not posix_shell_available():
+                lines.append(
+                    "note: the hook command is for a POSIX shell; on Windows, Claude Code "
+                    "needs Git Bash to run it, otherwise it reports a hook error on each event."
                 )
     except OSError as exc:
         done = "; ".join(lines) or "nothing"
@@ -338,6 +348,16 @@ def _put(path: Path, text: str) -> str:
 def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(".")) -> list[str]:
     """Remove what install wrote and nothing else."""
     lines: list[str] = []
+    if "claude" in platforms:
+        # First, so a settings file crewlore cannot parse stops the uninstall before any
+        # skill file is gone.
+        from lore.assistant_hooks import settings_path, uninstall_hooks
+
+        settings = settings_path(project=project, repo=Path(repo))
+        root = Path(repo) if project else _claude_config_dir()
+        outcome = uninstall_hooks(settings, root, strict=project)
+        if outcome != "absent":
+            lines.append(f"claude: hooks {outcome} ({settings})")
     for tgt in (target(name, project=project, repo=repo) for name in platforms):
         for path in (tgt.skill_path, tgt.rule_path):
             if path is None or not (path.exists() or path.is_symlink()):
@@ -364,14 +384,6 @@ def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(
             lines.append(f"{tgt.platform}: removed {tgt.instruction_path} (held only the block)")
         elif outcome == "removed":
             lines.append(f"{tgt.platform}: instruction block removed from {tgt.instruction_path}")
-    if "claude" in platforms:
-        from lore.assistant_hooks import settings_path, uninstall_hooks
-
-        settings = settings_path(project=project, repo=Path(repo))
-        root = Path(repo) if project else _claude_config_dir()
-        outcome = uninstall_hooks(settings, root, strict=project)
-        if outcome != "absent":
-            lines.append(f"claude: hooks {outcome} ({settings})")
     return lines or ["nothing to remove"]
 
 

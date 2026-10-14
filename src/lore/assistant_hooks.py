@@ -5,11 +5,13 @@ layer knows about.
 Two hooks, both installed by `lore install --hooks` into Claude Code's settings file:
 
 * `PreToolUse` on `Read`, `Edit` and `Write`: the claims whose scope covers the file,
-  once per scope per session. Claude Code delivers the text next to the tool's result,
-  so in the usual read-then-edit flow the claims are in view before the edit; after a
-  direct edit they arrive with its result, before the edits that follow.
+  once per scope per conversation. Claude Code delivers the text next to the tool's
+  result, so in the usual read-then-edit flow the claims are in view before the edit;
+  after a direct edit they arrive with its result, before the edits that follow.
 * `UserPromptSubmit`: the claims most relevant to the prompt, as `lore query` would
   return them, with a two-word relevance floor.
+* `SessionStart` on `compact`: compaction drops injected context, so the memory of
+  which scopes this conversation has seen is cleared and they are shown again.
 
 Both run `lore claude-hook`, which reads the event on stdin and prints the context on
 stdout in the shape Claude Code expects. The text is written as facts about the
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -34,20 +37,30 @@ from typing import TextIO
 from lore.assistants import AssistantsError, _claude_config_dir, _prune_dirs, _refuse_symlinks
 from lore.schemas import Claim
 from lore.serve.server import KnowledgeServer, claim_label
-from lore.store import LoreStore
+from lore.store import LoreStore, atomic_write_text
 
 HOOK_COMMAND = "lore claude-hook"
-# Shell form. `lore` missing from PATH (a teammate without crewlore) gives silence, and
-# the trailing `exit 0` makes the hook's status 0 whatever `lore` returned: an older
+# Shell form. `lore` missing from PATH (a teammate without crewlore) gives silence; the
+# trailing `exit 0` makes the hook's status 0 whatever `lore` returned (an older
 # crewlore without this subcommand exits 2, which Claude Code would otherwise read as
-# "block this edit", on every edit, from a settings file the team committed.
-HOOK_SHELL = f"command -v lore >/dev/null 2>&1 && {HOOK_COMMAND}; exit 0"
-# The exact command strings crewlore has installed. Ownership is exact, so a user's own
-# entry that happens to mention `lore claude-hook` is never touched.
-KNOWN_COMMANDS = (HOOK_SHELL,)
+# "block this edit", on every edit, from a settings file the team committed); and only
+# output that starts like the hook's JSON is passed on, so some other program called
+# `lore` cannot have its chatter injected into the conversation as context.
+HOOK_SHELL = (
+    f"command -v lore >/dev/null 2>&1 && out=$({HOOK_COMMAND}); "
+    'case "$out" in "{"*) printf "%s\\n" "$out";; esac; exit 0'
+)
+# Every exact command string crewlore has installed, current first; an older one is
+# replaced on reinstall. Ownership is exact, so a user's own entry that happens to
+# mention `lore claude-hook` is never touched.
+KNOWN_COMMANDS = (HOOK_SHELL, f"command -v lore >/dev/null 2>&1 && {HOOK_COMMAND}; exit 0")
 HOOK_TIMEOUT_SECONDS = 10
-# Event -> tool matcher (None: the event has no matcher).
-HOOK_EVENTS: dict[str, str | None] = {"PreToolUse": "Read|Edit|Write", "UserPromptSubmit": None}
+# Event -> matcher (None: the event has no matcher).
+HOOK_EVENTS: dict[str, str | None] = {
+    "PreToolUse": "Read|Edit|Write",
+    "UserPromptSubmit": None,
+    "SessionStart": "compact",
+}
 
 # How much to put in front of the assistant. Claude Code caps a hook's context at
 # 10,000 characters; staying under it keeps the claims inline rather than behind a file
@@ -142,6 +155,12 @@ def _dump(data: dict, like: str) -> str:
     return text.replace("\n", "\r\n") if "\r\n" in like else text
 
 
+def posix_shell_available() -> bool:
+    """The installed command is for `sh`; Windows runs hooks under PowerShell unless Git
+    Bash is on hand, and the installer says so."""
+    return os.name != "nt"
+
+
 def install_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
     """Add crewlore's hooks to the settings file, keeping everything else as it is.
 
@@ -180,10 +199,11 @@ def uninstall_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
     rest = {k: v for k, v in data.items() if k != "hooks"}
     if stripped:
         rest["hooks"] = stripped
-    if not rest:
+    if not rest and not path.is_symlink():
         path.unlink()
         _prune_dirs(path.parent, root)
         return "removed file"
+    # A symlinked settings file (dotfiles) stays a symlink; its target is emptied.
     with open(path, "w", encoding="utf-8", newline="") as handle:
         handle.write(_dump(rest, text))
     return "removed"
@@ -231,9 +251,14 @@ def find_repo(start: Path) -> Path | None:
     return None
 
 
+def _plain(path: Path) -> Path:
+    """The path without `..` or `.` segments, so `a/../a/x` is `a/x` for scope matching."""
+    return Path(os.path.normpath(path))
+
+
 def _under(path: Path, root: Path) -> bool:
     try:
-        path.relative_to(root)
+        _plain(path).relative_to(_plain(root))
     except ValueError:
         return False
     return True
@@ -271,24 +296,35 @@ def scopes_covering(rel_path: str, claims: list[Claim]) -> dict[str, list[Claim]
 
 class _ConversationState:
     """Which scopes this conversation has already been shown, so a hook that fires on
-    every read and edit tells the assistant about a scope once."""
+    every read and edit tells the assistant about a scope once. Claude Code runs
+    matching hooks in parallel, so the file is updated under the store's lock and
+    replaced atomically."""
 
     def __init__(self, store: LoreStore, conversation: str):
         directory = store.lore / "cache" / _STATE_DIR
         digest = hashlib.sha256(conversation.encode("utf-8")).hexdigest()[:16]
+        self._store = store
         self._dir = directory
         self._path = directory / f"{digest}.json"
-        self.scopes: set[str] = set()
+        self.scopes = self._load()
+
+    def _load(self) -> set[str]:
         try:
-            self.scopes = set(json.loads(self._path.read_text(encoding="utf-8"))["scopes"])
+            return set(json.loads(self._path.read_text(encoding="utf-8"))["scopes"])
         except (OSError, ValueError, KeyError, TypeError):
-            pass
+            return set()
 
     def remember(self, scopes: list[str]) -> None:
-        self.scopes.update(scopes)
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps({"scopes": sorted(self.scopes)}), encoding="utf-8")
+        with self._store.locked(_STATE_DIR):
+            self.scopes = self._load() | set(scopes)
+            self._store.ensure_gitignore()
+            atomic_write_text(self._path, json.dumps({"scopes": sorted(self.scopes)}))
         self._expire()
+
+    def forget(self) -> None:
+        """Compaction dropped what this conversation was shown; start over."""
+        self._path.unlink(missing_ok=True)
+        self.scopes = set()
 
     def _expire(self) -> None:
         cutoff = time.time() - STATE_TTL_SECONDS
@@ -303,7 +339,9 @@ class _ConversationState:
 # Format characters that scripts and emoji depend on: zero-width non-joiner and joiner.
 _KEEP_FORMAT = {chr(0x200C), chr(0x200D)}
 # Terminal escape sequences (colours, cursor moves, OSC strings), whole.
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_ANSI = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[ -/]*[0-~]"
+)
 
 
 def _one_line(text: object) -> str:
@@ -339,19 +377,31 @@ def _preamble(subject: str, shown: int, total: int) -> str:
     )
 
 
+def _units(text: str) -> int:
+    """Length as Claude Code measures it: UTF-16 code units, not code points."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def format_context(subject: str, claims: list[Claim]) -> tuple[str, list[Claim]]:
     """The claims as facts for the assistant, in the `lore query` line format, whole
-    claims only and within the size cap. Returns the text and the claims it shows."""
+    claims within the size cap; when even the first claim does not fit, it is shown
+    cut rather than nothing at all. Returns the text and the claims it shows."""
     footer_room = 160
     shown: list[Claim] = []
-    used = len(_preamble(subject, len(claims), len(claims))) + 2
+    blocks: list[str] = []
+    used = _units(_preamble(subject, len(claims), len(claims))) + 2
+    budget = MAX_CONTEXT_CHARS - footer_room
     for c in claims[:MAX_CLAIMS_PER_EVENT]:
         block = _block(c)
-        if used + len(block) + 1 > MAX_CONTEXT_CHARS - footer_room:
+        if used + _units(block) + 1 > budget:
             break
         shown.append(c)
-        used += len(block) + 1
-    text = _preamble(subject, len(shown), len(claims)) + "\n\n" + "\n".join(map(_block, shown))
+        blocks.append(block)
+        used += _units(block) + 1
+    if not shown and claims:
+        room = max(budget - used - 2, 200)
+        shown, blocks = [claims[0]], [_block(claims[0])[:room] + " …"]
+    text = _preamble(subject, len(shown), len(claims)) + "\n\n" + "\n".join(blocks)
     if len(shown) < len(claims):
         text += (
             f"\n- {len(claims) - len(shown)} more not shown; the book "
@@ -375,7 +425,7 @@ def _edit_context(event: Event) -> dict | None:
         repo = find_repo(path.parent)
     if repo is None:
         return None
-    rel = path.relative_to(repo).as_posix()
+    rel = _plain(path).relative_to(_plain(repo)).as_posix()
     store = LoreStore(repo)
     covering = scopes_covering(rel, store.load_claims())
     state = _ConversationState(store, f"{event.session}/{event.agent}")
@@ -384,9 +434,17 @@ def _edit_context(event: Event) -> dict | None:
         return None
     available = [c for scope in fresh for c in covering[scope]]
     text, shown = format_context(f"for {', '.join(fresh)}, the scope of {rel}", available)
-    state.remember(fresh)
-    KnowledgeServer(store).mark_served([c.id for c in shown])
-    return _output(event.name, text)
+    # A scope counts as shown only when at least one of its claims reached the
+    # assistant; a scope the cap pushed out entirely comes up at the next edit.
+    shown_ids = {c.id for c in shown}
+    seen = [scope for scope in fresh if any(c.id in shown_ids for c in covering[scope])]
+    output = _output(event.name, text)
+    try:  # bookkeeping must never cost the assistant the context it was built for
+        state.remember(seen)
+        KnowledgeServer(store).mark_served(sorted(shown_ids))
+    except OSError as exc:
+        print(f"crewlore hook: {type(exc).__name__}: {exc}", file=sys.stderr)
+    return output
 
 
 def _prompt_context(event: Event) -> dict | None:
@@ -403,6 +461,12 @@ def _prompt_context(event: Event) -> dict | None:
     return _output(event.name, text)
 
 
+def _reset_context(event: Event) -> None:
+    repo = find_repo(event.cwd)
+    if repo is not None:
+        _ConversationState(LoreStore(repo), f"{event.session}/{event.agent}").forget()
+
+
 def handle(payload: object) -> dict | None:
     """The hook output for one Claude Code event, or None for silence."""
     event = parse_event(payload)
@@ -410,6 +474,9 @@ def handle(payload: object) -> dict | None:
         return None
     if event.name == "PreToolUse":
         return _edit_context(event)
+    if event.name == "SessionStart":
+        _reset_context(event)
+        return None
     return _prompt_context(event)
 
 

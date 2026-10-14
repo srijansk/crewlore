@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import lore.assistant_hooks as hooks_module
 from lore.assistant_hooks import (
     HOOK_COMMAND,
     HOOK_EVENTS,
@@ -216,6 +217,7 @@ def test_scopes_covering_normalises_spellings_and_orders_by_specificity():
 def test_one_line_strips_controls_and_format_characters_but_keeps_joiners():
     noisy = "Dedupe\x1b[31m on\n the key" + chr(0x200B) + chr(0x202E)
     assert _one_line(noisy) == "Dedupe on the key"
+    assert _one_line("a\x1b(Bb\x1b7c") == "abc"  # escapes that are not CSI sequences
     assert _one_line("क्" + chr(0x200D) + "ष") == "क्" + chr(0x200D) + "ष"
     assert _one_line(None) == "" and _one_line(42) == "42"
 
@@ -253,7 +255,7 @@ def test_parse_event_reads_the_fields_the_hooks_use(repo):
     assert (event.name, event.session, event.agent, event.cwd) == ("PreToolUse", "abc", "sub", repo)
     assert event.file_path == repo / "services/billing/webhook.py"
     assert parse_event(_tool(repo, "x")).agent == "main"
-    assert parse_event({"hook_event_name": "SessionStart"}) is None
+    assert parse_event({"hook_event_name": "PostToolUse"}) is None
 
 
 def test_run_from_stdin_never_fails_and_prints_one_json_line(repo):
@@ -299,6 +301,9 @@ def test_the_installed_shell_command_exits_0_whatever_lore_does(tmp_path):
     assert broken.returncode == 0
     answer = run("cat >/dev/null; echo '{\"hookSpecificOutput\": {}}'; exit 0")
     assert answer.returncode == 0 and json.loads(answer.stdout) == {"hookSpecificOutput": {}}
+    # Some other program called `lore`, or a notice on stdout, is not passed on as context.
+    chatter = run("cat >/dev/null; echo 'lore 9.0 is available, run lore upgrade'; exit 0")
+    assert chatter.returncode == 0 and chatter.stdout == b""
     absent = run(None)
     assert absent.returncode == 0 and absent.stdout == b""
 
@@ -419,3 +424,125 @@ def test_hooks_need_claude_and_warn_when_lore_is_off_path(home, repo, monkeypatc
     monkeypatch.setattr("lore.assistants.shutil.which", lambda name: None)
     lines = install(["claude"], project=True, repo=repo, hooks=True)
     assert any("not on this shell's PATH" in ln for ln in lines)
+
+
+# --- second-pass findings ----------------------------------------------------------------
+
+
+def test_parallel_hooks_keep_every_bump_and_every_remembered_scope(tmp_path):
+    import concurrent.futures
+
+    root = tmp_path / "par"
+    root.mkdir()
+    store = LoreStore(root)
+    store.init()
+    scopes = [f"services/s{i}" for i in range(24)]
+    store.write_claims([_claim(f"claim about s{i}", scope) for i, scope in enumerate(scopes)])
+    events = [_tool(root, f"{scope}/file.py") for scope in scopes]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as pool:
+        outputs = list(pool.map(handle, events))
+    assert all(out is not None for out in outputs)
+    assert all(c.usage.times_served == 1 for c in store.load_claims())
+    assert all(handle(_tool(root, f"{scope}/other.py")) is None for scope in scopes)
+
+
+def test_a_scope_counts_as_shown_only_when_one_of_its_claims_was(tmp_path):
+    root = tmp_path / "cap"
+    root.mkdir()
+    store = LoreStore(root)
+    store.init()
+    big = [_claim(f"billing claim {i} " + "detail " * 200, "services/billing") for i in range(8)]
+    wide = [_claim(f"services-wide rule {i}", "services") for i in range(3)]
+    store.write_claims(big + wide)
+    ctx = _context(handle(_tool(root, "services/billing/a.py")))
+    assert "services-wide rule" not in ctx and "of 11 claims" in ctx
+    # The cap pushed the `services` scope out entirely, so it is not remembered as shown.
+    ctx = _context(handle(_tool(root, "services/auth/x.py")))
+    assert "services-wide rule 0" in ctx
+    assert handle(_tool(root, "services/billing/b.py")) is None  # billing was shown
+
+
+def test_one_claim_too_large_for_the_cap_is_shown_cut_not_dropped():
+    huge = _claim("x" * (MAX_CONTEXT_CHARS + 500), "services/billing", action="do it")
+    text, shown = format_context("for services/billing", [huge, _claim("small", "s")])
+    assert shown == [huge] and text.endswith("…") is False or "…" in text
+    assert "(1 of 2 claims)" in text and len(text) <= MAX_CONTEXT_CHARS
+    assert "1 more not shown" in text
+
+
+def test_compaction_resets_what_the_conversation_was_shown(repo):
+    assert handle(_tool(repo, "services/billing/webhook.py")) is not None
+    assert handle(_tool(repo, "services/billing/ledger.py")) is None
+    compact = {
+        "hook_event_name": "SessionStart", "session_id": "ses-1", "cwd": str(repo),
+        "source": "compact",
+    }
+    assert handle(compact) is None
+    assert handle(_tool(repo, "services/billing/ledger.py")) is not None
+    assert HOOK_EVENTS["SessionStart"] == "compact"
+
+
+def test_bookkeeping_failures_never_cost_the_assistant_its_context(repo, monkeypatch):
+    def failing(self, ids):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("lore.serve.server.KnowledgeServer.mark_served", failing)
+    out = handle(_tool(repo, "services/billing/webhook.py"))
+    assert "dedupe billing webhook" in _context(out)
+
+
+def test_uninstall_keeps_a_symlinked_settings_file_and_empties_its_target(tmp_path):
+    target = tmp_path / "dotfiles" / "claude-settings.json"
+    target.parent.mkdir()
+    target.write_text("{}\n")
+    link = tmp_path / "settings.json"
+    link.symlink_to(target)
+    assert install_hooks(link, tmp_path, strict=False) == "written"
+    assert HOOK_COMMAND in target.read_text()
+    assert uninstall_hooks(link, tmp_path, strict=False) == "removed"
+    assert link.is_symlink() and json.loads(target.read_text()) == {}
+
+
+def test_an_older_installed_command_is_replaced_on_reinstall(tmp_path):
+    path = tmp_path / "settings.json"
+    older = KNOWN_COMMANDS[1]
+    path.write_text(json.dumps({"hooks": {"UserPromptSubmit": [
+        {"hooks": [{"type": "command", "command": older, "timeout": 10}]}
+    ]}}))
+    assert install_hooks(path, tmp_path) == "written"
+    commands = [
+        h["command"]
+        for groups in json.loads(path.read_text())["hooks"].values()
+        for group in groups
+        for h in group["hooks"]
+    ]
+    assert older not in commands and commands.count(HOOK_SHELL) == len(HOOK_EVENTS)
+
+
+def test_paths_with_dot_segments_still_match_their_scope(repo):
+    event = _tool(repo, "services/../services/billing/webhook.py")
+    assert "dedupe billing webhook" in _context(handle(event))
+
+
+def test_a_bad_settings_file_stops_uninstall_before_any_skill_is_removed(home, repo):
+    install(["claude"], project=True, repo=repo)
+    settings = repo / ".claude" / "settings.json"
+    settings.write_text("{not json")
+    with pytest.raises(AssistantsError, match="not valid JSON"):
+        uninstall(["claude"], project=True, repo=repo)
+    assert (repo / ".claude" / "skills" / "lore" / "SKILL.md").exists()
+
+
+def test_install_warns_when_no_posix_shell_runs_the_hooks(home, repo, monkeypatch):
+    monkeypatch.setattr("lore.assistants.shutil.which", lambda name: "/usr/bin/lore")
+    monkeypatch.setattr(hooks_module, "posix_shell_available", lambda: False)
+    lines = install(["claude"], project=True, repo=repo, hooks=True)
+    assert any("Git Bash" in ln for ln in lines)
+
+
+def test_usage_sidecar_is_replaced_atomically_and_ignored_by_git(repo):
+    store = LoreStore(repo)
+    handle(_tool(repo, "services/billing/webhook.py"))
+    assert not list((store.lore / "claims").glob(".*.tmp"))
+    ignore = (store.lore / ".gitignore").read_text().splitlines()
+    assert "claims/usage.jsonl" in ignore and ".*.tmp" in ignore and "cache/" in ignore

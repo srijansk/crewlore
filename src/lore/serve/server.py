@@ -97,25 +97,26 @@ class KnowledgeServer:
         self.store = store
 
     def query(self, text: str, limit: int = 5, *, min_overlap: int = 1) -> list[Claim]:
-        claims = self.store.load_claims()
-        ranked = rank_claims(claims, text, limit=limit, min_overlap=min_overlap)
-        by_id = self._serve(claims, [c.id for c in ranked])
+        ranked = rank_claims(self.store.load_claims(), text, limit=limit, min_overlap=min_overlap)
+        by_id = self.mark_served([c.id for c in ranked])
         # Return the freshly-incremented claim objects, preserving rank order.
         return [by_id[c.id] for c in ranked]
 
     def mark_served(self, claim_ids: list[str]) -> dict[str, Claim]:
-        """Record that these claims were put in front of someone by another route than
-        a query (a hook, a page of the book); returns the updated claims by id."""
-        return self._serve(self.store.load_claims(), claim_ids)
-
-    def _serve(self, claims: list[Claim], claim_ids: list[str]) -> dict[str, Claim]:
+        """Record that these claims were put in front of someone (a query, a hook, a
+        page of the book); returns the updated claims by id. The read-modify-write of
+        the usage sidecar happens under the store's lock, so parallel hooks and an
+        overlapping query each keep their bump."""
         served_ids = set(claim_ids)
-        now = datetime.now(timezone.utc)
-        for c in claims:
-            if c.id in served_ids:
-                c.usage.times_served += 1
-                c.usage.last_served_at = now
-        if served_ids:
+        if not served_ids:
+            return {}
+        with self.store.locked("usage"):
+            claims = self.store.load_claims()
+            now = datetime.now(timezone.utc)
+            for c in claims:
+                if c.id in served_ids:
+                    c.usage.times_served += 1
+                    c.usage.last_served_at = now
             self.store.write_usage(claims)
         return {c.id: c for c in claims if c.id in served_ids}
 
@@ -136,8 +137,9 @@ class KnowledgeServer:
 
     def _bump(self, claim_ids: list[str], field: str) -> None:
         ids = set(claim_ids)
-        claims = self.store.load_claims()
-        for c in claims:
-            if c.id in ids:
-                setattr(c.usage, field, getattr(c.usage, field) + 1)
-        self.store.write_usage(claims)
+        with self.store.locked("usage"):
+            claims = self.store.load_claims()
+            for c in claims:
+                if c.id in ids:
+                    setattr(c.usage, field, getattr(c.usage, field) + 1)
+            self.store.write_usage(claims)

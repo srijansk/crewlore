@@ -9,6 +9,9 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,7 +29,42 @@ DEFAULT_CONFIG = {
 
 # Never committed: raw sessions and raw source exports can carry secrets or PII,
 # the extraction cache is local, and usage stats are volatile.
-GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl")
+GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl", ".*.tmp")
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` so a concurrent reader sees the old file or the new one, never a
+    truncated one: the content goes to a sibling temp file that then replaces `path`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _lock_exclusive(fd: int) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def _unlock(fd: int) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 class LoreStore:
@@ -146,7 +184,26 @@ class LoreStore:
     def write_usage(self, claims: list[Claim]) -> None:
         """Persist usage alone. Serving and feedback change nothing but usage, so they
         leave the committed claims file untouched instead of rewriting it."""
+        self.ensure_gitignore()
         self._write_usage(claims)
+
+    @contextmanager
+    def locked(self, name: str) -> Iterator[None]:
+        """Hold an exclusive lock on `.lore/cache/<name>.lock` around a read-modify-write
+        of a small shared file (the usage sidecar, a hook's state). Hooks run in
+        parallel and a query can overlap a compile; without this, one writer's bump is
+        lost under another's. The wait is short: these writes take milliseconds."""
+        path = self.lore / "cache" / f"{name}.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            _lock_exclusive(fd)
+            try:
+                yield
+            finally:
+                _unlock(fd)
+        finally:
+            os.close(fd)
 
     def _write_usage(self, claims: list[Claim]) -> None:
         # Only persist non-default usage, keyed by claim id, to keep the sidecar small.
@@ -155,8 +212,7 @@ class LoreStore:
             for c in claims
             if c.usage != UsageStats()
         ]
-        self.usage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.usage_path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        atomic_write_text(self.usage_path, "".join(json.dumps(r) + "\n" for r in rows))
 
     def _load_usage(self) -> dict[str, UsageStats]:
         out: dict[str, UsageStats] = {}
