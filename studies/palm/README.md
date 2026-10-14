@@ -10,19 +10,22 @@ The directory is named after the venue the write-up was first prepared for (PALM
 
 Unit of analysis is the pull request (claims inside one thread are not independent). 60 declined and 60 merged pull requests, sampled with a fixed seed from the public AIDev corpus; 95% bootstrap intervals; paired permutation tests over the same threads.
 
-| Condition | Declined PRs with ≥1 claim stating the rejected approach as current | 95% CI |
-|---|---|---|
-| crewlore extractor, outcome not stated | 44.7% | [36.4, 52.9] |
-| Schema-free summarizer, same threads | 47.6% | [38.4, 56.9] (vs. extractor: p = 0.43) |
-| Merged controls | 0.0% | |
-| Outcome stated in the thread | −14.6 points vs. not stated | p = 0.0002 |
-| Adoption field plus instruction | a further −12.7 points | p = 0.0038 |
+| Condition | Mean share of a declined PR's claims that state the rejected approach as current (a thread that produced no claims counts as 0) | 95% CI | Declined PRs with at least one such claim |
+|---|---|---|---|
+| crewlore extractor, outcome not stated | 44.7% | [36.4, 52.9] | 47 of 60 (78%) |
+| Schema-free summarizer, same threads | 47.6% (vs. extractor: −2.9 points, p = 0.43) | [38.4, 56.9] | 45 of 60 (75%) |
+| Merged controls | 0.0% extractor, 0.4% summarizer | | 0 of 60, 1 of 60 |
+| Outcome stated in the thread | 30.1% (−14.6 points vs. not stated, p = 0.0002); 8 of 60 threads produced no claims | [22.0, 38.6] | 35 of 60 (58%) |
+| Adoption field plus instruction | 17.5% (a further −12.7 points, p = 0.0038) | [11.6, 23.8] | 25 of 60 (42%) |
+
+The two columns answer different questions. The first is how much of what the compiler stored from a declined PR states the rejected approach as current; the second is how many declined PRs put at least one such claim into the store. The point differences and p-values are on the first. Even with the outcome stated and the field present, 25 of the 60 declined PRs still produced at least one such claim.
 
 | Does the claim's own text record the rejection? | |
 |---|---|
-| Every arm without the field (structured extractor and summarizer together) | 0 of 867 statements |
-| With the field, among claims it marked `not_adopted` | 77 of 91 (85%) |
-| With the field, as a share of all claims from declined PRs | 77 of 196 (39%) |
+| Arms without the field, declined PRs only (extractor with and without the outcome stated, and the summarizer) | 0 of 658 statements |
+| Arms without the field, counting the merged controls as well | 0 of 1,060 statements |
+| With the field, all claims from declined PRs | 77 of 196 (39%) |
+| With the field, among the 91 claims the model itself marked `not_adopted` | 77 (85%). This is conditional on the model's own marking: it says the field and the prose agree, not how often the rejection is recorded, so the like-for-like contrast is 0 of 658 against 77 of 196 |
 
 On merged controls the field arm produced 0% pull-request-level poisoning; 82.7% of its claims stayed `current` and the rest were genuine within-PR rejections (an alternative a reviewer turned down inside a successful PR), with three judged safe, so the control is mostly but not perfectly clean. Second-judge agreement on a stratified 240-claim sample: 96.2%, κ = 0.920.
 

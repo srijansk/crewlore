@@ -232,15 +232,15 @@ Bring your own key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`); `crewlore` never sh
 
 Before the adoption field existed, I measured what the compiler stores when it reads work a team declined, using agent-authored pull requests from the public [AIDev](https://arxiv.org/abs/2602.09185) corpus: 60 PRs closed without merging and 60 merged PRs from the same repositories, each claim judged by a separate model against the PR's actual outcome.
 
-| | Declined PRs with ≥1 claim stating the rejected approach as current practice |
-|---|---|
-| crewlore's extractor, no change | 44.7% |
-| A schema-free summarizer on the same threads | 47.6% |
-| Merged controls | 0% |
-| Tell the model the PR was closed | −14.6 points |
-| Add the adoption field plus an instruction to use it | a further −12.7 points |
+| | Share of a declined PR's claims that state the rejected approach as current practice, averaged over PRs | Declined PRs with at least one such claim |
+|---|---|---|
+| crewlore's extractor, no change | 44.7% | 47 of 60 |
+| A schema-free summarizer on the same threads | 47.6% | 45 of 60 |
+| Merged controls | 0% | 0 of 60 |
+| Tell the model the PR was closed | 30.1%, −14.6 points | 35 of 60 |
+| Add the adoption field plus an instruction to use it | 17.5%, a further −12.7 points | 25 of 60 |
 
-The part that changed the schema: across every version without the field, 0 of 867 extracted statements mentioned the rejection in their own text. With the field, 85% of the claims it marked `not_adopted` say so in words. Telling the model was not enough; it needed somewhere to write it down.
+The part that changed the schema: across every version without the field, 0 of the 658 statements extracted from declined PRs mentioned the rejection in their own text (0 of 1,060 counting the merged controls). With the field, 77 of the 196 claims from declined PRs say so in words, and 77 of the 91 the model marked `not_adopted` do. Telling the model was not enough; it needed somewhere to write it down.
 
 The code, pinned data revision and reproduction recipe are in [`studies/palm/`](https://github.com/srijansk/crewlore/tree/main/studies/palm/). The study ran crewlore's extractor and fidelity gate with Gemini models through the OpenAI-compatible provider, with a second judge for agreement (κ = 0.92). This repository is the primary record of the study; a short write-up is being posted as a preprint and will be linked here. If `crewlore` is useful in your research, [`CITATION.cff`](https://github.com/srijansk/crewlore/blob/main/CITATION.cff) has the citation.
 
