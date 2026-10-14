@@ -284,7 +284,7 @@ def test_explanation_dict_always_has_the_same_keys():
     assert Explanation(scope="a").answered is True
 
 
-def test_server_explain_reads_the_store_once_and_filters_stale_conflicts(tmp_path):
+def test_server_explain_reads_the_store_once_and_filters_stale_conflicts(tmp_path, monkeypatch):
     store = LoreStore(tmp_path)
     store.init()
     a = _claim("dedupe billing webhook", "services/billing")
@@ -296,7 +296,11 @@ def test_server_explain_reads_the_store_once_and_filters_stale_conflicts(tmp_pat
         Conflict(scope="services/billing", claim_ids=[a.id, gone.id], reason="stale"),
         Conflict(scope="services/auth", claim_ids=[a.id, b.id], reason="elsewhere"),
     ])
+    reads = []
+    real_load = store.load_claims
+    monkeypatch.setattr(store, "load_claims", lambda: reads.append(1) or real_load())
     found = KnowledgeServer(store).explain("services/billing")
+    assert len(reads) == 1  # one read of the claims file per explain
     assert found.scope == "services/billing"
     assert [c.id for c in found.claims] == sorted([a.id, b.id])
     assert [cf.reason for cf in found.conflicts] == ["live disagreement"]
@@ -308,3 +312,21 @@ def test_server_explain_reads_the_store_once_and_filters_stale_conflicts(tmp_pat
     assert KnowledgeServer(store).explain("services").candidates == [
         "services/auth", "services/billing",
     ]
+
+
+def test_lookup_works_on_the_names_the_book_shows_and_folds_slash_twins():
+    claims = [
+        _claim("a", "docs  api"),
+        _claim("b", "docs api v2"),
+        _claim("c", "services/\u200bbilling"),
+        _claim("d", "services/billing/"),
+        _claim("e", "services/billing/webhooks"),
+    ]
+    assert match_scopes(claims, "docs") == ["docs api", "docs api v2"]
+    assert match_scopes(claims, "docs api") == ["docs api"]
+    assert [c.statement for c in claims_in_scope(claims, "docs api")] == ["a"]
+    assert match_scopes(claims, "services/billing") == ["services/billing"]
+    assert sorted(c.statement for c in claims_in_scope(claims, "services/billing")) == ["c", "d"]
+    assert narrower_scopes(claims, "services/billing") == ["services/billing/webhooks"]
+    for noise in ("/", "./", ".", " / "):
+        assert match_scopes(claims, noise) == []

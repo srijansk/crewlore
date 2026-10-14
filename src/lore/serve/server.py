@@ -84,59 +84,82 @@ def conflict_to_dict(cf: Conflict) -> dict:
     return {"id": cf.id, "reason": sanitize_line(cf.reason), "claim_ids": list(cf.claim_ids)}
 
 
-def _scope_spellings(name: str) -> list[str]:
-    """The exact spellings a typed name may stand for: as typed, with backslashes and a
-    leading `./` normalised, without a trailing slash, and with one. Scopes are text the
-    model wrote, so a slash is data; every form is tried as an exact match before any
-    fuzzy one, and the stored spelling is what comes back."""
-    typed = name.strip()
-    base = typed.replace("\\", "/")
-    if base.startswith("./"):
-        base = base[2:]
-    forms = [typed, base, base.rstrip("/"), base.rstrip("/") + "/"]
-    out: list[str] = []
-    for form in forms:
-        if form and form != "/" and form not in out:
-            out.append(form)
-    return out
+def scope_key(scope: str) -> str:
+    """The identity of a scope for lookup: cleaned like the book's heading, slashes
+    normalised, without a leading `./` or a trailing slash. `services/billing`,
+    `services/billing/`, `.\\services\\billing` and a copy with a zero-width character
+    inside are one scope to a reader, so they are one scope here."""
+    cleaned = sanitize_line(scope).replace("\\", "/")
+    if cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    return cleaned.rstrip("/") or cleaned
+
+
+class ScopeIndex:
+    """Active claims grouped by scope key, with the name a reader sees for each key.
+
+    Stores compiled before claim text was cleaned at build time hold raw scopes, while
+    the book prints them cleaned; resolving on the cleaned form is what makes "call
+    again with one of the candidates" land on the scope the candidate named.
+    """
+
+    def __init__(self, claims: list[Claim]):
+        self.by_key: dict[str, list[Claim]] = {}
+        self.names: dict[str, str] = {}
+        active = [c for c in claims if c.status == "active"]
+        for c in sorted(active, key=lambda c: sanitize_line(c.scope)):
+            key = scope_key(c.scope)
+            self.by_key.setdefault(key, []).append(c)
+            self.names.setdefault(key, sanitize_line(c.scope))
+
+    def match(self, name: str) -> list[str]:
+        """The scope names a typed name refers to.
+
+        An exact match (in any spelling `scope_key` folds together) wins outright.
+        Otherwise every scope whose name starts with the typed text, or failing that
+        contains it, case-insensitively, is a candidate; the caller refuses to guess
+        between several. A name that is empty or only separators matches nothing.
+        """
+        key = scope_key(name)
+        if key in self.by_key:
+            return [self.names[key]]
+        needle = name.strip().casefold()
+        if not needle.strip("/\\. "):
+            return []
+        names = sorted(self.names.values())
+        prefixed = [n for n in names if n.casefold().startswith(needle)]
+        if prefixed:
+            return prefixed
+        return [n for n in names if needle in n.casefold()]
+
+    def claims(self, name: str) -> list[Claim]:
+        """Active claims under one scope: current practice first, declined work after,
+        each group by authority (highest first) and then id for a stable order."""
+        chosen = self.by_key.get(scope_key(name), [])
+        return sorted(chosen, key=lambda c: (c.adoption != "current", -c.authority, c.id))
+
+    def narrower(self, name: str) -> list[str]:
+        """Scopes nested under `name`, which an exact match would otherwise hide. The
+        boundary is a slash, so `services/billing-v2` is not under `services/billing`;
+        a prose scope that happens to start with the name and a slash is listed."""
+        key = scope_key(name)
+        prefix = key + "/"
+        return sorted(self.names[k] for k in self.names if k != key and k.startswith(prefix))
 
 
 def match_scopes(claims: list[Claim], name: str) -> list[str]:
-    """The active scopes a name refers to, for `explain`.
-
-    An exact match, in any of its spellings, wins outright. Otherwise every active
-    scope that starts with the name, or failing that contains it, case-insensitively,
-    is a candidate; the caller refuses to guess between several rather than
-    explaining the wrong one. An empty name matches nothing.
-    """
-    scopes = sorted({c.scope for c in claims if c.status == "active"})
-    for form in _scope_spellings(name):
-        if form in scopes:
-            return [form]
-    needle = name.strip().casefold()
-    if not needle:
-        return []
-    prefixed = [sc for sc in scopes if sc.casefold().startswith(needle)]
-    if prefixed:
-        return prefixed
-    return [sc for sc in scopes if needle in sc.casefold()]
-
-
-def narrower_scopes(claims: list[Claim], scope: str) -> list[str]:
-    """Active scopes nested under `scope`, which an exact match would otherwise hide."""
-    prefix = scope if scope.endswith("/") else scope + "/"
-    scopes = {c.scope for c in claims if c.status == "active"}
-    return sorted(sc for sc in scopes if sc != scope and sc.startswith(prefix))
+    return ScopeIndex(claims).match(name)
 
 
 def claims_in_scope(claims: list[Claim], scope: str) -> list[Claim]:
-    """Active claims under one scope: current practice first, declined work after,
-    each group by authority (highest first) and then id for a stable order."""
-    chosen = [c for c in claims if c.status == "active" and c.scope == scope]
-    return sorted(chosen, key=lambda c: (c.adoption != "current", -c.authority, c.id))
+    return ScopeIndex(claims).claims(scope)
 
 
-@dataclass(frozen=True)
+def narrower_scopes(claims: list[Claim], scope: str) -> list[str]:
+    return ScopeIndex(claims).narrower(scope)
+
+
+@dataclass
 class Explanation:
     """What `explain` found for a name. Exactly one of these holds: `scope` is set (an
     answer), `candidates` is non-empty (the name was ambiguous), or neither (no match).
@@ -259,13 +282,14 @@ class KnowledgeServer:
         matches several scopes, or none, marks nothing and answers nothing.
         """
         claims = self.store.load_claims()
-        candidates = match_scopes(claims, name)
+        index = ScopeIndex(claims)
+        candidates = index.match(name)
         if len(candidates) > 1:
             return Explanation(candidates=candidates)
         if not candidates:
             return Explanation()
         scope = candidates[0]
-        chosen = claims_in_scope(claims, scope)
+        chosen = index.claims(scope)
         served_ids = {c.id for c in chosen}
         now = datetime.now(timezone.utc)
         for c in claims:
@@ -275,17 +299,18 @@ class KnowledgeServer:
         self.store.write_claims(claims)
         # Conflicts are rewritten only by a compile, so one can outlive a side that the
         # lifecycle has since archived; show only those whose sides are still active.
+        key = scope_key(scope)
         conflicts = [
             cf
             for cf in self.store.load_conflicts()
-            if cf.scope == scope and len(served_ids & set(cf.claim_ids)) >= 2
+            if scope_key(cf.scope) == key and len(served_ids & set(cf.claim_ids)) >= 2
         ]
         by_id = {c.id: c for c in claims}
         return Explanation(
             scope=scope,
             claims=[by_id[c.id] for c in chosen],
             conflicts=conflicts,
-            narrower=narrower_scopes(claims, scope),
+            narrower=index.narrower(scope),
         )
 
     def mark_influential(self, claim_ids: list[str]) -> None:
@@ -303,10 +328,10 @@ class KnowledgeServer:
         path.write_text(book)
         return book
 
-    def _bump(self, claim_ids: list[str], field: str) -> None:
+    def _bump(self, claim_ids: list[str], counter: str) -> None:
         ids = set(claim_ids)
         claims = self.store.load_claims()
         for c in claims:
             if c.id in ids:
-                setattr(c.usage, field, getattr(c.usage, field) + 1)
+                setattr(c.usage, counter, getattr(c.usage, counter) + 1)
         self.store.write_claims(claims)

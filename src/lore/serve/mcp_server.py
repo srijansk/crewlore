@@ -7,6 +7,8 @@ logic it exposes lives in `lore.serve.server`.
 
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server.fastmcp import FastMCP  # optional dep; ImportError handled by the CLI
 
 from lore.serve.server import KnowledgeServer, claim_to_dict
@@ -32,7 +34,7 @@ def build_server(store: LoreStore) -> FastMCP:
         return [claim_to_dict(c) for c in server.query(task, limit=limit)]
 
     @mcp.tool()
-    def lore_explain(scope: str) -> dict:
+    def lore_explain(scope: str) -> dict[str, Any]:
         """Everything known about one scope: current practice first, then declined work,
         each with its anchors, plus the live conflicts recorded for the scope.
 

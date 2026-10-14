@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from lore.cli import app
 from lore.schemas import Anchor, Claim, Conflict, Provenance
-from lore.serve.server import claim_to_dict
+from lore.serve.server import Explanation, claim_to_dict
 from lore.store import LoreStore
 
 runner = CliRunner()
@@ -237,16 +237,26 @@ def _seed_two_scopes(tmp_path):
 
 
 def test_query_json_is_the_shared_claim_shape_and_ascii_safe(tmp_path):
-    _seed_claim(tmp_path)
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([
+        Claim(
+            statement="dedupe billing webhook on idempotency key for the caf\u00e9 tenant",
+            kind="gotcha", scope="services/billing",
+            provenance=Provenance(session="s", author="a", harness="claude-code"),
+            anchors=[Anchor(source_kind="transcript", ref="s#1", quote="fires twice")],
+            observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        )
+    ])
     result = runner.invoke(app, ["query", "billing webhook", "--repo", str(tmp_path), "--json"])
     assert result.exit_code == 0, result.stdout
     rows = json.loads(result.stdout)
-    assert rows[0]["statement"] == "dedupe billing webhook on idempotency key"
-    assert set(rows[0]) == set(claim_to_dict(LoreStore(tmp_path).load_claims()[0]))
+    assert rows[0]["statement"].endswith("caf\u00e9 tenant")
+    assert set(rows[0]) == set(claim_to_dict(store.load_claims()[0]))
     assert rows[0]["anchors"][0] == {
         "ref": "s#1", "quote": "fires twice", "actor": None, "login": None, "association": None,
     }
-    assert result.stdout.isascii()
+    assert result.stdout.isascii() and "\\u00e9" in result.stdout
 
 
 def test_query_no_match_exits_0_unless_asked_and_json_is_still_json(tmp_path):
@@ -330,6 +340,40 @@ def test_explain_rejects_an_empty_name(tmp_path):
     _seed_two_scopes(tmp_path)
     result = runner.invoke(app, ["explain", "  ", "--repo", str(tmp_path)])
     assert result.exit_code == 2 and "scope name" in result.stderr
+    result = runner.invoke(app, ["explain", "  ", "--repo", str(tmp_path), "--json"])
+    assert result.exit_code == 2 and "scope name" in result.stderr
+    assert set(json.loads(result.stdout)) == set(Explanation().to_dict())
+    # A lone separator is not a name either; it used to list nearly every scope.
+    result = runner.invoke(app, ["explain", "/", "--repo", str(tmp_path), "--json"])
+    assert result.exit_code == 0 and json.loads(result.stdout)["ambiguous"] == []
+
+
+def test_explain_resolves_a_candidate_it_listed_even_for_raw_old_scopes(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    prov = Provenance(session="s", author="a", harness="claude-code")
+    when = datetime(2026, 5, 19, tzinfo=timezone.utc)
+    store.write_claims([
+        Claim(statement="two spaces", kind="gotcha", scope="docs  api", provenance=prov,
+              observed_at=when, anchors=[Anchor(source_kind="transcript", ref="s#1", quote="q")]),
+        Claim(statement="version two", kind="gotcha", scope="docs api v2", provenance=prov,
+              observed_at=when, anchors=[Anchor(source_kind="transcript", ref="s#2", quote="q")]),
+        Claim(statement="hidden char", kind="gotcha", scope="services/\u200bbilling",
+              provenance=prov, observed_at=when,
+              anchors=[Anchor(source_kind="transcript", ref="s#3", quote="q")]),
+    ])
+
+    def explain_json(name):
+        result = runner.invoke(app, ["explain", name, "--repo", str(tmp_path), "--json"])
+        return json.loads(result.stdout)
+
+    assert explain_json("docs")["ambiguous"] == ["docs api", "docs api v2"]
+    answer = explain_json("docs api")
+    assert answer["scope"] == "docs api"
+    assert [c["statement"] for c in answer["claims"]] == ["two spaces"]
+    shown = explain_json("services/billing")
+    assert shown["scope"] == "services/billing"
+    assert shown["claims"][0]["statement"] == "hidden char"
 
 
 def test_explain_json_marks_only_that_scope_served_and_keeps_claims_file_bytes(tmp_path):

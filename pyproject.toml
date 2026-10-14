@@ -49,7 +49,7 @@ Changelog = "https://github.com/srijansk/crewlore/blob/main/CHANGELOG.md"
 # OpenAI SDK — for `model.provider: openai` and for `local` (OpenAI-compatible endpoints).
 openai = ["openai>=1.0"]
 serve = ["mcp>=1.0,<2"]
-dev = ["pytest>=8.0", "pytest-cov", "ruff", "openai>=1.0", "mcp>=1.0,<2"]
+dev = ["pytest>=8.0", "pytest-cov", "ruff", "openai>=1.0", "mcp>=1.0,<2", "click>=8.2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lore"]

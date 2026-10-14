@@ -21,7 +21,13 @@ from pathlib import Path
 import typer
 
 from lore import __version__
-from lore.serve.server import KnowledgeServer, anchor_attribution, claim_label, claim_to_dict
+from lore.serve.server import (
+    Explanation,
+    KnowledgeServer,
+    anchor_attribution,
+    claim_label,
+    claim_to_dict,
+)
 from lore.store import LoreStore
 from lore.text import sanitize_line
 
@@ -174,11 +180,16 @@ JsonOpt = typer.Option(
     "--json",
     help="Print JSON instead of text, with nothing else on stdout (for scripts and hooks).",
 )
-ExitCodeOpt = typer.Option(
+QueryExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help="Exit 4 when nothing matched, instead of 0 (like `git diff --exit-code`).",
+)
+ExplainExitCodeOpt = typer.Option(
     False,
     "--exit-code",
     help=(
-        "Exit 4 when nothing matched and 3 when a scope name is ambiguous, instead of 0 "
+        "Exit 4 when nothing matched and 3 when the name is ambiguous, instead of 0 "
         "(like `git diff --exit-code`)."
     ),
 )
@@ -237,13 +248,9 @@ def query(
     repo: Path = RepoOpt,
     limit: int = typer.Option(5, "--limit", help="Maximum number of claims to return."),
     json_out: bool = JsonOpt,
-    exit_code: bool = ExitCodeOpt,
+    exit_code: bool = QueryExitCodeOpt,
 ):
-    """Retrieve the claims most relevant to a task (records usage).
-
-    Prints "(no relevant claims)" (or `[]` with --json) when nothing matched; add
-    --exit-code to also exit 4 in that case.
-    """
+    """Retrieve the claims most relevant to a task (records usage)."""
     store = _open_store(repo)
     results = KnowledgeServer(store).query(text, limit=limit)
     if json_out:
@@ -259,19 +266,22 @@ def query(
 
 @app.command()
 def explain(
-    scope: str = typer.Argument(..., help="A scope as shown in the book, or a prefix of one."),
+    scope: str = typer.Argument(
+        ...,
+        help=(
+            "A scope as shown in the book. A prefix, or any part of a name, also works "
+            "case-insensitively when only one scope matches; several matches are listed, "
+            "not guessed."
+        ),
+    ),
     repo: Path = RepoOpt,
     json_out: bool = JsonOpt,
-    exit_code: bool = ExitCodeOpt,
+    exit_code: bool = ExplainExitCodeOpt,
 ):
-    """Everything known about one scope: current practice, declined work, conflicts.
-
-    A name matching several scopes is refused with the candidates listed rather than
-    guessed. With --json the output always has the keys scope, claims, conflicts,
-    ambiguous and narrower; add --exit-code to exit 3 on an ambiguous name and 4 on
-    no match.
-    """
+    """Everything known about one scope: current practice, declined work, conflicts."""
     if not scope.strip():
+        if json_out:
+            typer.echo(json.dumps(Explanation().to_dict(), indent=2))
         typer.echo(
             "error: pass a scope name (the headings in .lore/knowledge/README.md)", err=True
         )
@@ -313,10 +323,7 @@ def feedback(
     if influential == overridden:
         typer.echo("error: pass exactly one of --influential or --overridden")
         raise typer.Exit(2)
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     known = {c.id for c in store.load_claims()}
     unknown = [cid for cid in claim_ids if cid not in known]
     if unknown:
@@ -493,10 +500,7 @@ def serve(
     mcp: bool = typer.Option(True, "--mcp", hidden=True),  # accepted for compatibility
 ):
     """Start the MCP server (stdio) exposing query-time retrieval to any MCP client."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     try:
         from lore.serve.mcp_server import run_mcp
     except ImportError as exc:

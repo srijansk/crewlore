@@ -28,7 +28,7 @@ Three tools are exposed:
 | `lore_explain` | `scope: str` (a scope as shown in the book, or a prefix of one) | Always the same keys: `scope` (`null` when nothing matched or the name was ambiguous), `claims` (current practice first, then declined work, same claim shape), `conflicts` (`id`, `reason`, `claim_ids`), `ambiguous` (candidate scopes when several matched; call again with one), `narrower` (scopes nested under the matched one) |
 | `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
 
-Every `lore_query` call records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
+Every `lore_query` call, and every answered `lore_explain` call, records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
 
 ## Claude Desktop
 
