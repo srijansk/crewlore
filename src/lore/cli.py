@@ -8,6 +8,7 @@ lore hook        install/uninstall/status of the post-commit, post-merge, post-r
 lore import-prs  compile a GitHub repo's pull-request threads
 lore query       task-conditioned retrieval (records usage)
 lore explain     everything known about one scope, declined work included
+lore review      a change's files against the claims that cover them; flags declined work
 lore feedback    mark served claims influential or overridden
 lore status      counts + how much of the layer is actually being read
 lore serve       MCP server for query-time retrieval
@@ -259,6 +260,8 @@ ExplainExitCodeOpt = typer.Option(
 # through a shell tool would otherwise see every miss reported as a failed command.
 EXIT_AMBIGUOUS = 3
 EXIT_NO_MATCH = 4
+# `lore review --exit-code`: a declined approach is flagged in the change.
+EXIT_FLAGGED = 5
 
 
 def _open_store(repo: Path) -> LoreStore:
@@ -363,6 +366,72 @@ def explain(
         raise typer.Exit(EXIT_AMBIGUOUS)
     if exit_code and not found.answered:
         raise typer.Exit(EXIT_NO_MATCH)
+
+
+@app.command()
+def review(
+    number: int | None = typer.Argument(
+        None,
+        help="A pull request number, read through the gh CLI; omit to review the current branch.",
+    ),
+    repo: Path = RepoOpt,
+    base: str | None = typer.Option(
+        None, "--base", help="Base branch for a local review (default: origin's default branch)."
+    ),
+    github: str | None = typer.Option(
+        None,
+        "--github",
+        metavar="OWNER/REPO",
+        help="The pull request's repository, if not this one.",
+    ),
+    comment: bool = typer.Option(
+        False, "--comment", help="Also post the Markdown report as a comment on the pull request."
+    ),
+    json_out: bool = JsonOpt,
+    exit_code: bool = typer.Option(
+        False, "--exit-code", help="Exit 5 when a declined approach is flagged, instead of 0."
+    ),
+):
+    """Check a change's files against the claims that cover them; flag declined work."""
+    from lore.review import (
+        ChangeError,
+        github_change,
+        local_change,
+        post_comment,
+        render_markdown,
+        render_text,
+        to_json,
+    )
+    from lore.review import review as review_change
+
+    if comment and number is None:
+        typer.echo("error: --comment needs a pull request number", err=True)
+        raise typer.Exit(2)
+    store = _open_store(repo)
+    try:
+        if number is not None:
+            change = github_change(number, github, cwd=repo)
+        else:
+            change = local_change(repo, base)
+    except ChangeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if change.partial:
+        typer.echo(f"note: {change.label}; commits were not reviewed", err=True)
+    report = review_change(store.load_claims(), change)
+    if json_out:
+        typer.echo(json.dumps(to_json(report), indent=2))
+    else:
+        typer.echo(render_text(report))
+    if comment:
+        try:
+            post_comment(number, render_markdown(report), github, cwd=repo)
+        except ChangeError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+        typer.echo(f"comment posted on pull request #{number}", err=True)
+    if exit_code and report.flagged:
+        raise typer.Exit(EXIT_FLAGGED)
 
 
 @app.command()
