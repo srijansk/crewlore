@@ -504,44 +504,54 @@ app.add_typer(hook_app, name="hook")
 
 @hook_app.command("install")
 def hook_install(repo: Path = RepoOpt):
-    """Add the post-commit and post-merge hooks (idempotent; honours core.hooksPath)."""
-    from lore.hooks import NotAGitRepository
+    """Add the post-commit and post-merge hooks (idempotent; honours core.hooksPath).
+
+    The block is placed before any exit/exec that would end the hook first, and is only
+    added to a POSIX shell hook; a damaged block is reported, never edited.
+    """
+    from lore.hooks import HOOK_LOG, HookRefused, NotAGitRepository
     from lore.hooks import install as install_hooks
 
     try:
         for line in install_hooks(repo):
             typer.echo(line)
-    except NotAGitRepository as exc:
+    except (NotAGitRepository, HookRefused) as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
-    typer.echo("Hooks log to .lore/cache/hook.log; set LORE_SKIP_HOOK=1 to skip one run.")
+    typer.echo(
+        f"Hooks log to {HOOK_LOG}; set LORE_SKIP_HOOK to any non-empty value to skip a run. "
+        "The post-commit compile needs the model key in the git client's environment."
+    )
 
 
 @hook_app.command("uninstall")
 def hook_uninstall(repo: Path = RepoOpt):
     """Remove the crewlore block from the hooks, leaving anything else in them."""
-    from lore.hooks import NotAGitRepository
+    from lore.hooks import HookRefused, NotAGitRepository
     from lore.hooks import uninstall as uninstall_hooks
 
     try:
         for line in uninstall_hooks(repo):
             typer.echo(line)
-    except NotAGitRepository as exc:
+    except (NotAGitRepository, HookRefused) as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
 
 
 @hook_app.command("status")
 def hook_status(repo: Path = RepoOpt):
-    """Show whether each hook is installed, outdated, or missing."""
-    from lore.hooks import NotAGitRepository, status
+    """Show whether each hook is installed, outdated, broken (and why), or missing, and
+    what the last hook run wrote to the log."""
+    from lore.hooks import NotAGitRepository, last_log_line, status
 
     try:
         for name, state in status(repo).items():
             typer.echo(f"{name}: {state}")
+        last = last_log_line(repo)
     except NotAGitRepository as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
+    typer.echo(f"last hook output: {last if last is not None else '(no hook has run yet)'}")
 
 
 @app.command()

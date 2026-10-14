@@ -222,18 +222,33 @@ def test_render_counts_sessions_that_still_need_extraction(tmp_path):
 
 
 def test_hook_commands_round_trip(tmp_path):
-    import subprocess
-
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
     assert result.exit_code == 0, result.stdout
     assert "post-commit: written" in result.stdout and "post-merge: written" in result.stdout
+    assert "any non-empty value" in result.stdout
     result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path)])
     assert "post-commit: installed" in result.stdout
+    assert "last hook output: (no hook has run yet)" in result.stdout
+    log = tmp_path / ".lore" / "cache" / "hook.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("rendered 3 active claims and 0 conflicts\n")
+    result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path)])
+    assert "last hook output: rendered 3 active claims" in result.stdout
     result = runner.invoke(app, ["hook", "uninstall", "--repo", str(tmp_path)])
     assert result.exit_code == 0 and "removed" in result.stdout
     result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path / "nowhere")])
     assert result.exit_code == 2 and "not inside a git repository" in result.stdout
+
+
+def test_hook_install_refuses_a_hook_it_cannot_safely_edit(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    hook = tmp_path / ".git" / "hooks" / "post-merge"
+    hook.write_text("#!/usr/bin/env node\nconsole.log('mine')\n")
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "error:" in result.stdout and "node script" in result.stdout
+    assert not (tmp_path / ".git" / "hooks" / "post-commit").exists()
 
 
 def _git(repo, *args):
