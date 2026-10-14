@@ -478,6 +478,54 @@ def test_status_sees_a_dead_block_and_reinstall_moves_it(repo, prefix, suffix, p
         assert text.index(END) < text.index(prefix.splitlines()[1])
 
 
+# GUARDS: a function body runs only where the function is called, so an `exit` inside
+# `die() { ...; exit 1; }` does not make a block after the definition unreachable; status
+# called such a hook broken although the probe reached the block, and a reinstall moved
+# it. A block already there is reachable and stays; a fresh install still places its
+# block before the function, where it runs whether or not the function is called.
+@needs_sh
+@pytest.mark.parametrize(
+    "definition",
+    [
+        pytest.param('die() { echo "$1" >&2; exit 1; }\n', id="one-line"),
+        pytest.param('die() {\n  echo "$1" >&2\n  exit 1\n}\n', id="brace-on-the-same-line"),
+        pytest.param("die ()\n{\n  exit 1\n}\n", id="brace-on-the-next-line"),
+    ],
+)
+def test_an_exit_inside_a_function_body_does_not_make_the_block_unreachable(
+    repo, tmp_path, definition
+):
+    spec = HOOKS["post-commit"]
+    hook = _hook(repo)
+    by_hand = "#!/bin/sh\n" + definition
+    by_hand += block(spec.command, spec.description, sys.executable, when=spec.when)
+    hook.write_text(by_hand)
+    hook.chmod(0o755)
+    assert status(repo)["post-commit"].startswith("installed (not probed:")
+    assert status(repo, probe=True)["post-commit"] == "installed"
+    lines = install(repo, python=sys.executable)
+    assert hook.read_text() == by_hand and any("already current" in ln for ln in lines)
+
+    original = "#!/bin/sh\n" + definition + '[ -f "$HOME/no-such-file" ] || die "missing"\n'
+    hook.write_text(original)
+    lines = install(repo, python=sys.executable)
+    text = hook.read_text()
+    assert text.index(END) < text.index(definition)
+    assert any("placed before the hook's `exit`" in ln for ln in lines)
+    subprocess.run(["sh", "-n", str(hook)], check=True)
+    assert _reaches_block(hook, repo, tmp_path)
+    uninstall(repo)
+    assert hook.read_text() == original
+
+
+def test_the_function_keyword_form_is_read_the_same_way():
+    for definition in ("function die {\n  exit 1\n}\n", "function die ()\n{\n  exit 1\n}\n"):
+        scan = hooks_module._scan("#!/bin/sh\n" + definition + "echo mine\n")
+        placed = hooks_module._terminator(scan)
+        assert placed is not None and placed[1:] == ("exit", 1), placed  # before the header
+        assert hooks_module._terminator(scan, in_functions=False) is None
+
+
 def test_a_redirection_only_exec_does_not_count_as_the_end_of_the_hook(repo):
     hook = _hook(repo)
     hook.write_text("#!/bin/sh\nexec >>/tmp/hook.log 2>&1\necho mine\n")

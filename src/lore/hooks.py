@@ -28,8 +28,12 @@ outside quotes and substitutions, skips comments, heredoc bodies and line
 continuations, strips `then`/`else`/`do`, case-pattern and assignment prefixes, and
 tracks how deeply nested in `if`/`for`/`while`/`until`/`case`/`{` a command is, so the
 block goes before the first terminating command, or before the outermost statement
-that holds it. A hook whose end the scanner cannot make sense of is refused rather
-than given a dead block. Only POSIX shell hooks with LF line endings are edited.
+that holds it. An `exit` inside a function body counts when placing a fresh block,
+which then goes before the definition and runs whether or not the function is called,
+but not when asking whether a block already in place is reachable: the body runs only
+where the function is called, which `status --probe` follows and no static read can.
+A hook whose end the scanner cannot make sense of is refused rather than given a dead
+block. Only POSIX shell hooks with LF line endings are edited.
 """
 
 from __future__ import annotations
@@ -300,7 +304,7 @@ def status(repo: Path = Path("."), *, probe: bool = False) -> dict[str, str]:
             problems.append(syntax)
             runnable = False
         prefix = _scan(text[:start])
-        if _terminator(prefix) is not None:
+        if _terminator(prefix, in_functions=False) is not None:
             problems.append("the hook exits before the crewlore block; run `lore hook install`")
         elif prefix.unfinished in _NEVER_RUN:
             problems.append(
@@ -408,7 +412,7 @@ def _upsert(
     if existing is not None:
         start, end = existing
         prefix = _scan(text[:start])
-        if _terminator(prefix) is None and prefix.unfinished is None:
+        if _terminator(prefix, in_functions=False) is None and prefix.unfinished is None:
             return text[:start] + new_block.rstrip("\n") + text[end:], None, False
         text = _remove(text, existing)  # dead where it is: move it to where it runs
     scan = _scan(text)
@@ -702,6 +706,8 @@ def _scan(text: str) -> _Scan:
 
 _OPENERS = frozenset({"if", "for", "while", "until", "case"})
 _CLOSERS = frozenset({"fi", "done", "esac", "}"})
+# `f()` as one word: the name of a function being defined (bash allows `-` and `.`).
+_FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]*\(\)$")
 # Words that stand before a command without being one.
 _PREFIXES = frozenset({"then", "else", "do", "!"})
 _CASE_PATTERN = re.compile(r"^(\(.*\)|[^()\s]+\))$")
@@ -710,13 +716,20 @@ _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _REDIRECTION = re.compile(r"^(\d*[<>]{1,2}[&|]?|&>>?)(.*)$")
 
 
-def _terminator(scan: _Scan) -> tuple[int, str, int] | None:
+def _terminator(scan: _Scan, *, in_functions: bool = True) -> tuple[int, str, int] | None:
     """The first command that ends the hook: (its 1-based line, `exit` or `exec`, the
     0-based line of the top-level statement the block must go before so that it still
-    runs). An `exec` that only redirects (`exec >log 2>&1`) does not end the hook."""
+    runs). An `exec` that only redirects (`exec >log 2>&1`) does not end the hook. With
+    `in_functions` False, neither does an `exit` or `exec` inside a brace-bodied function
+    (`f() { ... }`, `f()` with `{` on the next line, `function f { ... }`): the body runs
+    only where the function is called, so a block standing after the definition is
+    reachable. Whether a call ends the hook first is what `status --probe` is for."""
     depth, opener = 0, 0
+    functions: list[int] = []  # the depth each function body still open was defined at
+    pending_body = False  # a header alone (`f()`) was read; its `{` is the next command
     for cmd in scan.commands:
         words = list(cmd.words)
+        body_expected, pending_body = pending_body, False
         while words and (
             words[0] in _PREFIXES
             or words[0] == "{"
@@ -724,11 +737,28 @@ def _terminator(scan: _Scan) -> tuple[int, str, int] | None:
             or _ASSIGNMENT.match(words[0])
         ):
             if words.pop(0) == "{":
-                if depth == 0:
+                if body_expected:
+                    functions.append(depth)  # the opener is the header's line, kept
+                elif depth == 0:
                     opener = cmd.logical_line
+                body_expected = False
                 depth += 1
         if not words:
             continue
+        header = _function_header(words)
+        if header:
+            if depth == 0:
+                opener = cmd.logical_line
+            words = words[header:]
+            if not words:
+                pending_body = True
+                continue
+            if words[0] == "{":  # `f() {`, `function f {`, maybe with the body's first command
+                functions.append(depth)
+                depth += 1
+                words = words[1:]
+                if not words:
+                    continue
         head = words[0]
         if head in _OPENERS:
             if depth == 0:
@@ -736,13 +766,24 @@ def _terminator(scan: _Scan) -> tuple[int, str, int] | None:
             depth += 1
         elif head in _CLOSERS:
             depth = max(depth - 1, 0)
+            if functions and depth == functions[-1]:
+                functions.pop()
         elif head == "exit" or (head == "exec" and not _redirect_only(words[1:])):
-            return cmd.line + 1, head, opener if depth else cmd.logical_line
-        elif words[-1] == "{":  # `f() {`, `function f {`
-            if depth == 0:
-                opener = cmd.logical_line
-            depth += 1
+            if in_functions or not functions:
+                return cmd.line + 1, head, opener if depth else cmd.logical_line
     return None
+
+
+def _function_header(words: list[str]) -> int:
+    """How many leading words define a function whose body follows: 1 for `f()`, 2 for
+    `f ()` or `function f`, 3 for `function f ()`; 0 when the command is not one."""
+    if words[0] == "function" and len(words) >= 2:
+        return 3 if len(words) >= 3 and words[2] == "()" else 2
+    if _FUNCTION_NAME.match(words[0]):
+        return 1
+    if len(words) >= 2 and words[1] == "()":
+        return 2
+    return 0
 
 
 def _redirect_only(words: list[str]) -> bool:
