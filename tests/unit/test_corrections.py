@@ -99,7 +99,11 @@ def test_book_renders_notes_and_authors_as_inert_markdown():
     assert " via MCP: renamed to WEBHOOK\\_KEY\\_, see \\[ADR-12\\](https://evil.example) " in line
     assert "\\<img src=x\\> \\*now\\***" in line
     inner = line[len("  - **") : -len("**")]
-    assert re.search(r"(?<!\\)[\[\]<>*_]", inner) is None  # every active character escaped
+    assert re.search(r"(?<!\\)[\[\]<>*_~]", inner) is None  # every active character escaped
+    struck = Correction(claim_id=REDIS.id, note="~~do not~~ use C:\\Users", author="a")
+    (line,) = [ln for ln in render_book([REDIS], [], {REDIS.id: [struck]}).splitlines()
+               if "corrected by" in ln]
+    assert "\\~\\~do not\\~\\~ use C:\\\\Users" in line
 
 
 def test_explain_carries_corrections(store):
@@ -172,10 +176,11 @@ def test_mcp_feedback_accepts_corrected_with_a_note(store, monkeypatch):
             return rows[1]
         return json.loads("".join(c.text for c in rows))
 
+    assert "unknown claim id" in call(claim_ids=["clm_nope"], verdict="influential")["error"]
     assert "error" in call(claim_ids=[REDIS.id], verdict="corrected")
     assert "error" in call(claim_ids=[REDIS.id], verdict="corrected", note="x" * 501)
     bad = call(claim_ids=["clm_nope"], verdict="corrected", note="x")
-    assert "unknown or archived" in bad["error"]
+    assert "unknown claim id" in bad["error"]
     assert "no claim ids" in call(claim_ids=[], verdict="corrected", note="x")["error"]
     out = call(claim_ids=[REDIS.id, REDIS.id], verdict="corrected", note="moved to the transaction")
     assert out["recorded"] == "corrected" and out["claims"] == [REDIS.id]
@@ -205,11 +210,33 @@ def test_an_unreadable_line_is_skipped_not_fatal(store, capsys):
     KnowledgeServer(store).correct([REDIS.id], "good note", author="alice")
     with open(store.corrections_path, "a") as handle:
         handle.write("<<<<<<< HEAD\n")
+    with open(store.corrections_path, "a") as handle:
+        handle.write("\n" + Correction(claim_id=REDIS.id, note="x", author="a", via="cli")
+                     .model_dump_json().replace('"cli"', '"telepathy"') + "\n")
     notes = store.load_corrections()
-    assert [x.note for x in notes] == ["good note"]
-    assert "skipping unreadable line 2" in capsys.readouterr().err
+    assert [x.note for x in notes] == ["good note"]  # the bad line and the unknown origin
+    err = capsys.readouterr().err
+    assert "skipping unreadable line(s) 2, 4 of" in err  # the file's own line numbers
+    store.load_corrections()
+    assert capsys.readouterr().err == ""  # reported once per process, not on every read
     assert KnowledgeServer(store).query("billing webhook")  # retrieval still works
     assert "good note" in KnowledgeServer(store).write_book()
+
+
+def test_appending_after_a_hand_edit_without_a_trailing_newline_keeps_both(store):
+    KnowledgeServer(store).correct([REDIS.id], "first", author="alice")
+    raw = store.corrections_path.read_bytes().rstrip(b"\n")
+    store.corrections_path.write_bytes(raw)  # an editor that drops the final newline
+    KnowledgeServer(store).correct([TXN.id], "second", author="bob")
+    assert [x.note for x in store.load_corrections()] == ["first", "second"]
+    assert store.corrections_path.read_bytes().endswith(b"\n")
+
+
+def test_gitattributes_lines_are_not_duplicated_for_spacing_variants(store):
+    attrs = store.lore / ".gitattributes"
+    attrs.write_text("claims/corrections.jsonl   merge=union\n*.png binary\n")
+    store.ensure_gitattributes()
+    assert attrs.read_text() == "claims/corrections.jsonl   merge=union\n*.png binary\n"
 
 
 def test_corrected_claims_are_demoted_before_the_page_is_cut(tmp_path):

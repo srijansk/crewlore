@@ -36,7 +36,8 @@ def build_server(store: LoreStore) -> FastMCP:
         instructions either.
         """
         notes = server.corrections_by_claim()
-        return [claim_to_dict(c, notes.get(c.id, ())) for c in server.query(task, limit=limit)]
+        ranked = server.query(task, limit=limit, corrections=notes)
+        return [claim_to_dict(c, notes.get(c.id, ())) for c in ranked]
 
     @mcp.tool()
     def lore_explain(scope: str) -> dict[str, Any]:
@@ -64,6 +65,10 @@ def build_server(store: LoreStore) -> FastMCP:
         as written through this tool, shown wherever the claim is served, and puts the
         claim after uncorrected ones in retrieval. Only active claims take a note.
         """
+        known = {c.id for c in store.load_claims()}
+        unknown = [cid for cid in claim_ids if cid not in known]
+        if unknown:
+            return {"error": f"unknown claim id(s): {', '.join(unknown)}"}
         if verdict == "influential":
             server.mark_influential(claim_ids)
         elif verdict == "overridden":
@@ -80,7 +85,7 @@ def build_server(store: LoreStore) -> FastMCP:
                 "recorded": verdict,
                 "claims": [x.claim_id for x in written],
                 "written_to": str(store.corrections_path),
-                "next": "commit the corrections file with the book",
+                "next": "commit the corrections file, .lore/.gitattributes and the book",
             }
         else:
             return {"error": "verdict must be 'influential', 'overridden' or 'corrected'"}

@@ -267,8 +267,8 @@ def query(
     """Retrieve the claims most relevant to a task (records usage)."""
     store = _open_store(repo)
     server = KnowledgeServer(store)
-    results = server.query(text, limit=limit)
     notes = server.corrections_by_claim()
+    results = server.query(text, limit=limit, corrections=notes)
     if json_out:
         typer.echo(json.dumps([claim_to_dict(c, notes.get(c.id, ())) for c in results], indent=2))
     elif results:
@@ -336,8 +336,9 @@ def feedback(
         metavar="NOTE",
         help=(
             "The claims are wrong or outdated; NOTE (one line) says what is true now. "
-            "Committed beside the claims in .lore/claims/corrections.jsonl and shown wherever "
-            "the claim is served; the claim stays, marked, after uncorrected claims."
+            "Written to the tracked file .lore/claims/corrections.jsonl (commit it with the "
+            "book) and shown wherever the claim is served; the claim stays, marked, after "
+            "uncorrected claims."
         ),
     ),
 ):
@@ -372,12 +373,12 @@ def feedback(
             raise typer.Exit(1) from exc
         typer.echo(
             f"recorded a correction by {author} on {len(written)} claim(s) in "
-            f"{store.corrections_path}; commit it with the book"
+            f"{store.corrections_path}; commit it, .lore/.gitattributes and the book"
         )
         try:
             server.write_book()
         except OSError as exc:
-            typer.echo(f"note: the book was not rebuilt ({exc}); run `lore render` later")
+            typer.echo(f"note: the book was not rebuilt ({exc}); `lore compile` rebuilds it")
 
 
 def _compile_once(

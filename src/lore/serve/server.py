@@ -231,7 +231,7 @@ def claim_label(c: Claim, *, corrected: bool = False) -> str:
     return f"{label} · corrected" if corrected else label
 
 
-_MARKDOWN_ACTIVE = re.compile(r"([\\`*_\[\]<>])")
+_MARKDOWN_ACTIVE = re.compile(r"([\\`*_~\[\]<>])")
 
 
 def markdown_escape(text: object) -> str:
@@ -324,13 +324,21 @@ class KnowledgeServer:
     def __init__(self, store: LoreStore):
         self.store = store
 
-    def query(self, text: str, limit: int = 5) -> list[Claim]:
+    def query(
+        self,
+        text: str,
+        limit: int = 5,
+        *,
+        corrections: Mapping[str, list[Correction]] | None = None,
+    ) -> list[Claim]:
+        """The claims most relevant to `text`, served. `corrections`, when the caller
+        has already loaded them, saves a second read of the log."""
         claims = self.store.load_claims()
         # A claim a reader has corrected is probably wrong: it is still served, with
         # its note, but after every claim nobody has corrected, so the demotion is
         # applied before the page is cut, not within it.
         ranked = rank_claims(claims, text, limit=len(claims))
-        corrected = set(self.corrections_by_claim())
+        corrected = set(self.corrections_by_claim() if corrections is None else corrections)
         ranked.sort(key=lambda c: c.id in corrected)
         ranked = ranked[:limit]
         served_ids = {c.id for c in ranked}
