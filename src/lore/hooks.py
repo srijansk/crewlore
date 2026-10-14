@@ -13,10 +13,11 @@ uninstall removes the marked block and nothing else.
 
 The block hands git's stdout and stderr back before the compile starts: the background
 subshell is redirected to the log and `exec`s the interpreter, so no process keeps
-git's pipe open while the model works. It runs the interpreter from `.lore/cache`, not
-the repository root, so a top-level `lore/` package in the repository cannot shadow
-the installed one. It records HEAD when it fires and passes it as `--expect-head`, so a
-compile that outlives a `git checkout` writes nothing tracked. With `LORE_HOOK_PROBE`
+git's pipe open while the model works. It runs the interpreter with the current
+directory off `sys.path` (`HOOK_ENTRY`), so no `lore/` package in the repository, at
+the top level or planted under `.lore/cache/`, can stand in for the installed one. It
+records HEAD when it fires and passes it as `--expect-head`, so a compile that outlives
+a `git checkout` writes nothing tracked. With `LORE_HOOK_PROBE`
 set to a path, the block touches that path and exits instead of compiling: that is how
 `lore hook status --probe` checks that a hook reaches its block at all.
 
@@ -63,6 +64,16 @@ IMPORT_PROBE_TIMEOUT_SECONDS = 30
 HOOK_PROBE_TIMEOUT_SECONDS = 120
 # Set to a path, the block touches that path and exits 0 instead of compiling.
 PROBE_VARIABLE = "LORE_HOOK_PROBE"
+# Python that drops the current directory from `sys.path` before importing anything: the
+# empty entry a `-c` run puts first. `-m lore.cli` would put the directory itself there,
+# so a `lore/` package planted under `.lore/cache/`, which only a file the repository
+# controls keeps out of review, would run on every teammate's commit and pull. The
+# filter works on every supported Python; `-P` does the same only from 3.11, and `-I`
+# would also drop PYTHONPATH and the user site-packages a `pip install --user` uses.
+_STRIP_CWD = "import sys; sys.path = [p for p in sys.path if p]"
+# What the block hands the pinned interpreter with `-c`, single-quoted in the shell, so
+# no single quote may appear in it. argv[0] is set so usage text says `lore`, not `-c`.
+HOOK_ENTRY = f'{_STRIP_CWD}; sys.argv[0] = "lore"; from lore.cli import app; app()'
 
 
 @dataclass(frozen=True)
@@ -143,7 +154,7 @@ if [ -z "${{LORE_SKIP_HOOK:-}}" ]{guard}; then
     (
       cd "$_lore_root/.lore/cache" || exit 1
       if [ -x {py} ]; then
-        exec {py} -m lore.cli {args}
+        exec {py} -c '{HOOK_ENTRY}' {args}
       elif command -v lore >/dev/null 2>&1; then
         exec lore {args}
       fi
@@ -732,9 +743,10 @@ def _is_comment(line: str) -> bool:
 
 
 _PINNED = re.compile(r"^\s*if \[ -x (?P<py>.+?) \]; then\s*$", re.M)
-# The probe removes the current directory from sys.path and runs from an empty one, so
-# a `lore/` package in the directory `status` runs from cannot stand in for crewlore.
-_IMPORT_PROBE = "import sys; sys.path = [p for p in sys.path if p]; import lore.cli"
+# The probe drops the current directory from sys.path, as the hook's entry does, and runs
+# from an empty one, so a `lore/` package in the directory `status` runs from cannot
+# stand in for crewlore.
+_IMPORT_PROBE = f"{_STRIP_CWD}; import lore.cli"
 
 
 def _pinned_interpreter(block_text: str) -> str | None:

@@ -15,6 +15,7 @@ import pytest
 import lore.hooks as hooks_module
 from lore.hooks import (
     END,
+    HOOK_ENTRY,
     HOOK_LOG_MAX_BYTES,
     HOOKS,
     PROBE_VARIABLE,
@@ -28,6 +29,7 @@ from lore.hooks import (
     status,
     uninstall,
 )
+from lore.store import LoreStore
 
 # The fake interpreter sleeps this long to stand in for a model call; git must return
 # well before it finishes, so the budget is half the sleep.
@@ -76,25 +78,43 @@ def _git(repo, *args, **kwargs):
 
 def _fake_interpreter(directory, marker, *, sleep_seconds=0):
     """A shell script standing in for the pinned Python: optionally sleeps, then appends
-    its working directory and the arguments it was given as one line to `marker`."""
+    one line to `marker`: its working directory and each argument it was given, tab
+    separated, since the `-c` entry is one argument holding spaces."""
     directory.mkdir(parents=True, exist_ok=True)
     script = directory / "python"
     body = "#!/bin/sh\n"
     if sleep_seconds:
         body += f"sleep {sleep_seconds}\n"
-    body += f'echo "$PWD $@" >> {shlex.quote(str(marker))}\n'
+    body += (
+        '_line="$PWD"; for _a in "$@"; do _line="$_line\t$_a"; done\n'
+        f"printf '%s\\n' \"$_line\" >> {shlex.quote(str(marker))}\n"
+    )
     script.write_text(body)
     script.chmod(0o755)
     return script
 
 
-def _wait_for(path, timeout):
+def _runs(marker):
+    """(working directory, arguments after the `-c` entry) per recorded run of the fake
+    interpreter; every run must have gone through the entry that keeps the current
+    directory off sys.path."""
+    out = []
+    for line in marker.read_text().splitlines():
+        cwd, *argv = line.split("\t")
+        assert argv[:2] == ["-c", HOOK_ENTRY], argv
+        out.append((cwd, argv[2:]))
+    return out
+
+
+def _wait_for(path, timeout, *, holding=None):
+    """True once `path` exists (and, with `holding`, contains that text)."""
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if path.exists():
+    while True:
+        if path.exists() and (holding is None or holding in path.read_text(errors="replace")):
             return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(POLL_SECONDS)
-    return path.exists()
 
 
 def _run_hook(hook, cwd, env=None, *args):
@@ -123,7 +143,7 @@ def test_install_writes_executable_hooks_with_the_pinned_interpreter(repo):
         assert START in text and END in text
         pinned = shlex.quote(sys.executable)
         args = f'{spec.command} --repo "$_lore_root" --expect-head "$_lore_head"'
-        assert f"exec {pinned} -m lore.cli {args}" in text
+        assert f"exec {pinned} -c '{HOOK_ENTRY}' {args}" in text
         assert f"exec lore {args}" in text  # PATH fallback
         assert 'if [ -z "${LORE_SKIP_HOOK:-}" ]' in text
         if os.name != "nt":
@@ -210,11 +230,11 @@ def test_git_commit_returns_before_the_background_compile_finishes(repo, tmp_pat
 
     assert _wait_for(marker, MARKER_TIMEOUT_SECONDS)
     head = _git(repo, "rev-parse", "HEAD").stdout.strip()
-    cwd, *args = marker.read_text().split()
+    [(cwd, args)] = _runs(marker)
     assert os.path.samefile(cwd, repo / ".lore" / "cache")
-    assert args[:3] == ["-m", "lore.cli", "compile"]
-    assert args[3] == "--repo" and os.path.samefile(args[4], repo)
-    assert args[5:] == ["--expect-head", head]
+    assert args[0] == "compile"
+    assert args[1] == "--repo" and os.path.samefile(args[2], repo)
+    assert args[3:] == ["--expect-head", head]
 
 
 # GUARDS: the interpreter path is a shell word. Unquoted, `$` would expand, backticks
@@ -233,7 +253,7 @@ def test_quoted_interpreter_path_runs_and_skip_variable_is_honoured(repo, tmp_pa
 
     _run_hook(hook, repo)
     assert _wait_for(marker, MARKER_TIMEOUT_SECONDS)
-    assert marker.read_text().split()[1:4] == ["-m", "lore.cli", "render"]
+    assert _runs(marker)[0][1][0] == "render"
 
 
 @needs_sh
@@ -276,18 +296,18 @@ def test_a_rebase_compiles_once_through_post_rewrite_with_head_settled(repo, tmp
     _git(repo, "rebase", "-q", "-", timeout=120)
     assert _wait_for(marker, MARKER_TIMEOUT_SECONDS)
     time.sleep(NEGATIVE_WAIT_SECONDS)  # any post-commit compile would have landed by now
-    runs = marker.read_text().splitlines()
+    runs = _runs(marker)
     head = _git(repo, "rev-parse", "HEAD").stdout.strip()
     assert len(runs) == 1, runs
-    assert runs[0].split()[1:4] == ["-m", "lore.cli", "compile"]
-    assert runs[0].split()[-2:] == ["--expect-head", head]
+    assert runs[0][1][0] == "compile"
+    assert runs[0][1][-2:] == ["--expect-head", head]
 
     marker.unlink()
     _git(repo, "commit", "-q", "--amend", "-m", "feature 2, amended", timeout=120)
     assert _wait_for(marker, MARKER_TIMEOUT_SECONDS)
     time.sleep(NEGATIVE_WAIT_SECONDS)
-    runs = marker.read_text().splitlines()
-    assert len(runs) == 1 and runs[0].split()[-1] == _git(repo, "rev-parse", "HEAD").stdout.strip()
+    runs = _runs(marker)
+    assert len(runs) == 1 and runs[0][1][-1] == _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
 # GUARDS: appended after a command that ends the hook, the block is dead code that
@@ -549,6 +569,37 @@ def test_import_probe_is_not_fooled_by_a_lore_package_in_the_working_directory(
     monkeypatch.chdir(repo)
     install(repo)
     assert status(repo) == INSTALLED, "needs crewlore installed for sys.executable"
+
+
+# GUARDS: `python -m lore.cli` puts the working directory first on sys.path, and the
+# block runs from `.lore/cache`, a directory that only a file the repository controls
+# keeps out of review: a `lore/` package planted there would run on every teammate's
+# commit and pull. The block's entry drops the working directory from sys.path before
+# importing anything, so the installed crewlore runs and the plant never does.
+@needs_sh
+def test_a_lore_package_planted_under_the_cache_cannot_stand_in_for_crewlore(repo, tmp_path):
+    planted_ran = tmp_path / "planted-ran"
+    planted = repo / ".lore" / "cache" / "lore"
+    planted.mkdir(parents=True)
+    (planted / "__init__.py").write_text(f"open({str(planted_ran)!r}, 'w').close()\n")
+    (planted / "cli.py").write_text("app = None\n")
+    subprocess.run([sys.executable, "-m", "lore.cli", "--version"], cwd=planted.parent)
+    assert planted_ran.exists(), "the plant must work against `-m` for this test to mean anything"
+    planted_ran.unlink()
+
+    entry = subprocess.run(
+        [sys.executable, "-c", HOOK_ENTRY, "--version"],
+        cwd=planted.parent, capture_output=True, text=True,
+    )
+    assert entry.returncode == 0 and entry.stdout.startswith("crewlore "), entry.stderr
+    assert not planted_ran.exists()
+
+    LoreStore(repo).init()
+    install(repo, python=sys.executable)
+    _run_hook(_hook(repo, "post-merge"), repo)
+    log = repo / ".lore" / "cache" / "hook.log"
+    assert _wait_for(log, MARKER_TIMEOUT_SECONDS, holding="nothing to render"), log.read_text()
+    assert not planted_ran.exists()
 
 
 # GUARDS: a static scan cannot see every way a hook ends before the block (`set -e` and
