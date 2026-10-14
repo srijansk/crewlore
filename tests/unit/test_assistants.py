@@ -200,6 +200,32 @@ def test_two_blocks_converge_to_one_and_removal_takes_both(tmp_path):
     assert BLOCK_START not in path.read_text() and "middle" in path.read_text()
 
 
+def test_a_stray_start_marker_never_swallows_the_text_after_it(home, repo):
+    stray = f"# Project\n\n{BLOCK_START}\nIMPORTANT USER TEXT\n\n## More user notes\nkeep me\n"
+    (repo / "CLAUDE.md").write_text(stray)
+    install(["claude"], project=True, repo=repo, always_on=True)
+    install(["claude"], project=True, repo=repo, always_on=True)
+    text = (repo / "CLAUDE.md").read_text()
+    assert text.startswith(stray) and text.count("lore query") == 1
+    uninstall(["claude"], project=True, repo=repo)
+    assert (repo / "CLAUDE.md").read_text() == stray
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink semantics differ on Windows")
+def test_project_uninstall_never_removes_through_a_symlinked_directory(home, repo):
+    mine = home / ".claude" / "skills" / "lore"
+    install(["claude"])  # the user's own, user-scope skill
+    assert (mine / "SKILL.md").exists()
+    (repo / ".claude" / "skills").mkdir(parents=True)
+    (repo / ".claude" / "skills" / "lore").symlink_to(mine, target_is_directory=True)
+    (repo / "CLAUDE.md").symlink_to(home / ".claude" / "CLAUDE.md")
+    (home / ".claude" / "CLAUDE.md").write_text(f"{BLOCK_START}\nx\n{BLOCK_END}\n")
+    lines = uninstall(["claude"], project=True, repo=repo)
+    assert sum("symbolic link" in ln for ln in lines) == 2
+    assert (mine / "SKILL.md").exists()
+    assert (home / ".claude" / "CLAUDE.md").read_text() == f"{BLOCK_START}\nx\n{BLOCK_END}\n"
+
+
 def test_end_before_start_is_not_a_block(tmp_path):
     path = tmp_path / "CLAUDE.md"
     path.write_text(f"{BLOCK_END}\nstray\n{BLOCK_START}\n")

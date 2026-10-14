@@ -34,7 +34,18 @@ BLOCK_END = "<!-- crewlore:end -->"
 OWNER_MARK = "<!-- written by crewlore"
 PLATFORMS = ("claude", "cursor", "codex", "gemini", "agents")
 
-_BLOCK_RE = re.compile(re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END) + r"(?:\r?\n)?", re.S)
+# A block runs from a start marker to the next end marker without crossing another
+# start marker, so a stray start (an end line lost in a hand edit, or planted by a
+# checkout) is inert text and never swallows what follows it.
+_BLOCK_RE = re.compile(
+    re.escape(BLOCK_START)
+    + r"(?:(?!"
+    + re.escape(BLOCK_START)
+    + r").)*?"
+    + re.escape(BLOCK_END)
+    + r"(?:\r?\n)?",
+    re.S,
+)
 
 _SKILL_DESCRIPTION = (
     "Consult the repository's compiled team knowledge (crewlore, the .lore/ directory) "
@@ -308,13 +319,21 @@ def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(
         for path in (tgt.skill_path, tgt.rule_path):
             if path is None or not (path.exists() or path.is_symlink()):
                 continue
-            if (project and path.is_symlink()) or not _owned(path):
+            # The same policy as install: a project checkout must not redirect a removal
+            # through a symbolic link anywhere between the root and the file.
+            if project and _has_symlink(path, tgt.root):
+                lines.append(f"{tgt.platform}: left {path} in place (symbolic link)")
+                continue
+            if not _owned(path):
                 lines.append(f"{tgt.platform}: left {path} in place (not written by crewlore)")
                 continue
             path.unlink()
             _prune_dirs(path.parent, tgt.root)
             lines.append(f"{tgt.platform}: removed {path}")
-        if tgt.instruction_path is None or (project and tgt.instruction_path.is_symlink()):
+        if tgt.instruction_path is None:
+            continue
+        if project and _has_symlink(tgt.instruction_path, tgt.root):
+            lines.append(f"{tgt.platform}: left {tgt.instruction_path} in place (symbolic link)")
             continue
         outcome = remove_block(tgt.instruction_path)
         if outcome == "emptied":
@@ -417,6 +436,16 @@ def _write_text(path: Path, text: str) -> None:
 
 def _line_ending(text: str) -> str:
     return "\r\n" if "\r\n" in text else "\n"
+
+
+def _has_symlink(path: Path, root: Path) -> bool:
+    """True when a symbolic link sits anywhere between the root (excluded) and the file."""
+    current = path
+    while current != root and current.parent != current:
+        if current.is_symlink():
+            return True
+        current = current.parent
+    return False
 
 
 def _refuse_symlinks(path: Path, root: Path) -> None:
