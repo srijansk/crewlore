@@ -25,7 +25,9 @@ census work shows PR author fields alone badly undercount some agents (commit
 trailers and config files catch adopters that PR metadata misses), so detection
 belongs to the source layer that fetches threads. Records arriving without an
 explicit `actor` are treated as human and tagged `attribution: unknown`, so a
-mislabelling is auditable rather than silent.
+mislabelling is auditable rather than silent. The author's login and repository
+association travel on the event's `meta`, where the extractor picks them up to
+name who wrote each anchored quote.
 """
 
 from __future__ import annotations
@@ -151,7 +153,9 @@ class GitHubPRAdapter:
         if attribution:
             meta["attribution"] = attribution
         if login := rec.get("login"):
-            meta["login"] = login
+            meta["login"] = str(login)
+        if association := rec.get("association"):
+            meta["association"] = str(association).lower()
         return [
             NSFEvent(
                 session=sid,

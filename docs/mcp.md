@@ -24,14 +24,15 @@ lore serve --repo /absolute/path/to/your/repo
 
 It runs in the foreground over stdio, the standard MCP transport, and reads `.lore/` in the repo you point it at. Always pass `--repo` with an absolute path: MCP clients launch servers from their own working directory, not yours, and a server started elsewhere finds no `.lore/` and returns nothing.
 
-Two tools are exposed:
+Three tools are exposed:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `action`, and `anchors` (`ref` + verbatim `quote`) |
+| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `topic`, `action`, `authority`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it) |
+| `lore_explain` | `scope: str` (a scope as shown in the book, or a prefix of one) | Always the same keys: `scope` (`null` when nothing matched or the name was ambiguous), `claims` (current practice first, then declined work, same claim shape), `conflicts` (`id`, `reason`, `claim_ids`), `ambiguous` (candidate scopes when several matched; call again with one), `narrower` (scopes nested under the matched one) |
 | `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
 
-Every `lore_query` call records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
+Every `lore_query` call, and every answered `lore_explain` call, records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
 
 ## Claude Desktop
 

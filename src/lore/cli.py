@@ -3,8 +3,11 @@
 lore init        create .lore/ in the repo
 lore compile     ingest new transcripts -> distill -> prune (one pass)
 lore watch       do that automatically on an interval (--once for cron)
+lore render      rebuild the book + conflicts from the stored claims, no model
+lore hook        install/uninstall/status of the post-commit, post-merge, post-rewrite hooks
 lore import-prs  compile a GitHub repo's pull-request threads
 lore query       task-conditioned retrieval (records usage)
+lore explain     everything known about one scope, declined work included
 lore feedback    mark served claims influential or overridden
 lore status      counts + how much of the layer is actually being read
 lore serve       MCP server for query-time retrieval
@@ -13,15 +16,25 @@ lore install     put the /lore skill into your coding assistant (uninstall to re
 
 from __future__ import annotations
 
+import json
+import math
 import time
 from datetime import timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
 from lore import __version__
-from lore.serve.server import KnowledgeServer, claim_label
-from lore.store import LoreStore
+from lore.serve.server import (
+    Explanation,
+    KnowledgeServer,
+    anchor_attribution,
+    claim_label,
+    claim_to_dict,
+)
+from lore.store import DEFAULT_CONFIG, LoreStore
+from lore.text import sanitize_line
 
 app = typer.Typer(
     help=(
@@ -43,6 +56,27 @@ RebuildOpt = typer.Option(
     False, "--rebuild", help="Ignore the extraction cache and re-extract all sessions."
 )
 ClaimIdsArg = typer.Argument(..., help="Claim ids, as shown by `lore query`.")
+ExpectHeadOpt = typer.Option(
+    None,
+    "--expect-head",
+    metavar="SHA",
+    help=(
+        "Write nothing git tracks unless, by the time the work is done, HEAD is still this "
+        "commit or follows it on the same branch with the committed claims file unchanged "
+        "(captured sessions and the extraction cache, both gitignored, are kept either "
+        "way). The git hooks pass the commit they fired on, so a compile that outlives a "
+        "`git checkout` cannot land in the other branch."
+    ),
+)
+SettleOpt = typer.Option(
+    None,
+    "--settle",
+    metavar="MINUTES",
+    help=(
+        "Leave transcripts modified in the last MINUTES minutes for a later pass, instead of "
+        "capture.settle_minutes from the config; 0 captures every transcript at once."
+    ),
+)
 
 _INIT_HINT = "No .lore/ here yet — run `lore init` in the repo root first."
 
@@ -104,6 +138,38 @@ def _compile_settings(store: LoreStore) -> dict:
         "interval": int(cfg.get("watch_interval_seconds", 300)),
         "max_unused_age": timedelta(days=float(cfg.get("max_unused_days", 30))),
     }
+
+
+def _settle(store: LoreStore, override: float | None = None) -> timedelta:
+    """How long a transcript must go unmodified before it is captured: `--settle` when
+    given, else `capture.settle_minutes` (a store written by an older version takes the
+    default). Anything but a finite number of minutes, 0 or more, is refused with a
+    message naming the setting instead of a traceback."""
+    if override is not None:
+        minutes, source = override, "--settle"
+    else:
+        cfg = store.load_config().get("capture", {}) or {}
+        minutes = cfg.get("settle_minutes", DEFAULT_CONFIG["capture"]["settle_minutes"])
+        source = "capture.settle_minutes in .lore/config.yaml"
+    try:
+        value = float(minutes)
+    except (TypeError, ValueError):
+        value = math.nan
+    if isinstance(minutes, bool) or not math.isfinite(value) or value < 0:
+        typer.echo(
+            f"error: {source} must be a number of minutes, 0 or more (0 captures at once); "
+            f"got {minutes!r}"
+        )
+        raise typer.Exit(2)
+    return timedelta(minutes=value)
+
+
+def _stepped_aside(exc: Exception) -> NoReturn:
+    """A compile that stepped aside — another compile holds the lock, or HEAD moved — is
+    not an error: one line says so and the exit is clean, so a hook log shows what
+    happened without a traceback."""
+    typer.echo(f"skipped: {exc}")
+    raise typer.Exit(0)
 
 
 def _require_store(store: LoreStore) -> None:
@@ -170,26 +236,133 @@ def status(repo: Path = RepoOpt):
         )
 
 
+JsonOpt = typer.Option(
+    False,
+    "--json",
+    help="Print JSON instead of text, with nothing else on stdout (for scripts and hooks).",
+)
+QueryExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help="Exit 4 when nothing matched, instead of 0 (like `git diff --exit-code`).",
+)
+ExplainExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help=(
+        "Exit 4 when nothing matched and 3 when the name is ambiguous, instead of 0 "
+        "(like `git diff --exit-code`)."
+    ),
+)
+# Exit codes behind --exit-code, shared by `lore query` and `lore explain`, so a script
+# can branch without parsing text. Off by default: an assistant that runs `lore query`
+# through a shell tool would otherwise see every miss reported as a failed command.
+EXIT_AMBIGUOUS = 3
+EXIT_NO_MATCH = 4
+
+
+def _open_store(repo: Path) -> LoreStore:
+    """The store at `repo`, or exit 1 with the hint on stderr so `--json` stdout stays JSON."""
+    store = LoreStore(repo)
+    if not store.is_initialised:
+        typer.echo(_INIT_HINT, err=True)
+        raise typer.Exit(1)
+    return store
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _print_claim(c, *, show_scope: bool = True) -> None:
+    where = f" ({sanitize_line(c.scope)})" if show_scope else ""
+    typer.echo(f"[{claim_label(c)}]{where} {sanitize_line(c.statement)}  [{c.id}]")
+    if c.action:
+        verb = "" if c.adoption == "current" else "instead: "
+        typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+
+
+def _print_explanation(found) -> None:
+    declined = sum(1 for c in found.claims if c.adoption != "current")
+    count = _plural(len(found.claims), "claim")
+    typer.echo(f"{sanitize_line(found.scope)}  ({count}, {declined} not adopted)")
+    for c in found.claims:
+        _print_claim(c, show_scope=False)
+        for a in c.anchors:
+            who = anchor_attribution(a)
+            by = f" ({who})" if who else ""
+            typer.echo(f'    anchor {sanitize_line(a.ref)}{by}: "{sanitize_line(a.quote)}"')
+    if found.conflicts:
+        typer.echo("")
+        typer.echo("conflicts:")
+        for cf in found.conflicts:
+            typer.echo(f"  {sanitize_line(cf.reason)} ({', '.join(cf.claim_ids)})")
+    if found.narrower:
+        typer.echo("")
+        names = ", ".join(sanitize_line(sc) for sc in found.narrower)
+        typer.echo(f"{_plural(len(found.narrower), 'narrower scope')}: {names}")
+
+
 @app.command()
 def query(
     text: str,
     repo: Path = RepoOpt,
     limit: int = typer.Option(5, "--limit", help="Maximum number of claims to return."),
+    json_out: bool = JsonOpt,
+    exit_code: bool = QueryExitCodeOpt,
 ):
     """Retrieve the claims most relevant to a task (records usage)."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        return
+    store = _open_store(repo)
     results = KnowledgeServer(store).query(text, limit=limit)
-    if not results:
+    if json_out:
+        typer.echo(json.dumps([claim_to_dict(c) for c in results], indent=2))
+    elif results:
+        for c in results:
+            _print_claim(c)
+    else:
         typer.echo("(no relevant claims)")
-        return
-    for c in results:
-        typer.echo(f"[{claim_label(c)}] ({c.scope}) {c.statement}  [{c.id}]")
-        if c.action:
-            verb = "" if c.adoption == "current" else "instead: "
-            typer.echo(f"    -> {verb}{c.action}")
+    if not results and exit_code:
+        raise typer.Exit(EXIT_NO_MATCH)
+
+
+@app.command()
+def explain(
+    scope: str = typer.Argument(
+        ...,
+        help=(
+            "A scope as shown in the book. A prefix, or any part of a name, also works "
+            "case-insensitively when only one scope matches; several matches are listed, "
+            "not guessed."
+        ),
+    ),
+    repo: Path = RepoOpt,
+    json_out: bool = JsonOpt,
+    exit_code: bool = ExplainExitCodeOpt,
+):
+    """Everything known about one scope: current practice, declined work, conflicts."""
+    if not scope.strip():
+        if json_out:
+            typer.echo(json.dumps(Explanation().to_dict(), indent=2))
+        typer.echo(
+            "error: pass a scope name (the headings in .lore/knowledge/README.md)", err=True
+        )
+        raise typer.Exit(2)
+    store = _open_store(repo)
+    found = KnowledgeServer(store).explain(scope)
+    if json_out:
+        typer.echo(json.dumps(found.to_dict(), indent=2))
+    elif found.candidates:
+        typer.echo(f"{scope!r} matches {len(found.candidates)} scopes; pass one of them:")
+        for sc in found.candidates:
+            typer.echo(f"  {sanitize_line(sc)}")
+    elif not found.answered:
+        typer.echo(f"no active claims under a scope matching {scope!r}")
+    else:
+        _print_explanation(found)
+    if exit_code and found.candidates:
+        raise typer.Exit(EXIT_AMBIGUOUS)
+    if exit_code and not found.answered:
+        raise typer.Exit(EXIT_NO_MATCH)
 
 
 @app.command()
@@ -211,10 +384,7 @@ def feedback(
     if influential == overridden:
         typer.echo("error: pass exactly one of --influential or --overridden")
         raise typer.Exit(2)
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     known = {c.id for c in store.load_claims()}
     unknown = [cid for cid in claim_ids if cid not in known]
     if unknown:
@@ -230,8 +400,17 @@ def feedback(
 
 
 def _compile_once(
-    store: LoreStore, transcript_dir: Path, *, rebuild: bool = False, adapter=None
+    store: LoreStore,
+    transcript_dir: Path,
+    *,
+    rebuild: bool = False,
+    adapter=None,
+    settle: timedelta | None = None,
+    expect_head: str | None = None,
 ) -> dict:
+    """One ingest -> compile -> prune pass. Raises `CompileInProgress` / `HeadMoved`
+    (from `lore.compile.run`) when the pass stepped aside without writing anything git
+    tracks."""
     from lore.capture.adapters.claude_code import ClaudeCodeAdapter
     from lore.compile.extractor import FatalExtractionError
     from lore.compile.run import auto_compile
@@ -247,12 +426,15 @@ def _compile_once(
             transcript_dir,
             rebuild=rebuild,
             max_unused_age=settings["max_unused_age"],
+            settle=settle,
+            expect_head=expect_head,
         )
     except FatalExtractionError as exc:
         # Without this the run would report success having compiled nothing.
         typer.echo(f"error: {exc}")
         raise typer.Exit(1) from exc
     stats["gate"] = dict(extractor.stats)
+    stats["settle_minutes"] = settle.total_seconds() / 60 if settle else 0
     return stats
 
 
@@ -269,6 +451,12 @@ def _report(stats: dict) -> None:
             f"  ! {failed} session(s) failed to extract and were skipped; "
             "they will be retried on the next pass"
         )
+    if settling := stats.get("settling"):
+        typer.echo(
+            f"  {settling} transcript(s) modified in the last {stats['settle_minutes']:g} min "
+            "are still being written and were left for a later pass "
+            "(capture.settle_minutes in .lore/config.yaml, or --settle; 0 captures at once)"
+        )
 
 
 @app.command()
@@ -276,17 +464,72 @@ def compile(  # noqa: A001
     repo: Path = RepoOpt,
     transcripts: Path = TranscriptsOpt,
     rebuild: bool = RebuildOpt,
+    expect_head: str = ExpectHeadOpt,
+    settle: float = SettleOpt,
 ):
-    """Ingest new transcripts, distill to claims + book, and prune (one pass)."""
+    """Ingest new transcripts, distill to claims + book, and prune (one pass).
+
+    One compile runs per store at a time; a second one says so and exits cleanly.
+    """
+    from lore.compile.run import CompileInProgress, HeadMoved
+
     store = LoreStore(repo)
     _require_store(store)
-    stats = _compile_once(store, _transcript_dir(store, transcripts), rebuild=rebuild)
+    settle_for = _settle(store, settle)
+    try:
+        stats = _compile_once(
+            store,
+            _transcript_dir(store, transcripts),
+            rebuild=rebuild,
+            settle=settle_for,
+            expect_head=expect_head or None,
+        )
+    except (CompileInProgress, HeadMoved) as exc:
+        _stepped_aside(exc)
     typer.echo(
         f"ingested {stats['ingested']} new sessions "
         f"({stats['redactions']} redactions); "
         f"{stats['active']} active claims, {stats['conflicts']} conflicts"
     )
     _report(stats)
+
+
+@app.command()
+def render(repo: Path = RepoOpt, expect_head: str = ExpectHeadOpt):
+    """Rebuild the book and the conflict list from the claims already compiled, no model.
+
+    For a fresh clone or after a merge or pull: the stored claims are re-deduplicated,
+    conflicts re-detected, and .lore/knowledge/README.md rewritten. Nothing else is
+    read — not captured sessions, not this machine's extraction cache — so a render
+    adds no claim that `lore compile` has not committed. Needs no API key.
+    """
+    from lore.compile.run import CompileInProgress, HeadMoved, run_render
+
+    store = LoreStore(repo)
+    if not store.is_initialised:
+        typer.echo(_INIT_HINT)
+        raise typer.Exit(1)
+    try:
+        result = run_render(store, expect_head=expect_head or None)
+    except (CompileInProgress, HeadMoved) as exc:
+        _stepped_aside(exc)
+    if result.rendered:
+        active = sum(c.status == "active" for c in result.claims)
+        typer.echo(
+            f"rendered {active} active claims and {len(result.conflicts)} conflicts "
+            f"into {store.lore / 'knowledge' / 'README.md'}; "
+            f"{result.changed_lines} claim line(s) changed"
+        )
+    else:
+        typer.echo(
+            f"nothing to render: no compiled claims at {store.claims_path} "
+            "(`lore compile` writes them)"
+        )
+    if result.unextracted_sessions:
+        typer.echo(
+            f"  {result.unextracted_sessions} captured session(s) have no cached extraction "
+            "yet; run `lore compile` to extract them"
+        )
 
 
 @app.command("import-prs")
@@ -315,6 +558,7 @@ def import_prs(
     """
     from lore.capture.adapters.github_pr import GitHubPRAdapter
     from lore.capture.sources.github import GitHubError, GitHubPRSource
+    from lore.compile.run import CompileInProgress
 
     if state not in ("closed", "open", "all"):
         typer.echo("error: --state must be closed, open, or all")
@@ -340,7 +584,11 @@ def import_prs(
     if not stats["written"]:
         return
 
-    result = _compile_once(store, out_dir, rebuild=rebuild, adapter=GitHubPRAdapter())
+    # Exported threads are complete files, so no settle time applies to them.
+    try:
+        result = _compile_once(store, out_dir, rebuild=rebuild, adapter=GitHubPRAdapter())
+    except CompileInProgress as exc:
+        _stepped_aside(exc)
     typer.echo(
         f"ingested {result['ingested']} new sessions; "
         f"{result['active']} active claims, {result['conflicts']} conflicts"
@@ -359,23 +607,32 @@ def watch(
     ),
     once: bool = typer.Option(False, "--once", help="Run a single pass and exit (cron mode)."),
     rebuild: bool = RebuildOpt,
+    settle: float = SettleOpt,
 ):
     """Automatically compile on an interval — so nobody has to remember to.
 
     Extraction is cached per session, so each pass only sends newly-ingested
     sessions to the model; cost is incremental, not per-corpus-per-interval.
     """
+    from lore.compile.run import CompileInProgress
+
     store = LoreStore(repo)
     _require_store(store)
+    settle_for = _settle(store, settle)
     tdir = _transcript_dir(store, transcripts)
     sleep_for = interval if interval is not None else _compile_settings(store)["interval"]
     while True:
-        stats = _compile_once(store, tdir, rebuild=rebuild)
-        typer.echo(
-            f"[watch] +{stats['ingested']} sessions, "
-            f"{stats['active']} active claims, {stats['conflicts']} conflicts"
-        )
-        _report(stats)
+        try:
+            stats = _compile_once(store, tdir, rebuild=rebuild, settle=settle_for)
+        except CompileInProgress as exc:
+            # A hook's compile is running; this pass has nothing to add.
+            typer.echo(f"[watch] skipped: {exc}")
+        else:
+            typer.echo(
+                f"[watch] +{stats['ingested']} sessions, "
+                f"{stats['active']} active claims, {stats['conflicts']} conflicts"
+            )
+            _report(stats)
         if once:
             break
         try:
@@ -385,16 +642,87 @@ def watch(
             break
 
 
+hook_app = typer.Typer(
+    help=(
+        "Git hooks that keep the layer current without a daemon: compile after each commit "
+        "and once after a rebase, render after each merge, in the background."
+    )
+)
+app.add_typer(hook_app, name="hook")
+
+
+@hook_app.command("install")
+def hook_install(repo: Path = RepoOpt):
+    """Add the post-commit, post-merge and post-rewrite hooks (idempotent; honours
+    core.hooksPath).
+
+    The block is placed before any exit/exec that would end the hook first, and is only
+    added to a POSIX shell hook with LF line endings; a damaged block is reported, never
+    edited.
+    """
+    from lore.hooks import HOOK_LOG, HookRefused, NotAGitRepository
+    from lore.hooks import install as install_hooks
+
+    try:
+        for line in install_hooks(repo):
+            typer.echo(line)
+    except (NotAGitRepository, HookRefused) as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+    typer.echo(
+        f"Hooks log to {HOOK_LOG}; set LORE_SKIP_HOOK to any non-empty value to skip a run. "
+        "The post-commit compile needs the model key in the git client's environment."
+    )
+
+
+@hook_app.command("uninstall")
+def hook_uninstall(repo: Path = RepoOpt):
+    """Remove the crewlore block from the hooks, leaving anything else in them."""
+    from lore.hooks import HookRefused, NotAGitRepository
+    from lore.hooks import uninstall as uninstall_hooks
+
+    try:
+        for line in uninstall_hooks(repo):
+            typer.echo(line)
+    except (NotAGitRepository, HookRefused) as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+
+
+@hook_app.command("status")
+def hook_status(
+    repo: Path = RepoOpt,
+    probe: bool = typer.Option(
+        False,
+        "--probe",
+        help=(
+            "Also run each hook with LORE_HOOK_PROBE set, which makes the crewlore block "
+            "touch a file and exit instead of compiling, to confirm the hook reaches it. "
+            "This runs the hook's other commands too."
+        ),
+    ),
+):
+    """Show whether each hook is installed, outdated, broken (and why), or missing, and
+    what the last hook run wrote to the log."""
+    from lore.hooks import NotAGitRepository, last_log_line, status
+
+    try:
+        for name, state in status(repo, probe=probe).items():
+            typer.echo(f"{name}: {state}")
+        last = last_log_line(repo)
+    except NotAGitRepository as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+    typer.echo(f"last hook output: {last if last is not None else '(no hook has run yet)'}")
+
+
 @app.command()
 def serve(
     repo: Path = RepoOpt,
     mcp: bool = typer.Option(True, "--mcp", hidden=True),  # accepted for compatibility
 ):
     """Start the MCP server (stdio) exposing query-time retrieval to any MCP client."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     try:
         from lore.serve.mcp_server import run_mcp
     except ImportError as exc:

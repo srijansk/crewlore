@@ -52,6 +52,7 @@ INLINE_REVIEW_COMMENT = {
     "type": "review_comment",
     "actor": "human",
     "login": "reviewer",
+    "association": "MEMBER",
     "created_at": "2026-05-19T11:02:00Z",
     "path": "services/billing/webhook.py",
     "line": 88,
@@ -251,3 +252,16 @@ def test_realistic_thread_passes_the_compile_signal_gate():
     events = parse([ISSUE, PR, COMMIT, FAILED_CHECK, HUMAN_COMMENT,
                     INLINE_REVIEW_COMMENT, CHANGES_REQUESTED, MERGED])
     assert session_has_signal(events)
+
+
+def test_author_login_and_association_ride_on_the_event():
+    (inline,) = parse([INLINE_REVIEW_COMMENT])
+    assert inline.meta["login"] == "reviewer"
+    assert inline.meta["association"] == "member"
+    (plain,) = parse([HUMAN_COMMENT])
+    assert plain.meta["login"] == "reviewer" and "association" not in plain.meta
+
+
+def test_numeric_logins_in_an_export_become_text():
+    (event,) = parse([{**HUMAN_COMMENT, "login": 12345}])
+    assert event.meta["login"] == "12345"

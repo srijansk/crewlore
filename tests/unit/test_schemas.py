@@ -120,3 +120,20 @@ def test_adoption_must_be_a_known_value():
             statement="x", kind="decision", scope="a", adoption="rejected",
             provenance=Provenance(session="s", author="a", harness="claude-code"),
         )
+
+
+def test_anchor_stores_authorship_only_when_known():
+    bare = Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")
+    assert set(bare.model_dump()) == {"source_kind", "ref", "quote"}
+    assert "actor" not in bare.model_dump_json()
+    known = Anchor(
+        source_kind="file", ref="webhook.py:88", quote="inside the transaction",
+        actor="user", login="reviewer", association="member",
+    )
+    assert set(known.model_dump()) == {
+        "source_kind", "ref", "quote", "actor", "login", "association",
+    }
+    assert Anchor.model_validate_json(known.model_dump_json()) == known
+    # Stores written before the fields existed load with nothing invented.
+    old = Anchor.model_validate({"source_kind": "transcript", "ref": "s#1", "quote": "q"})
+    assert (old.actor, old.login, old.association) == (None, None, None)

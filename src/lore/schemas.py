@@ -19,7 +19,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
 
 ClaimKind = Literal["decision", "procedure", "gotcha", "style"]
 ClaimStatus = Literal["active", "archived"]
@@ -68,6 +68,17 @@ class Anchor(BaseModel):
     source_kind: str  # transcript | diff | file
     ref: str  # e.g. "ses_1#event-42" or "services/billing/webhook.py:88"
     quote: str  # verbatim excerpt — never a paraphrase
+    # Who wrote the quoted text, when the source records it: the NSF actor
+    # (user | agent | system), the account login, and for pull-request threads the
+    # author's relationship to the repository as GitHub reports it (owner, member,
+    # collaborator, contributor, first_time_contributor, none). The fidelity gate
+    # proves the quote was said; these say by whom, so a reader can weigh a claim
+    # anchored to a maintainer's review differently from one anchored to a drive-by
+    # comment. Absent, and omitted from the stored record, when the source does not
+    # know, so stores compiled before these fields existed are unchanged on disk.
+    actor: str | None = None
+    login: str | None = None
+    association: str | None = None
 
     @field_validator("quote")
     @classmethod
@@ -75,6 +86,14 @@ class Anchor(BaseModel):
         if not v.strip():
             raise ValueError("anchor quote must be a non-empty verbatim excerpt")
         return v
+
+    @model_serializer(mode="wrap")
+    def _omit_unknown_attribution(self, handler):
+        data = handler(self)
+        for key in ("actor", "login", "association"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
 
 class UsageStats(BaseModel):

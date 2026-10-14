@@ -75,6 +75,7 @@ class CompileResult(BaseModel):
     # hidden: "compiled nothing" and "compiled nothing because every session
     # failed" look identical to a user otherwise.
     failed_sessions: int = 0
+    failed_session_ids: list[str] = []
 
 
 def compile_sessions(
@@ -83,7 +84,7 @@ def compile_sessions(
     prior_claims: list[Claim] | None = None,
 ) -> CompileResult:
     candidates: list[Claim] = list(prior_claims or [])
-    failed = 0
+    failed: list[str] = []
     # Feed the existing topic vocabulary to the extractor so it reuses keys across
     # sessions; without this, the model invents a fresh topic per session and
     # genuinely-conflicting claims never group. Seed from prior claims, then grow.
@@ -103,14 +104,19 @@ def compile_sessions(
             # not abort the whole compile — skip it and continue. Nothing is cached
             # on failure, so the next pass retries it. Mirrors ingest's defensive
             # per-file posture.
-            failed += 1
+            failed.append(session_id)
             continue
         candidates.extend(extracted)
         known_topics.update(c.topic for c in extracted if c.topic)
 
     claims = _dedup_and_score(candidates)
     conflicts = _detect_conflicts(claims)
-    return CompileResult(claims=claims, conflicts=conflicts, failed_sessions=failed)
+    return CompileResult(
+        claims=claims,
+        conflicts=conflicts,
+        failed_sessions=len(failed),
+        failed_session_ids=failed,
+    )
 
 
 def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
@@ -152,16 +158,29 @@ def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
     return merged
 
 
+_ATTRIBUTION_FIELDS = ("actor", "login", "association")
+
+
 def _merge_anchors(members: list[Claim]) -> list[Anchor]:
-    seen: set[tuple[str, str]] = set()
-    out: list[Anchor] = []
+    """One anchor per (ref, quote), in first-seen order. When the same anchor arrives
+    both with and without authorship (a store compiled before anchors carried it, then
+    re-extracted), the authorship is kept whichever side it came from."""
+    merged: dict[tuple[str, str], Anchor] = {}
     for m in members:
         for a in m.anchors:
             key = (a.ref, a.quote)
-            if key not in seen:
-                seen.add(key)
-                out.append(a)
-    return out
+            kept = merged.get(key)
+            if kept is None:
+                merged[key] = a
+                continue
+            filled = {
+                name: getattr(a, name)
+                for name in _ATTRIBUTION_FIELDS
+                if getattr(kept, name) is None and getattr(a, name) is not None
+            }
+            if filled:
+                merged[key] = kept.model_copy(update=filled)
+    return list(merged.values())
 
 
 def _latest_observed(members: list[Claim]):

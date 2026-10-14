@@ -1,19 +1,86 @@
 """Compile orchestration: load captured sessions from a store, compile them into
 claims + conflicts, persist, and render the knowledge book. The extractor (the
 model seam) is injected so this is testable end-to-end without a live LLM.
+
+One compile runs per store at a time (`compile_lock`): a rebase or cherry-pick fires
+the post-commit hook once per commit, and overlapping compiles would otherwise read
+each other's half-written files. A caller that knows which commit it is compiling
+for passes `expect_head`, and nothing git tracks is written if HEAD has left that
+commit's line of work by the time the model answers (a branch switch, or a commit that
+changed the claims file): the checkout the result belongs to is gone. A commit that
+merely follows it, a fixup landing during the model call, is accepted. Serving never
+takes the lock; it writes only the usage sidecar, and a compile re-reads that sidecar
+just before it persists, so a query served during the model call keeps its count.
 """
 
 from __future__ import annotations
 
+import errno
+import os
+import subprocess
+import sys
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from pydantic import BaseModel
 
 from lore.actuation import apply_lifecycle
 from lore.capture.ingest import ingest_transcripts
 from lore.compile.pipeline import CompileResult, Extractor, compile_sessions
+from lore.schemas import Claim, Conflict
 from lore.serve.server import KnowledgeServer
 from lore.store import LoreStore
 
+try:  # POSIX
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+try:  # Windows
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None
+
 DEFAULT_MAX_UNUSED_AGE = timedelta(days=30)
+
+# What a non-blocking lock call raises when another process holds the lock: EAGAIN or
+# EWOULDBLOCK from flock, EACCES from msvcrt.locking. Any other errno (ENOLCK on a
+# network mount without lock support, for one) means this filesystem cannot lock at
+# all, which is not another compile.
+LOCK_HELD_ERRNOS = frozenset({errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES})
+
+
+class CompileInProgress(RuntimeError):
+    """Another compile holds this store's lock; nothing was read or written."""
+
+
+class HeadMoved(RuntimeError):
+    """HEAD is no longer the commit the caller compiled for, nor a descendant of it with
+    the same committed claims file; nothing git tracks was written. The captured
+    sessions and the extraction cache, both gitignored, were written before the check
+    and are kept, so the next compile costs nothing."""
+
+    def __init__(self, expected: str, actual: str | None, *, claims_changed: bool = False):
+        why = ", and the committed claims file changed with it" if claims_changed else ""
+        super().__init__(
+            f"HEAD moved from {expected[:12]} to {actual[:12] if actual else 'no commit'} "
+            f"while compiling{why}; nothing tracked written"
+        )
+        self.expected = expected
+        self.actual = actual
+
+
+class RenderResult(BaseModel):
+    claims: list[Claim] = []
+    conflicts: list[Conflict] = []
+    # False when the store holds no claims file: nothing was written, so a merge into a
+    # repository without compiled knowledge creates no untracked files.
+    rendered: bool = False
+    # Lines of claims.jsonl added or removed by the render. A render reproduces the
+    # stored claims, so this is normally 0; anything else is worth a look.
+    changed_lines: int = 0
+    # Captured sessions with no cached extraction: work for `lore compile`.
+    unextracted_sessions: int = 0
 
 
 class _CachingExtractor:
@@ -44,15 +111,268 @@ class _CachingExtractor:
         return claims
 
 
-def run_compile(store: LoreStore, extractor: Extractor, *, rebuild: bool = False) -> CompileResult:
+class _NoExtractor:
+    """`run_render` compiles no sessions, so nothing ever reaches this; it exists so a
+    render can never make a model call by accident."""
+
+    def extract(self, events, session_id, known_topics=None):
+        raise RuntimeError("lore render makes no model calls; run `lore compile` to extract")
+
+
+# --- one compile per store ------------------------------------------------------
+
+
+def lock_path(store: LoreStore) -> Path:
+    """The lock file, under the gitignored cache. It stays in place once created:
+    deleting a lock file another process holds would end the exclusion."""
+    return store.lore / "cache" / "compile.lock"
+
+
+_warned_unguarded = False  # one warning per process, not one per compile
+
+
+@contextmanager
+def compile_lock(store: LoreStore):
+    """Hold the store's exclusive compile lock, or raise `CompileInProgress` at once.
+
+    On a filesystem that cannot lock (the lock call fails with an errno that does not
+    mean "held"), warn once on stderr and run unguarded, like a platform with no lock
+    module: skipping every compile forever with "another compile is running" would be
+    wrong twice over.
+    """
+    path = lock_path(store)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    locked = False
+    try:
+        try:
+            _lock_exclusive(fd)
+            locked = True
+        except OSError as exc:
+            if exc.errno in LOCK_HELD_ERRNOS:
+                raise CompileInProgress(
+                    "another compile is running on this store; nothing written"
+                ) from exc
+            _warn_unguarded(path, exc)
+        yield
+    finally:
+        try:
+            if locked:
+                _unlock(fd)
+        finally:
+            os.close(fd)
+
+
+def _warn_unguarded(path: Path, exc: OSError) -> None:
+    global _warned_unguarded
+    if _warned_unguarded:
+        return
+    _warned_unguarded = True
+    reason = exc.strerror or str(exc)
+    print(
+        f"warning: cannot lock {path} ({reason}); compiles on this store run unguarded",
+        file=sys.stderr,
+    )
+
+
+def _lock_exclusive(fd: int) -> None:
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    elif msvcrt is not None:  # pragma: no cover - Windows
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    # Neither module: this platform offers no file locking; compiles run unguarded.
+
+
+def _unlock(fd: int) -> None:
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    elif msvcrt is not None:  # pragma: no cover - Windows
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
+def current_head(repo: Path) -> str | None:
+    """The commit HEAD points at, or None outside a git repository or before the first
+    commit."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", "-q", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    return (proc.stdout.strip() or None) if proc.returncode == 0 else None
+
+
+def _check_head(store: LoreStore, expect_head: str | None) -> None:
+    """Raise `HeadMoved` unless HEAD is still `expect_head`, or has moved on from it along
+    the same line of work: `expect_head` is an ancestor of HEAD and the claims file is
+    the same blob at both commits (missing at both counts), so the claims this compile
+    started from are the ones it is about to write over. A fixup commit, or the later
+    commits of a cherry-pick, landing during the model call pass; a branch switch, an
+    amend (which replaces the commit rather than following it) or a `claims.jsonl`
+    committed meanwhile do not."""
+    if not expect_head:
+        return
+    actual = current_head(store.root)
+    if actual is None:
+        raise HeadMoved(expect_head, actual)
+    if actual.startswith(expect_head):
+        return
+    if not _is_ancestor(store.root, expect_head, actual):
+        raise HeadMoved(expect_head, actual)
+    if _claims_blob(store, expect_head) != _claims_blob(store, actual):
+        raise HeadMoved(expect_head, actual, claims_changed=True)
+
+
+def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    """Whether `ancestor` is reachable from `descendant` (a commit is its own ancestor).
+    Exit 1 means it is not; any other failure means one of them is not a commit here."""
+    return _git_ok(repo, "merge-base", "--is-ancestor", ancestor, descendant) is not None
+
+
+def _claims_blob(store: LoreStore, commit: str) -> str | None:
+    """The blob id of the claims file as committed at `commit`, or None when that commit
+    has none. The `./` makes git resolve the path from the store's root, which need not
+    be the repository's."""
+    relative = store.claims_path.relative_to(store.root).as_posix()
+    return _git_ok(store.root, "rev-parse", "-q", "--verify", f"{commit}:./{relative}")
+
+
+def _git_ok(repo: Path, *args: str) -> str | None:
+    """git's stdout, stripped, when the command succeeds; None when it fails or git is
+    not there."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True
+        )
+    except OSError:
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+# --- compile ----------------------------------------------------------------------
+
+
+def _compile(store: LoreStore, extractor: Extractor, *, rebuild: bool) -> CompileResult:
+    """Every captured session, cache first, on top of the stored claims. The stored
+    claims come first, so for an id present in both the committed line's fields that
+    dedup does not merge, `status` among them, win: a claim archived on its line in
+    review stays archived. A line deleted outright has nothing to win with and returns
+    from the cache; the docs say to archive, not delete."""
     sessions = {sid: store.load_session(sid) for sid in store.list_sessions()}
-    prior_claims = store.load_claims()
+    prior_all = store.load_claims()
+    prior_by_id = {c.id: c for c in prior_all}
+    prior_claims = prior_all
+    if rebuild:
+        # A rebuild re-extracts every session still on disk, so what those sessions
+        # produced before (under an older prompt or model) is not carried forward: a
+        # claim that does not re-emerge is gone. Claims from sessions no longer on
+        # disk, such as a teammate's, are kept as they are.
+        prior_claims = [c for c in prior_all if c.provenance.session not in sessions]
     cached = _CachingExtractor(store, extractor, refresh=rebuild)
     result = compile_sessions(sessions, cached, prior_claims=prior_claims)
+    if rebuild:
+        # A claim that re-emerges is the same claim: it keeps its usage, its lifecycle
+        # status and the authority it earned (the store keeps its entry time by id).
+        claims = [_carry_over(c, prior_by_id.get(c.id)) for c in result.claims]
+        # A session whose re-extraction failed (a transient error, an oversized
+        # context) keeps what it had: dropping its claims would lose them now and let
+        # the stale cache entry bring them back later as new, with everything reset.
+        failed = set(result.failed_session_ids)
+        present = {c.id for c in claims}
+        claims += [
+            c for c in prior_all if c.provenance.session in failed and c.id not in present
+        ]
+        result = result.model_copy(update={"claims": claims})
+    return result
+
+
+def _persist(store: LoreStore, result: CompileResult) -> None:
+    _take_current_usage(store, result.claims)
     store.write_claims(result.claims)
     store.write_conflicts(result.conflicts)
     KnowledgeServer(store).write_book()
+
+
+def _take_current_usage(store: LoreStore, claims: list[Claim]) -> None:
+    """Give each claim the usage the sidecar holds now, not the snapshot the compile
+    started from. Serving does not take the compile lock, so a `lore query` or an MCP
+    call answered during the model call bumped the sidecar in the meantime; writing
+    the snapshot back would erase that bump, and `apply_lifecycle` would then archive
+    the claim as never served. A compile never changes usage itself, so the sidecar
+    is always the newer of the two."""
+    current = store.load_usage()
+    for claim in claims:
+        if claim.id in current:
+            claim.usage = current[claim.id]
+
+
+def run_compile(
+    store: LoreStore,
+    extractor: Extractor,
+    *,
+    rebuild: bool = False,
+    expect_head: str | None = None,
+) -> CompileResult:
+    """Compile every captured session (cache first) on top of the stored claims and
+    persist claims, conflicts and the book.
+
+    Raises `CompileInProgress` if another compile holds the store, and `HeadMoved`,
+    after the model work but before any tracked write, if HEAD is no longer
+    `expect_head` or a descendant of it with the same committed claims file (see
+    `_check_head`; the extraction cache, gitignored, is already written by then).
+    """
+    with compile_lock(store):
+        result = _compile(store, extractor, rebuild=rebuild)
+        _check_head(store, expect_head)
+        _persist(store, result)
     return result
+
+
+def _carry_over(claim, prior):
+    if prior is None:
+        return claim
+    return claim.model_copy(
+        update={
+            "usage": prior.usage,
+            "status": prior.status,
+            "authority": max(claim.authority, prior.authority),
+        }
+    )
+
+
+def run_render(store: LoreStore, *, expect_head: str | None = None) -> RenderResult:
+    """Rebuild claims.jsonl, conflicts.jsonl and the book from the stored claims alone.
+
+    No model call, no sessions, no extraction cache: a render reproduces what is
+    committed, so a claim a teammate removed in review cannot come back from this
+    machine's cache (the next compile does replay the cache; see `_compile`), and a
+    cached session not yet compiled stays out until `lore compile` adds it. A store
+    with no claims file is left untouched.
+    """
+    with compile_lock(store):
+        pending = sum(
+            not store.extraction_cache_path(sid).exists() for sid in store.list_sessions()
+        )
+        if not store.claims_path.exists():
+            return RenderResult(unextracted_sessions=pending)
+        before = _claim_lines(store)
+        result = compile_sessions({}, _NoExtractor(), prior_claims=store.load_claims())
+        _check_head(store, expect_head)
+        _persist(store, result)
+        changed = len(set(before) ^ set(_claim_lines(store)))
+    return RenderResult(
+        claims=result.claims,
+        conflicts=result.conflicts,
+        rendered=True,
+        changed_lines=changed,
+        unextracted_sessions=pending,
+    )
+
+
+def _claim_lines(store: LoreStore) -> list[str]:
+    return [ln for ln in store.claims_path.read_text().splitlines() if ln.strip()]
 
 
 def auto_compile(
@@ -64,22 +384,29 @@ def auto_compile(
     scrub: bool = True,
     rebuild: bool = False,
     max_unused_age: timedelta = DEFAULT_MAX_UNUSED_AGE,
+    settle: timedelta | None = None,
+    expect_head: str | None = None,
 ) -> dict:
     """One automation pass: ingest new transcripts -> compile -> prune -> re-render.
 
-    This is what `lore watch`/cron call on an interval. Extraction is cached per
-    session (see `_CachingExtractor`), so each pass only LLM-extracts sessions
+    This is what `lore watch`/cron and the post-commit hook call. Extraction is cached
+    per session (see `_CachingExtractor`), so each pass only LLM-extracts sessions
     ingested since the last pass — the work and cost are incremental, and the
     output is idempotent. The prune step (actuation lifecycle) keeps the active
-    set churning. Pass `rebuild=True` to ignore the cache and re-extract everything.
+    set churning. Pass `rebuild=True` to ignore the cache and re-extract everything;
+    `settle` leaves transcripts modified more recently than that for a later pass
+    (see `ingest_transcripts`); `expect_head` and the lock behave as in `run_compile`.
     """
-    stats = ingest_transcripts(store, adapter, transcript_dir, scrub=scrub)
-    result = run_compile(store, extractor, rebuild=rebuild)
-    pruned = apply_lifecycle(
-        store.load_claims(), now=datetime.now(timezone.utc), max_unused_age=max_unused_age
-    )
-    store.write_claims(pruned)
-    KnowledgeServer(store).write_book()  # reflect pruning
+    with compile_lock(store):
+        stats = ingest_transcripts(store, adapter, transcript_dir, scrub=scrub, settle=settle)
+        result = _compile(store, extractor, rebuild=rebuild)
+        _check_head(store, expect_head)
+        _persist(store, result)
+        pruned = apply_lifecycle(
+            store.load_claims(), now=datetime.now(timezone.utc), max_unused_age=max_unused_age
+        )
+        store.write_claims(pruned)
+        KnowledgeServer(store).write_book()  # reflect pruning
     active = sum(c.status == "active" for c in pruned)
     return {
         **stats,
