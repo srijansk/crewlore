@@ -7,6 +7,7 @@ lore render      rebuild the book + conflicts from the stored claims, no model
 lore hook        install/uninstall/status of the post-commit, post-merge, post-rewrite hooks
 lore import-prs  compile a GitHub repo's pull-request threads
 lore query       task-conditioned retrieval (records usage)
+lore explain     everything known about one scope, declined work included
 lore feedback    mark served claims influential or overridden
 lore status      counts + how much of the layer is actually being read
 lore serve       MCP server for query-time retrieval
@@ -15,6 +16,7 @@ lore install     put the /lore skill into your coding assistant (uninstall to re
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from datetime import timedelta
@@ -24,7 +26,13 @@ from typing import NoReturn
 import typer
 
 from lore import __version__
-from lore.serve.server import KnowledgeServer, claim_label
+from lore.serve.server import (
+    Explanation,
+    KnowledgeServer,
+    anchor_attribution,
+    claim_label,
+    claim_to_dict,
+)
 from lore.store import DEFAULT_CONFIG, LoreStore
 from lore.text import sanitize_line
 
@@ -228,27 +236,133 @@ def status(repo: Path = RepoOpt):
         )
 
 
+JsonOpt = typer.Option(
+    False,
+    "--json",
+    help="Print JSON instead of text, with nothing else on stdout (for scripts and hooks).",
+)
+QueryExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help="Exit 4 when nothing matched, instead of 0 (like `git diff --exit-code`).",
+)
+ExplainExitCodeOpt = typer.Option(
+    False,
+    "--exit-code",
+    help=(
+        "Exit 4 when nothing matched and 3 when the name is ambiguous, instead of 0 "
+        "(like `git diff --exit-code`)."
+    ),
+)
+# Exit codes behind --exit-code, shared by `lore query` and `lore explain`, so a script
+# can branch without parsing text. Off by default: an assistant that runs `lore query`
+# through a shell tool would otherwise see every miss reported as a failed command.
+EXIT_AMBIGUOUS = 3
+EXIT_NO_MATCH = 4
+
+
+def _open_store(repo: Path) -> LoreStore:
+    """The store at `repo`, or exit 1 with the hint on stderr so `--json` stdout stays JSON."""
+    store = LoreStore(repo)
+    if not store.is_initialised:
+        typer.echo(_INIT_HINT, err=True)
+        raise typer.Exit(1)
+    return store
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _print_claim(c, *, show_scope: bool = True) -> None:
+    where = f" ({sanitize_line(c.scope)})" if show_scope else ""
+    typer.echo(f"[{claim_label(c)}]{where} {sanitize_line(c.statement)}  [{c.id}]")
+    if c.action:
+        verb = "" if c.adoption == "current" else "instead: "
+        typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+
+
+def _print_explanation(found) -> None:
+    declined = sum(1 for c in found.claims if c.adoption != "current")
+    count = _plural(len(found.claims), "claim")
+    typer.echo(f"{sanitize_line(found.scope)}  ({count}, {declined} not adopted)")
+    for c in found.claims:
+        _print_claim(c, show_scope=False)
+        for a in c.anchors:
+            who = anchor_attribution(a)
+            by = f" ({who})" if who else ""
+            typer.echo(f'    anchor {sanitize_line(a.ref)}{by}: "{sanitize_line(a.quote)}"')
+    if found.conflicts:
+        typer.echo("")
+        typer.echo("conflicts:")
+        for cf in found.conflicts:
+            typer.echo(f"  {sanitize_line(cf.reason)} ({', '.join(cf.claim_ids)})")
+    if found.narrower:
+        typer.echo("")
+        names = ", ".join(sanitize_line(sc) for sc in found.narrower)
+        typer.echo(f"{_plural(len(found.narrower), 'narrower scope')}: {names}")
+
+
 @app.command()
 def query(
     text: str,
     repo: Path = RepoOpt,
     limit: int = typer.Option(5, "--limit", help="Maximum number of claims to return."),
+    json_out: bool = JsonOpt,
+    exit_code: bool = QueryExitCodeOpt,
 ):
     """Retrieve the claims most relevant to a task (records usage)."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        return
+    store = _open_store(repo)
     results = KnowledgeServer(store).query(text, limit=limit)
-    if not results:
+    if json_out:
+        typer.echo(json.dumps([claim_to_dict(c) for c in results], indent=2))
+    elif results:
+        for c in results:
+            _print_claim(c)
+    else:
         typer.echo("(no relevant claims)")
-        return
-    for c in results:
-        scope, statement = sanitize_line(c.scope), sanitize_line(c.statement)
-        typer.echo(f"[{claim_label(c)}] ({scope}) {statement}  [{c.id}]")
-        if c.action:
-            verb = "" if c.adoption == "current" else "instead: "
-            typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+    if not results and exit_code:
+        raise typer.Exit(EXIT_NO_MATCH)
+
+
+@app.command()
+def explain(
+    scope: str = typer.Argument(
+        ...,
+        help=(
+            "A scope as shown in the book. A prefix, or any part of a name, also works "
+            "case-insensitively when only one scope matches; several matches are listed, "
+            "not guessed."
+        ),
+    ),
+    repo: Path = RepoOpt,
+    json_out: bool = JsonOpt,
+    exit_code: bool = ExplainExitCodeOpt,
+):
+    """Everything known about one scope: current practice, declined work, conflicts."""
+    if not scope.strip():
+        if json_out:
+            typer.echo(json.dumps(Explanation().to_dict(), indent=2))
+        typer.echo(
+            "error: pass a scope name (the headings in .lore/knowledge/README.md)", err=True
+        )
+        raise typer.Exit(2)
+    store = _open_store(repo)
+    found = KnowledgeServer(store).explain(scope)
+    if json_out:
+        typer.echo(json.dumps(found.to_dict(), indent=2))
+    elif found.candidates:
+        typer.echo(f"{scope!r} matches {len(found.candidates)} scopes; pass one of them:")
+        for sc in found.candidates:
+            typer.echo(f"  {sanitize_line(sc)}")
+    elif not found.answered:
+        typer.echo(f"no active claims under a scope matching {scope!r}")
+    else:
+        _print_explanation(found)
+    if exit_code and found.candidates:
+        raise typer.Exit(EXIT_AMBIGUOUS)
+    if exit_code and not found.answered:
+        raise typer.Exit(EXIT_NO_MATCH)
 
 
 @app.command()
@@ -270,10 +384,7 @@ def feedback(
     if influential == overridden:
         typer.echo("error: pass exactly one of --influential or --overridden")
         raise typer.Exit(2)
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     known = {c.id for c in store.load_claims()}
     unknown = [cid for cid in claim_ids if cid not in known]
     if unknown:
@@ -611,10 +722,7 @@ def serve(
     mcp: bool = typer.Option(True, "--mcp", hidden=True),  # accepted for compatibility
 ):
     """Start the MCP server (stdio) exposing query-time retrieval to any MCP client."""
-    store = LoreStore(repo)
-    if not store.is_initialised:
-        typer.echo(_INIT_HINT)
-        raise typer.Exit(1)
+    store = _open_store(repo)
     try:
         from lore.serve.mcp_server import run_mcp
     except ImportError as exc:

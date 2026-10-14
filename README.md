@@ -216,11 +216,12 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore render` | Rebuild the book and conflict list from the claims already compiled, with no model call: for a fresh clone, or after a merge or pull. Reads the stored claims only (not sessions, not this machine's extraction cache), reports how many claim lines changed (normally none), and leaves a store with no claims untouched. |
 | `lore hook install` / `uninstall` / `status` | Git hooks that keep the layer current without a daemon: `lore compile` in the background after each commit and once after a rebase, `lore render` after each merge. Honours `core.hooksPath`; `LORE_SKIP_HOOK` set to any non-empty value skips a run; `status` says why a hook would not run (`--probe` runs it to check it reaches the block) and shows the last hook output. Details under [Git hooks](#git-hooks). |
 | `lore import-prs OWNER/REPO` | Compile a GitHub repository's pull-request threads. Scans closed PRs by default (`--state open` or `all`), agent-authored only (`--all-authors` for every PR), most recently updated first (`--limit N`). Needs the `gh` CLI. |
-| `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
+| `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). `--json` for scripts; `--exit-code` to exit 4 when nothing matched. |
+| `lore explain <scope>` | Everything known about one scope: current practice first, then declined work, each with its anchors and their authors, plus live conflicts and the scopes nested under it. A name matching several scopes is refused with the candidates listed. Reading a scope marks all its claims served, like a query. Scopes are text the model wrote, so one area can appear under more than one spelling; the book's headings are the list. `--json`, and `--exit-code` for 3 on an ambiguous name and 4 on no match. |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
 | `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file, `--force` to replace a skill file crewlore did not write), or remove exactly what was written. |
-| `lore serve` | Start an MCP server exposing `lore_query` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
+| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ### Git hooks
 

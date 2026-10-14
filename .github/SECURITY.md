@@ -18,7 +18,7 @@ For ordinary bugs and feature requests, please open a GitHub issue.
 In scope:
 
 - `crewlore`'s own code (`src/lore/`)
-- Documented behavior of `lore init`, `lore compile`, `lore watch`, `lore import-prs`, `lore query`, `lore feedback`, `lore status`, `lore serve`
+- Documented behavior of `lore init`, `lore compile`, `lore watch`, `lore import-prs`, `lore query`, `lore explain`, `lore feedback`, `lore status`, `lore serve`
 - The secret-scrubber pattern set in `src/lore/scrub.py` (see `docs/scrub.md` for the documented coverage contract)
 
 Out of scope:

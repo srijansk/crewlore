@@ -351,6 +351,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "click" },
     { name = "mcp" },
     { name = "openai" },
     { name = "pytest" },
@@ -367,6 +368,7 @@ serve = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.39" },
+    { name = "click", marker = "extra == 'dev'", specifier = ">=8.2" },
     { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.0,<2" },
     { name = "mcp", marker = "extra == 'serve'", specifier = ">=1.0,<2" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=1.0" },

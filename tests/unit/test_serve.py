@@ -6,7 +6,17 @@ used ones. Also renders the human+agent-readable knowledge book.
 from datetime import datetime, timezone
 
 from lore.schemas import Anchor, Claim, Conflict, Provenance
-from lore.serve.server import KnowledgeServer, anchor_attribution, rank_claims, render_book
+from lore.serve.server import (
+    Explanation,
+    KnowledgeServer,
+    anchor_attribution,
+    claim_to_dict,
+    claims_in_scope,
+    match_scopes,
+    narrower_scopes,
+    rank_claims,
+    render_book,
+)
 from lore.store import LoreStore
 
 
@@ -212,3 +222,122 @@ def test_agent_authorship_on_a_persons_account_is_said_so():
     assert anchor_attribution(bot) == "agent under @dependabot[bot], no repository role"
     assert anchor_attribution(anchor(actor="agent")) == "agent"
     assert anchor_attribution(anchor(actor="user", login="reviewer")) == "@reviewer, human"
+def test_match_scopes_prefers_exact_then_prefix_then_substring():
+    claims = [
+        _claim("a", "services/billing"),
+        _claim("b", "services/billing-v2"),
+        _claim("c", "lib/billing-utils"),
+        _claim("d", "docs", status="archived"),
+    ]
+    assert match_scopes(claims, "services/billing") == ["services/billing"]
+    assert match_scopes(claims, "services/") == ["services/billing", "services/billing-v2"]
+    assert match_scopes(claims, "BILLING-utils") == ["lib/billing-utils"]
+    assert match_scopes(claims, "docs") == []  # archived scopes are not offered
+    assert match_scopes(claims, "frontend") == []
+    assert match_scopes(claims, "") == [] and match_scopes(claims, "   ") == []
+
+
+def test_match_scopes_tries_the_spellings_a_shell_produces_as_exact_matches():
+    claims = [_claim("a", "services/billing"), _claim("b", "docs/"), _claim("c", "docs/api")]
+    for spelling in ("services/billing/", "./services/billing", "services\\billing"):
+        assert match_scopes(claims, spelling) == ["services/billing"]
+    # A stored scope that itself ends in a slash is found by either spelling, exactly.
+    assert match_scopes(claims, "docs") == ["docs/"]
+    assert match_scopes(claims, "docs/") == ["docs/"]
+
+
+def test_narrower_scopes_are_the_ones_nested_under_an_exact_match():
+    claims = [
+        _claim("a", "services/billing"),
+        _claim("b", "services/billing/webhooks"),
+        _claim("c", "services/billing/ledger"),
+        _claim("d", "services/billing-v2"),
+        _claim("e", "services/billing/old", status="archived"),
+    ]
+    assert narrower_scopes(claims, "services/billing") == [
+        "services/billing/ledger", "services/billing/webhooks",
+    ]
+    assert narrower_scopes(claims, "services/billing/webhooks") == []
+
+
+def test_claims_in_scope_puts_current_before_declined_and_higher_authority_first():
+    low = _claim("low", "services/billing")
+    high = _claim("high", "services/billing")
+    high.authority = 0.9
+    declined = _claim("declined", "services/billing")
+    declined.adoption = "not_adopted"
+    declined.authority = 1.0
+    other = _claim("other", "services/auth")
+    gone = _claim("gone", "services/billing", status="archived")
+    ordered = claims_in_scope([declined, low, other, high, gone], "services/billing")
+    assert [c.statement for c in ordered] == ["high", "low", "declined"]
+
+
+def test_claim_to_dict_carries_the_fields_a_tool_needs_as_clean_single_lines():
+    c = _claim("dedupe\x1b[31m webhook\nnext", "services/billing", topic="webhook", action="dedupe")
+    c.anchors[0].login = "reviewer"
+    d = claim_to_dict(c)
+    assert d["statement"] == "dedupe webhook next" and d["topic"] == "webhook"
+    assert d["authority"] == c.authority
+    assert d["anchors"][0]["ref"] == "s#1" and d["anchors"][0]["login"] == "reviewer"
+    assert set(d) == {
+        "id", "statement", "kind", "adoption", "scope", "topic", "action", "authority", "anchors",
+    }
+
+
+def test_explanation_dict_always_has_the_same_keys():
+    keys = {"scope", "claims", "conflicts", "ambiguous", "narrower"}
+    assert set(Explanation().to_dict()) == keys
+    assert set(Explanation(candidates=["a", "b"]).to_dict()) == keys
+    assert Explanation(candidates=["a"]).answered is False
+    assert Explanation(scope="a").answered is True
+
+
+def test_server_explain_reads_the_store_once_and_filters_stale_conflicts(tmp_path, monkeypatch):
+    store = LoreStore(tmp_path)
+    store.init()
+    a = _claim("dedupe billing webhook", "services/billing")
+    b = _claim("use redis for the key", "services/billing")
+    gone = _claim("an archived claim", "services/billing", status="archived")
+    store.write_claims([a, b, gone])
+    store.write_conflicts([
+        Conflict(scope="services/billing", claim_ids=[a.id, b.id], reason="live disagreement"),
+        Conflict(scope="services/billing", claim_ids=[a.id, gone.id], reason="stale"),
+        Conflict(scope="services/auth", claim_ids=[a.id, b.id], reason="elsewhere"),
+    ])
+    reads = []
+    real_load = store.load_claims
+    monkeypatch.setattr(store, "load_claims", lambda: reads.append(1) or real_load())
+    found = KnowledgeServer(store).explain("services/billing")
+    assert len(reads) == 1  # one read of the claims file per explain
+    assert found.scope == "services/billing"
+    assert [c.id for c in found.claims] == sorted([a.id, b.id])
+    assert [cf.reason for cf in found.conflicts] == ["live disagreement"]
+    assert all(c.usage.times_served == 1 for c in found.claims)
+    assert KnowledgeServer(store).explain("nothing-here") == Explanation()
+    # One prefix match is an answer, not an ambiguity; several are refused.
+    assert KnowledgeServer(store).explain("services").scope == "services/billing"
+    store.write_claims([a, b, gone, _claim("x", "services/auth")])
+    assert KnowledgeServer(store).explain("services").candidates == [
+        "services/auth", "services/billing",
+    ]
+
+
+def test_lookup_works_on_the_names_the_book_shows_and_folds_slash_twins():
+    claims = [
+        _claim("a", "docs  api"),
+        _claim("b", "docs api v2"),
+        _claim("c", "services/\u200bbilling"),
+        _claim("d", "services/billing/"),
+        _claim("e", "services/billing/webhooks"),
+    ]
+    assert match_scopes(claims, "docs") == ["docs api", "docs api v2"]
+    assert match_scopes(claims, "docs api") == ["docs api"]
+    assert [c.statement for c in claims_in_scope(claims, "docs api")] == ["a"]
+    assert match_scopes(claims, "services/billing") == ["services/billing"]
+    assert sorted(c.statement for c in claims_in_scope(claims, "services/billing")) == ["c", "d"]
+    assert narrower_scopes(claims, "services/billing") == ["services/billing/webhooks"]
+    for noise in ("/", " / "):
+        assert match_scopes(claims, noise) == []
+    repo_wide = claims + [_claim("whole repo", ".")]
+    assert match_scopes(repo_wide, ".") == ["."] and match_scopes(repo_wide, "./") == ["."]

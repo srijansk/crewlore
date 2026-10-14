@@ -2,6 +2,7 @@
 actuation loop by itself. Requires the optional `mcp` extra (installed in dev)."""
 
 import asyncio
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -87,3 +88,54 @@ def test_query_payload_names_the_author_of_each_anchor(tmp_path):
     assert anchors[1] == {
         "ref": "old#event-1", "quote": "legacy", "actor": None, "login": None, "association": None,
     }
+
+
+def _payload(rows):
+    """The tool result as data: structured content when the server provides it (one
+    object per call, whatever the shape), else the text blocks parsed one by one."""
+    if isinstance(rows, tuple) and len(rows) == 2 and isinstance(rows[1], dict):
+        structured = rows[1]
+        return structured["result"] if set(structured) == {"result"} else structured
+    blocks = rows[0] if isinstance(rows, tuple) else rows
+    items = [json.loads(c.text) for c in blocks if getattr(c, "text", "")]
+    return items[0] if len(items) == 1 else items
+
+
+def test_query_tool_payload_is_the_shared_claim_shape(tmp_path):
+    from lore.serve.mcp_server import build_server
+    from lore.serve.server import claim_to_dict
+
+    store = _store(tmp_path)
+    rows = asyncio.run(build_server(store).call_tool("lore_query", {"task": "billing webhook"}))
+    row = _payload(rows)
+    row = row[0] if isinstance(row, list) else row
+    expected = claim_to_dict(store.load_claims()[0])
+    assert set(row) == set(expected) and row["anchors"] == expected["anchors"]
+
+
+def test_explain_tool_answers_refuses_ambiguity_and_keeps_one_shape(tmp_path):
+    from lore.serve.mcp_server import build_server
+
+    store = _store(tmp_path)
+    mcp = build_server(store)
+    assert "lore_explain" in {t.name for t in asyncio.run(mcp.list_tools())}
+    answer = _payload(asyncio.run(mcp.call_tool("lore_explain", {"scope": "services/billing"})))
+    assert answer["scope"] == "services/billing" and len(answer["claims"]) == 1
+    assert set(answer) == {"scope", "claims", "conflicts", "ambiguous", "narrower"}
+    miss = _payload(asyncio.run(mcp.call_tool("lore_explain", {"scope": "frontend"})))
+    assert miss["scope"] is None and miss["claims"] == [] and miss["ambiguous"] == []
+    assert store.load_claims()[0].usage.times_served == 1  # the answer counted, the miss did not
+    # The tool declares its output, so clients get structured content, not only text.
+    explain_tool = next(t for t in asyncio.run(mcp.list_tools()) if t.name == "lore_explain")
+    assert explain_tool.outputSchema is not None
+    store.write_claims(store.load_claims() + [
+        Claim(
+            statement="rotate auth tokens hourly", kind="procedure", scope="services/auth",
+            provenance=Provenance(session="s", author="a", harness="claude-code"),
+            anchors=[Anchor(source_kind="transcript", ref="s#event-2", quote="hourly")],
+            observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        )
+    ])
+    ambiguous = _payload(asyncio.run(mcp.call_tool("lore_explain", {"scope": "services"})))
+    assert ambiguous["scope"] is None
+    assert ambiguous["ambiguous"] == ["services/auth", "services/billing"]
