@@ -4,6 +4,9 @@ safe to run on a schedule. No live hook needed for MVP.
 """
 
 import json
+import os
+import time
+from datetime import timedelta
 
 from lore.capture.adapters.claude_code import ClaudeCodeAdapter
 from lore.capture.ingest import discover_transcripts, ingest_transcripts
@@ -106,3 +109,42 @@ def test_claude_code_project_dir_defaults_under_home(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest, "CLAUDE_PROJECTS_ROOT", tmp_path / "projects")
     got = ingest.claude_code_project_dir(tmp_path / "repo")
     assert got.parent == Path(tmp_path / "projects")
+
+
+# GUARDS: a session is captured once and for good. A transcript the agent is still
+# writing (a post-commit hook fires mid-session) must wait until it has settled, or
+# only its first half would ever be extracted; a transcript that has not changed for
+# a while is taken.
+ONE_HOUR = 3600
+
+
+def test_a_transcript_still_being_written_is_left_for_a_later_pass(tmp_path):
+    tdir = tmp_path / "transcripts"
+    tdir.mkdir()
+    _write_transcript(tdir / "settled.jsonl", [_user("No, that's wrong — use the key")])
+    _write_transcript(tdir / "live.jsonl", [_user("No, that's wrong — dedupe it")])
+    an_hour_ago = time.time() - ONE_HOUR
+    os.utime(tdir / "settled.jsonl", (an_hour_ago, an_hour_ago))
+    store = LoreStore(tmp_path / "repo")
+    store.init()
+
+    first = ingest_transcripts(store, ClaudeCodeAdapter(), tdir, settle=timedelta(minutes=10))
+    assert first["ingested"] == 1 and first["settling"] == 1
+    assert store.list_sessions() == ["settled"]
+
+    os.utime(tdir / "live.jsonl", (an_hour_ago, an_hour_ago))  # the session has ended
+    second = ingest_transcripts(store, ClaudeCodeAdapter(), tdir, settle=timedelta(minutes=10))
+    assert second["ingested"] == 1 and second["settling"] == 0
+    assert sorted(store.list_sessions()) == ["live", "settled"]
+
+
+def test_without_a_settle_time_every_transcript_is_captured_at_once(tmp_path):
+    tdir = tmp_path / "transcripts"
+    tdir.mkdir()
+    _write_transcript(tdir / "s1.jsonl", [_user("No, that's wrong — use the key")])
+    _write_transcript(tdir / "s2.jsonl", [_user("No, that's wrong — dedupe it")])
+    for settle in (None, timedelta(0)):
+        store = LoreStore(tmp_path / f"repo-{settle is None}")
+        store.init()
+        stats = ingest_transcripts(store, ClaudeCodeAdapter(), tdir, settle=settle)
+        assert stats["ingested"] == 2 and stats["settling"] == 0
