@@ -272,7 +272,8 @@ def test_claim_to_dict_carries_the_fields_a_tool_needs_as_clean_single_lines():
     assert d["authority"] == c.authority
     assert d["anchors"][0]["ref"] == "s#1" and d["anchors"][0]["login"] == "reviewer"
     assert set(d) == {
-        "id", "statement", "kind", "adoption", "scope", "topic", "action", "authority", "anchors",
+        "id", "statement", "kind", "adoption", "scope", "topic", "action", "authority",
+        "anchors", "corrections",
     }
 
 

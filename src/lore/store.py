@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from lore.schemas import Claim, Conflict, NSFEvent, UsageStats
+from lore.schemas import Claim, Conflict, Correction, NSFEvent, UsageStats
 
 DEFAULT_CONFIG = {
     "model": {"provider": "anthropic", "name": "claude-sonnet-5-5"},
@@ -44,6 +44,11 @@ class LoreStore:
         # Volatile usage stats live in a gitignored sidecar so that `lore query`
         # (which bumps counters) never churns the git-tracked claims.jsonl.
         return self.lore / "claims" / "usage.jsonl"
+
+    @property
+    def corrections_path(self) -> Path:
+        # Committed, like the claims: a correction is the team's, not one machine's.
+        return self.lore / "claims" / "corrections.jsonl"
 
     @property
     def conflicts_path(self) -> Path:
@@ -168,6 +173,19 @@ class LoreStore:
 
     def load_conflicts(self) -> list[Conflict]:
         return [Conflict.model_validate_json(ln) for ln in self._read_jsonl(self.conflicts_path)]
+
+    # --- corrections (committed reader feedback) ---
+    def load_corrections(self) -> list[Correction]:
+        lines = self._read_jsonl(self.corrections_path)
+        return [Correction.model_validate_json(ln) for ln in lines]
+
+    def add_corrections(self, corrections: list[Correction]) -> None:
+        """Append; a correction is never edited or removed by the tool, only by a person
+        editing the committed file."""
+        existing = self.load_corrections()
+        self.corrections_path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_gitignore()
+        self._write_jsonl(self.corrections_path, existing + list(corrections))
 
     # --- sessions (raw NSF capture) ---
     def write_session(self, session_id: str, events: list[NSFEvent]) -> None:

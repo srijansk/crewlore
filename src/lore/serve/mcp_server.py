@@ -11,8 +11,9 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP  # optional dep; ImportError handled by the CLI
 
-from lore.serve.server import KnowledgeServer, claim_to_dict
+from lore.serve.server import NOTE_MAX_CHARS, KnowledgeServer, claim_to_dict, git_user
 from lore.store import LoreStore
+from lore.text import sanitize_line
 
 
 def build_server(store: LoreStore) -> FastMCP:
@@ -31,7 +32,8 @@ def build_server(store: LoreStore) -> FastMCP:
         requests `association`, the author's repository role (owner, member,
         collaborator, contributor, first_time_contributor, none); null when unknown.
         """
-        return [claim_to_dict(c) for c in server.query(task, limit=limit)]
+        notes = server.corrections_by_claim()
+        return [claim_to_dict(c, notes.get(c.id, ())) for c in server.query(task, limit=limit)]
 
     @mcp.tool()
     def lore_explain(scope: str) -> dict[str, Any]:
@@ -48,18 +50,26 @@ def build_server(store: LoreStore) -> FastMCP:
         return server.explain(scope).to_dict()
 
     @mcp.tool()
-    def lore_feedback(claim_ids: list[str], verdict: str) -> dict:
-        """Record whether returned claims helped: verdict is "influential" or "overridden".
+    def lore_feedback(claim_ids: list[str], verdict: str, note: str = "") -> dict:
+        """Record what became of returned claims: verdict is "influential", "overridden"
+        or "corrected".
 
-        Influential claims are reinforced; claims the session had to override
-        are retired once that happens repeatedly.
+        Influential claims are reinforced; claims the session had to override are
+        retired once that happens repeatedly. "corrected" needs `note`, one line saying
+        what is true now; it is committed beside the claims, shown wherever the claim is
+        served, and puts the claim after uncorrected ones in retrieval.
         """
         if verdict == "influential":
             server.mark_influential(claim_ids)
         elif verdict == "overridden":
             server.mark_overridden(claim_ids)
+        elif verdict == "corrected":
+            cleaned = sanitize_line(note)
+            if not cleaned or len(cleaned) > NOTE_MAX_CHARS:
+                return {"error": f"'corrected' needs a note of 1 to {NOTE_MAX_CHARS} characters"}
+            server.correct(claim_ids, cleaned, author=git_user(store.root))
         else:
-            return {"error": "verdict must be 'influential' or 'overridden'"}
+            return {"error": "verdict must be 'influential', 'overridden' or 'corrected'"}
         return {"recorded": verdict, "claims": list(claim_ids)}
 
     return mcp

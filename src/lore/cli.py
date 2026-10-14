@@ -6,7 +6,7 @@
     lore import-prs  compile a GitHub repo's pull-request threads
     lore query       task-conditioned retrieval (records usage)
     lore explain     everything known about one scope, declined work included
-    lore feedback    mark served claims influential or overridden
+    lore feedback    mark served claims influential, overridden or corrected
     lore status      counts + how much of the layer is actually being read
     lore serve       MCP server for query-time retrieval
 """
@@ -22,11 +22,13 @@ import typer
 
 from lore import __version__
 from lore.serve.server import (
+    NOTE_MAX_CHARS,
     Explanation,
     KnowledgeServer,
     anchor_attribution,
     claim_label,
     claim_to_dict,
+    git_user,
 )
 from lore.store import LoreStore
 from lore.text import sanitize_line
@@ -164,7 +166,8 @@ def status(repo: Path = RepoOpt):
     served = [c for c in active if c.usage.times_served > 0]
     utilization = (len(served) / len(active)) if active else 0.0
 
-    typer.echo(f"claims:    {len(claims)} ({len(active)} active)")
+    corrected = {x.claim_id for x in store.load_corrections()} & {c.id for c in active}
+    typer.echo(f"claims:    {len(claims)} ({len(active)} active, {len(corrected)} corrected)")
     typer.echo(f"conflicts: {len(conflicts)}")
     typer.echo(f"sessions:  {len(sessions)} captured")
     typer.echo(f"utilization: {utilization:.0%} of active claims have ever been served")
@@ -213,12 +216,16 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def _print_claim(c, *, show_scope: bool = True) -> None:
+def _print_claim(c, *, show_scope: bool = True, corrections=()) -> None:
     where = f" ({sanitize_line(c.scope)})" if show_scope else ""
-    typer.echo(f"[{claim_label(c)}]{where} {sanitize_line(c.statement)}  [{c.id}]")
+    label = claim_label(c, corrected=bool(corrections))
+    typer.echo(f"[{label}]{where} {sanitize_line(c.statement)}  [{c.id}]")
     if c.action:
         verb = "" if c.adoption == "current" else "instead: "
         typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
+    for x in corrections:
+        when = f" on {x.at.date().isoformat()}" if x.at else ""
+        typer.echo(f"    !! corrected by {sanitize_line(x.author)}{when}: {sanitize_line(x.note)}")
 
 
 def _print_explanation(found) -> None:
@@ -226,7 +233,7 @@ def _print_explanation(found) -> None:
     count = _plural(len(found.claims), "claim")
     typer.echo(f"{sanitize_line(found.scope)}  ({count}, {declined} not adopted)")
     for c in found.claims:
-        _print_claim(c, show_scope=False)
+        _print_claim(c, show_scope=False, corrections=found.corrections.get(c.id, ()))
         for a in c.anchors:
             who = anchor_attribution(a)
             by = f" ({who})" if who else ""
@@ -252,12 +259,14 @@ def query(
 ):
     """Retrieve the claims most relevant to a task (records usage)."""
     store = _open_store(repo)
-    results = KnowledgeServer(store).query(text, limit=limit)
+    server = KnowledgeServer(store)
+    results = server.query(text, limit=limit)
+    notes = server.corrections_by_claim()
     if json_out:
-        typer.echo(json.dumps([claim_to_dict(c) for c in results], indent=2))
+        typer.echo(json.dumps([claim_to_dict(c, notes.get(c.id, ())) for c in results], indent=2))
     elif results:
         for c in results:
-            _print_claim(c)
+            _print_claim(c, corrections=notes.get(c.id, ()))
     else:
         typer.echo("(no relevant claims)")
     if not results and exit_code:
@@ -314,14 +323,25 @@ def feedback(
     overridden: bool = typer.Option(
         False, "--overridden", help="The claims were wrong for this task; retire them over time."
     ),
+    corrected: str | None = typer.Option(
+        None,
+        "--corrected",
+        metavar="NOTE",
+        help=(
+            "The claims are wrong or outdated; NOTE (one line) says what is true now. "
+            "Committed beside the claims in .lore/claims/corrections.jsonl and shown wherever "
+            "the claim is served; the claim stays, marked, after uncorrected claims."
+        ),
+    ),
 ):
-    """Tell the layer whether served claims helped.
-
-    Feedback drives the lifecycle: influential claims are reinforced, repeatedly
-    overridden ones are retired.
-    """
-    if influential == overridden:
-        typer.echo("error: pass exactly one of --influential or --overridden")
+    """Tell the layer what became of served claims: influential, overridden or corrected."""
+    chosen = sum([influential, overridden, corrected is not None])
+    if chosen != 1:
+        typer.echo("error: pass exactly one of --influential, --overridden or --corrected NOTE")
+        raise typer.Exit(2)
+    note = sanitize_line(corrected) if corrected is not None else ""
+    if corrected is not None and not (0 < len(note) <= NOTE_MAX_CHARS):
+        typer.echo(f"error: --corrected needs a note of 1 to {NOTE_MAX_CHARS} characters")
         raise typer.Exit(2)
     store = _open_store(repo)
     known = {c.id for c in store.load_claims()}
@@ -333,9 +353,17 @@ def feedback(
     if influential:
         server.mark_influential(claim_ids)
         typer.echo(f"marked {len(claim_ids)} claim(s) influential")
-    else:
+    elif overridden:
         server.mark_overridden(claim_ids)
         typer.echo(f"marked {len(claim_ids)} claim(s) overridden")
+    else:
+        author = git_user(repo)
+        server.correct(claim_ids, note, author=author)
+        server.write_book()
+        typer.echo(
+            f"recorded a correction by {author} on {len(claim_ids)} claim(s) in "
+            f"{store.corrections_path}; commit it with the book"
+        )
 
 
 def _compile_once(

@@ -148,6 +148,22 @@ class Claim(BaseModel):
         return self
 
 
+class Correction(BaseModel):
+    """A reader's note that a claim is wrong or outdated, and what is true now.
+
+    Corrections are team knowledge, so they are committed beside the claims and travel
+    through git, unlike usage counters. A corrected claim stays in the book, marked,
+    the way declined work does: the record of what was believed and why it was
+    corrected is worth more than its deletion, and retrieval puts it after claims
+    nobody has corrected.
+    """
+
+    claim_id: str
+    note: str
+    author: str = "unknown"
+    at: datetime | None = None
+
+
 class Conflict(BaseModel):
     """A first-class disagreement between claims. Conflicts are knowledge: we
     record them with both provenances rather than silently overwriting."""

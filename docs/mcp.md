@@ -24,9 +24,9 @@ Three tools are exposed:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `topic`, `action`, `authority`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it) |
+| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `topic`, `action`, `authority`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it), and `corrections` (reader notes: `note`, `author`, `at`) |
 | `lore_explain` | `scope: str` (a scope as shown in the book, or a prefix of one) | Always the same keys: `scope` (`null` when nothing matched or the name was ambiguous), `claims` (current practice first, then declined work, same claim shape), `conflicts` (`id`, `reason`, `claim_ids`), `ambiguous` (candidate scopes when several matched; call again with one), `narrower` (scopes nested under the matched one) |
-| `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
+| `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden" \| "corrected"`, `note: str` (required with `corrected`) | Records the verdict against those claims; a correction's note is committed beside the claims and returned in `corrections` on every claim it concerns |
 
 Every `lore_query` call, and every answered `lore_explain` call, records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.
 
