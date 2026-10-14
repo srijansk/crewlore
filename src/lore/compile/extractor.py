@@ -90,7 +90,6 @@ _TOPIC_MAX_CHARS = 80
 # copied from the rendering still resolves: the fidelity gate compares
 # whitespace-collapsed text.
 _CONTINUATION = "\n    "
-_LINE_BREAKS = ("\r\n", "\r", "\u2028", "\u2029")
 
 
 def _frame_transcript(transcript: str, nonce: str) -> str:
@@ -98,23 +97,33 @@ def _frame_transcript(transcript: str, nonce: str) -> str:
 
     The tag name carries a random token, so text inside the transcript that imitates
     the closing tag closes nothing, and the prompt header tells the model the
-    transcript is untrusted and where it ends. The transcript itself is passed through
-    unchanged, which keeps the verbatim-anchor gate exact.
+    transcript is untrusted and where it ends. The transcript's words are unchanged;
+    only its layout is (see `_continued`), which the fidelity gate's
+    whitespace-collapsing comparison ignores.
     """
     tag = f"transcript-{nonce}"
     return f"\n<{tag}>\n{transcript}\n</{tag}>\n"
 
 
+def _topic_key(value):
+    """A topic as the model will see it offered for reuse: one line, at most
+    `_TOPIC_MAX_CHARS`. Applied when a claim is built too, so the stored key and the
+    offered key are the same string and the conflict detector can group on it."""
+    return sanitize_line(value)[:_TOPIC_MAX_CHARS] if isinstance(value, str) else value
+
+
 def _topic_lines(topics: list[str]) -> str:
-    keys = (sanitize_line(t)[:_TOPIC_MAX_CHARS] for t in topics)
+    keys = dict.fromkeys(_topic_key(t) for t in topics)
     return "\n".join(k for k in keys if k)
 
 
 def _continued(content: str) -> str:
-    """One event's content with every line after the first indented."""
-    for sequence in _LINE_BREAKS:
-        content = content.replace(sequence, "\n")
-    return _CONTINUATION.join(content.split("\n"))
+    """One event's content with every line after the first indented.
+
+    `splitlines` breaks on every separator Python knows (CR, LF, NEL, VT, FF, LS, PS,
+    FS, GS, RS), so none of them can put a line at the margin.
+    """
+    return _CONTINUATION.join(content.splitlines())
 
 
 _MARKDOWN_DECORATION = re.compile(r"[`*_]")
@@ -330,13 +339,19 @@ class LLMExtractor:
             # inversion the field exists to prevent. Losing the claim is safer.
             return None
         try:
+            statement = _clean(item["statement"])
+        except KeyError:
+            return None
+        if not isinstance(statement, str) or not statement:
+            return None  # nothing left once escapes and invisible characters are gone
+        try:
             return Claim(
-                statement=_clean(item["statement"]),
+                statement=statement,
                 kind=item["kind"],
                 adoption=adoption,
-                scope=_clean(item.get("scope", ".")),
-                topic=_clean(item.get("topic")),
-                action=_clean(item.get("action")),
+                scope=_clean(item.get("scope", ".")) or ".",
+                topic=_topic_key(item.get("topic")) or None,
+                action=_clean(item.get("action")) or None,
                 provenance=provenance,
                 anchors=verified,
                 observed_at=observed_at,

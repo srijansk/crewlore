@@ -30,20 +30,28 @@ _INVISIBLE = re.compile(
 # Every line break a model or a web form can produce, folded to one newline.
 _LINE_BREAKS = ("\r\n", "\r", "\u2028", "\u2029")
 
+# The one legitimate use of tag characters: a subdivision flag is the black flag
+# followed by tag letters and a tag terminator. Matched first so it survives the strip.
+_SUBDIVISION_FLAG = "\U0001f3f4[\U000e0020-\U000e007e]+\U000e007f"
+_STRIP = re.compile(f"({_SUBDIVISION_FLAG})|{_INVISIBLE.pattern}")
+
 
 def sanitize_text(text: str | None) -> str:
     """Strip escape sequences and invisible characters; fold line breaks to newlines.
 
     Newlines and tabs are kept, so a multi-line quote stays multi-line in a JSON
     payload. Use `sanitize_line` for anything printed as one line. `None` is treated
-    as empty text, so optional fields can be passed straight through.
+    as empty text, so optional fields can be passed straight through; any other
+    non-string is rendered with `str`, so a numeric login cannot crash a hook.
     """
-    if not text:
+    if text is None:
         return ""
+    if not isinstance(text, str):
+        text = str(text)
     cleaned = _ANSI.sub("", text)
     for sequence in _LINE_BREAKS:
         cleaned = cleaned.replace(sequence, "\n")
-    return _INVISIBLE.sub("", cleaned)
+    return _STRIP.sub(lambda m: m.group(1) or "", cleaned)
 
 
 def sanitize_line(text: str | None) -> str:

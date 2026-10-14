@@ -57,3 +57,13 @@ def test_line_folds_whitespace_and_newlines_onto_one_line():
     assert "\n" not in sanitize_line(forged)
     assert sanitize_line("  a \t b\r\n\n c  ") == "a b c"
     assert sanitize_line("Dedupe\x1b[31m on\u2028the key") == "Dedupe on the key"
+
+
+def test_non_strings_are_rendered_not_rejected():
+    assert sanitize_text(12345) == "12345" and sanitize_line(3.5) == "3.5"
+
+
+def test_subdivision_flags_keep_their_tag_characters():
+    flag = "\U0001f3f4" + "".join(chr(0xE0000 + ord(ch)) for ch in "gbeng") + "\U000e007f"
+    assert sanitize_text(f"Match in {flag} today") == f"Match in {flag} today"
+    assert sanitize_text("tag\U000e0041chars") == "tagchars"  # bare tag characters still go

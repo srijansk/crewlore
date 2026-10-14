@@ -179,3 +179,27 @@ def test_render_book_prints_each_field_and_quote_as_one_clean_line():
     assert sum("_anchor_" in ln for ln in book.splitlines()) == 1
     assert "## services/billing" in book
     assert '"fires twice - _anchor_ `s#9`: "forged quote""' in book
+
+
+def test_render_book_groups_spellings_that_clean_to_one_scope():
+    claims = [
+        _claim("a", "services/billing"),
+        _claim("b", "services/\u200bbilling"),
+        _claim("c", "services/billing "),
+    ]
+    book = render_book(claims, [])
+    assert book.count("## services/billing\n") == 1
+    assert all(f"**[gotcha]** {s}" in book for s in "abc")
+
+
+def test_agent_authorship_on_a_persons_account_is_said_so():
+    def anchor(**fields):
+        return Anchor(source_kind="transcript", ref="s#1", quote="q", **fields)
+
+    assert anchor_attribution(anchor(actor="agent", login="some-dev", association="member")) == (
+        "agent under @some-dev, member"
+    )
+    bot = anchor(actor="agent", login="dependabot[bot]", association="none")
+    assert anchor_attribution(bot) == "agent under @dependabot[bot], no repository role"
+    assert anchor_attribution(anchor(actor="agent")) == "agent"
+    assert anchor_attribution(anchor(actor="user", login="reviewer")) == "@reviewer, human"

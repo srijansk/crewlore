@@ -205,7 +205,10 @@ def build_thread(
 # It is frozen with the study: the production prompt has since gained
 # untrusted-input framing (a named per-call delimiter, indented continuation
 # lines), which is independent of the schema comparison and must not be
-# back-ported here without re-running the study.
+# back-ported here without re-running the study. The production arm below calls
+# the live LLMExtractor, so a re-run today compares framed production extraction
+# against this unframed polarity prompt; the published numbers come from the
+# extractor as it stood before the framing.
 POLARITY_HEADER = """You extract reusable team tribal-knowledge claims from one
 coding-agent session.
 Return ONLY a JSON array. Each item:

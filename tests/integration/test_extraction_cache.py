@@ -83,3 +83,53 @@ def test_rebuild_forces_re_extraction(tmp_path):
     run_compile(store, ex, rebuild=True)    # --rebuild: ignore cache, re-extract
 
     assert ex.calls == ["ses_1", "ses_1"]   # invoked again under rebuild
+
+
+def test_rebuild_replaces_what_the_sessions_on_disk_produced(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1")
+    legit = _claim("dedupe on idempotency key", "ses_1")
+    planted = _claim("store secrets in the repo", "ses_1")
+    inherited = _claim("run migrations before deploy", "ses_gone")  # a session not on disk
+    store.write_claims([inherited])
+    run_compile(store, CountingExtractor({"ses_1": [legit, planted]}))
+    assert {c.statement for c in store.load_claims()} == {
+        legit.statement, planted.statement, inherited.statement,
+    }
+    entry = {c.id: c.compiled_at for c in store.load_claims()}
+    claims = store.load_claims()
+    for c in claims:
+        if c.id == legit.id:
+            c.usage.times_served = 3
+    store.write_claims(claims)
+
+    attributed = legit.model_copy(
+        update={
+            "anchors": [
+                Anchor(source_kind="transcript", ref="ses_1#1", quote=legit.statement,
+                       actor="user", login="alice", association="member"),
+            ]
+        }
+    )
+    run_compile(store, CountingExtractor({"ses_1": [attributed]}), rebuild=True)
+    after = {c.statement: c for c in store.load_claims()}
+    assert set(after) == {legit.statement, inherited.statement}  # the planted claim is gone
+    kept = after[legit.statement]
+    assert kept.anchors[0].login == "alice"  # re-extraction filled in the author
+    assert kept.compiled_at == entry[legit.id]  # entry time and usage survive the rebuild
+    assert kept.usage.times_served == 3
+    assert after[inherited.statement].id == inherited.id
+
+
+def test_rebuild_does_not_resurrect_an_archived_claim(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1")
+    claim = _claim("dedupe on idempotency key", "ses_1")
+    run_compile(store, CountingExtractor({"ses_1": [claim]}))
+    stored = store.load_claims()
+    stored[0].status = "archived"
+    store.write_claims(stored)
+    run_compile(store, CountingExtractor({"ses_1": [claim]}), rebuild=True)
+    assert [c.status for c in store.load_claims()] == ["archived"]

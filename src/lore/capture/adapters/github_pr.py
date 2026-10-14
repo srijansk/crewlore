@@ -153,7 +153,7 @@ class GitHubPRAdapter:
         if attribution:
             meta["attribution"] = attribution
         if login := rec.get("login"):
-            meta["login"] = login
+            meta["login"] = str(login)
         if association := rec.get("association"):
             meta["association"] = str(association).lower()
         return [

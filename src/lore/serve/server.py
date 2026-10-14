@@ -63,10 +63,16 @@ def anchor_attribution(a: Anchor) -> str:
     """Who wrote the quoted text, as a reader-facing phrase such as
     `@reviewer, human, member`; empty when the source recorded nothing."""
     parts = []
-    if a.login:
-        parts.append(f"@{sanitize_line(a.login)}")
-    if a.actor:
-        parts.append(_ACTOR_WORD.get(a.actor, sanitize_line(a.actor)))
+    login = sanitize_line(a.login) if a.login else ""
+    if a.actor == "agent" and login:
+        # Agent authorship is often detected from a commit trailer or body marker
+        # while the account is a person's: say so rather than calling them the agent.
+        parts.append(f"agent under @{login}")
+    else:
+        if login:
+            parts.append(f"@{login}")
+        if a.actor:
+            parts.append(_ACTOR_WORD.get(a.actor, sanitize_line(a.actor)))
     if a.association:
         role = sanitize_line(a.association).lower().replace("_", " ")
         parts.append("no repository role" if role == "none" else role)
@@ -85,10 +91,10 @@ def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
     by_scope: dict[str, list[Claim]] = {}
     for c in claims:
         if c.status == "active":
-            by_scope.setdefault(c.scope, []).append(c)
+            by_scope.setdefault(sanitize_line(c.scope), []).append(c)
 
     for scope in sorted(by_scope):
-        lines.append(f"## {sanitize_line(scope)}")
+        lines.append(f"## {scope}")
         lines.append("")
         for c in sorted(by_scope[scope], key=lambda x: x.id):
             lines.append(f"- **[{claim_label(c)}]** {sanitize_line(c.statement)}")

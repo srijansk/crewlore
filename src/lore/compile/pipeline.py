@@ -152,16 +152,29 @@ def _dedup_and_score(candidates: list[Claim]) -> list[Claim]:
     return merged
 
 
+_ATTRIBUTION_FIELDS = ("actor", "login", "association")
+
+
 def _merge_anchors(members: list[Claim]) -> list[Anchor]:
-    seen: set[tuple[str, str]] = set()
-    out: list[Anchor] = []
+    """One anchor per (ref, quote), in first-seen order. When the same anchor arrives
+    both with and without authorship (a store compiled before anchors carried it, then
+    re-extracted), the authorship is kept whichever side it came from."""
+    merged: dict[tuple[str, str], Anchor] = {}
     for m in members:
         for a in m.anchors:
             key = (a.ref, a.quote)
-            if key not in seen:
-                seen.add(key)
-                out.append(a)
-    return out
+            kept = merged.get(key)
+            if kept is None:
+                merged[key] = a
+                continue
+            filled = {
+                name: getattr(a, name)
+                for name in _ATTRIBUTION_FIELDS
+                if getattr(kept, name) is None and getattr(a, name) is not None
+            }
+            if filled:
+                merged[key] = kept.model_copy(update=filled)
+    return list(merged.values())
 
 
 def _latest_observed(members: list[Claim]):

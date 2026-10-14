@@ -260,3 +260,8 @@ def test_author_login_and_association_ride_on_the_event():
     assert inline.meta["association"] == "member"
     (plain,) = parse([HUMAN_COMMENT])
     assert plain.meta["login"] == "reviewer" and "association" not in plain.meta
+
+
+def test_numeric_logins_in_an_export_become_text():
+    (event,) = parse([{**HUMAN_COMMENT, "login": 12345}])
+    assert event.meta["login"] == "12345"
