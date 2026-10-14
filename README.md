@@ -203,6 +203,8 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore init` | Create the `.lore/` layout in your repo. |
 | `lore watch` | Automatically ingest → compile → prune on an interval (`--once` for cron/CI). |
 | `lore compile` | Run a single ingest-and-compile pass manually (`--rebuild` to re-extract everything). |
+| `lore render` | Rebuild the book and conflict list from the claims already compiled, with no model call: for a fresh clone, or after a merge or pull. |
+| `lore hook install` / `uninstall` / `status` | Git hooks that keep the layer current without a daemon: `lore compile` in the background after each commit, `lore render` after each merge. Honours `core.hooksPath`; `LORE_SKIP_HOOK=1` skips a run. |
 | `lore import-prs OWNER/REPO` | Compile a GitHub repository's pull-request threads. Scans closed PRs by default (`--state open` or `all`), agent-authored only (`--all-authors` for every PR), most recently updated first (`--limit N`). Needs the `gh` CLI. |
 | `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |

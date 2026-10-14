@@ -8,6 +8,8 @@
 
 ### Added
 
+- **`lore render`** rebuilds the book and the conflict list from the claims already compiled, with no model call and no API key: the command for a fresh clone, or after a merge or pull. Captured sessions that have never been extracted are counted and left for `lore compile`.
+- **`lore hook install`** adds a marked block to the repository's `post-commit` and `post-merge` hooks: `lore compile` runs in the background after each commit, `lore render` after each merge, both logging to `.lore/cache/hook.log`. The interpreter is pinned at install time so GUI git clients and CI runners without the `lore` launcher on PATH still work; `core.hooksPath` is honoured; `LORE_SKIP_HOOK=1` skips a run; `lore hook uninstall` removes only the block and `lore hook status` reports installed, outdated or missing.
 - **An original score for the launch video**, `docs/launch-video/audio/`: `score.json` lists a sound event for every moment on screen and one chord per bar; `score.py` synthesises it deterministically (numpy, scipy) and masters it with ffmpeg to -14 LUFS / -1 dBTP; `render.py mux` puts it onto the rendered video. The embedded copies in the README and the Welcome discussion carry the score.
 
 ## 0.4.2 — 2026-10-09

@@ -285,6 +285,41 @@ def compile(  # noqa: A001
     _report(stats)
 
 
+class _NoModel:
+    """An extractor that refuses: `lore render` must never call a model. Sessions with a
+    cached extraction are served from the cache; the rest are counted and left for
+    `lore compile`."""
+
+    def extract(self, events, session_id, known_topics=None):
+        raise RuntimeError("lore render makes no model calls; run `lore compile` to extract")
+
+
+@app.command()
+def render(repo: Path = RepoOpt):
+    """Rebuild the book and the conflict list from the claims already compiled, no model.
+
+    For a fresh clone or after a merge or pull: the committed claims are re-deduplicated,
+    conflicts re-detected, and .lore/knowledge/README.md rewritten. Needs no API key.
+    """
+    from lore.compile.run import run_compile
+
+    store = LoreStore(repo)
+    if not store.is_initialised:
+        typer.echo(_INIT_HINT)
+        raise typer.Exit(1)
+    result = run_compile(store, _NoModel())
+    active = sum(c.status == "active" for c in result.claims)
+    typer.echo(
+        f"rendered {active} active claims and {len(result.conflicts)} conflicts "
+        f"into {store.lore / 'knowledge' / 'README.md'}"
+    )
+    if result.failed_sessions:
+        typer.echo(
+            f"  {result.failed_sessions} captured session(s) have no cached extraction yet; "
+            "run `lore compile` to extract them"
+        )
+
+
 @app.command("import-prs")
 def import_prs(
     source_repo: str = typer.Argument(..., metavar="OWNER/REPO", help="GitHub repo to import."),
@@ -379,6 +414,57 @@ def watch(
         except KeyboardInterrupt:  # pragma: no cover
             typer.echo("stopped.")
             break
+
+
+hook_app = typer.Typer(
+    help=(
+        "Git hooks that keep the layer current without a daemon: compile after each commit, "
+        "render after each merge, in the background."
+    )
+)
+app.add_typer(hook_app, name="hook")
+
+
+@hook_app.command("install")
+def hook_install(repo: Path = RepoOpt):
+    """Add the post-commit and post-merge hooks (idempotent; honours core.hooksPath)."""
+    from lore.hooks import NotAGitRepository
+    from lore.hooks import install as install_hooks
+
+    try:
+        for line in install_hooks(repo):
+            typer.echo(line)
+    except NotAGitRepository as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+    typer.echo("Hooks log to .lore/cache/hook.log; set LORE_SKIP_HOOK=1 to skip one run.")
+
+
+@hook_app.command("uninstall")
+def hook_uninstall(repo: Path = RepoOpt):
+    """Remove the crewlore block from the hooks, leaving anything else in them."""
+    from lore.hooks import NotAGitRepository
+    from lore.hooks import uninstall as uninstall_hooks
+
+    try:
+        for line in uninstall_hooks(repo):
+            typer.echo(line)
+    except NotAGitRepository as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
+
+
+@hook_app.command("status")
+def hook_status(repo: Path = RepoOpt):
+    """Show whether each hook is installed, outdated, or missing."""
+    from lore.hooks import NotAGitRepository, status
+
+    try:
+        for name, state in status(repo).items():
+            typer.echo(f"{name}: {state}")
+    except NotAGitRepository as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(2) from exc
 
 
 @app.command()

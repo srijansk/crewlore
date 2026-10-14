@@ -173,3 +173,54 @@ def test_default_transcript_dir_is_scoped_to_this_repo(tmp_path, monkeypatch):
     store.config_path.write_text(yaml.safe_dump(cfg))
     assert _transcript_dir(store, None) == tmp_path / "elsewhere"
     assert _transcript_dir(store, tmp_path / "override") == tmp_path / "override"
+
+
+def test_render_rebuilds_the_book_without_a_model(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _seed_claim(tmp_path)
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "rendered 1 active claims" in result.stdout
+    book = (tmp_path / ".lore" / "knowledge" / "README.md").read_text()
+    assert "dedupe billing webhook" in book
+
+
+def test_render_counts_sessions_that_still_need_extraction(tmp_path):
+    from lore.schemas import NSFEvent
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_session(
+        "ses_new",
+        [
+            NSFEvent(
+                session="ses_new", actor="user", kind="user_message",
+                timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+                content="the billing webhook fires twice; we must dedupe it on the key",
+            ),
+            NSFEvent(
+                session="ses_new", actor="agent", kind="agent_message",
+                timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc),
+                content="Right, dedupe on the idempotency key before processing.",
+            ),
+        ],
+    )
+    result = runner.invoke(app, ["render", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "1 captured session(s) have no cached extraction yet" in result.stdout
+
+
+def test_hook_commands_round_trip(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path)])
+    assert result.exit_code == 0, result.stdout
+    assert "post-commit: written" in result.stdout and "post-merge: written" in result.stdout
+    result = runner.invoke(app, ["hook", "status", "--repo", str(tmp_path)])
+    assert "post-commit: installed" in result.stdout
+    result = runner.invoke(app, ["hook", "uninstall", "--repo", str(tmp_path)])
+    assert result.exit_code == 0 and "removed" in result.stdout
+    result = runner.invoke(app, ["hook", "install", "--repo", str(tmp_path / "nowhere")])
+    assert result.exit_code == 2 and "not inside a git repository" in result.stdout
