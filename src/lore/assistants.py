@@ -297,8 +297,8 @@ def install(
                 )
             if not posix_shell_available():
                 lines.append(
-                    "note: the hook command is for a POSIX shell; on Windows, Claude Code "
-                    "needs Git Bash to run it, otherwise it reports a hook error on each event."
+                    "note: the hook command is for a POSIX shell. On Windows it runs only "
+                    "where Claude Code has Git Bash; without it, each event reports a hook error."
                 )
     except OSError as exc:
         done = "; ".join(lines) or "nothing"
@@ -472,9 +472,20 @@ def _read_text(path: Path) -> str:
 
 
 def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(text)
+    """Write the whole file at once: the text goes to a sibling temp file that then
+    replaces the target, so a crash mid-write cannot leave a truncated instruction
+    or settings file. A symbolic link (a user's dotfiles) is written through, so the
+    link itself stays."""
+    target = path.resolve() if path.is_symlink() else path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _line_ending(text: str) -> str:

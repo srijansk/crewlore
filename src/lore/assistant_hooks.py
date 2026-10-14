@@ -2,7 +2,7 @@
 while it works: when it reads or edits a file, and when the user asks for something the
 layer knows about.
 
-Two hooks, both installed by `lore install --hooks` into Claude Code's settings file:
+Three hooks, installed by `lore install --hooks` into Claude Code's settings file:
 
 * `PreToolUse` on `Read`, `Edit` and `Write`: the claims whose scope covers the file,
   once per scope per conversation. Claude Code delivers the text next to the tool's
@@ -34,9 +34,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from lore.assistants import AssistantsError, _claude_config_dir, _prune_dirs, _refuse_symlinks
+from lore.assistants import (
+    AssistantsError,
+    _claude_config_dir,
+    _prune_dirs,
+    _refuse_symlinks,
+    _write_text,
+)
 from lore.schemas import Claim
-from lore.serve.server import KnowledgeServer, claim_label
+from lore.serve.server import KnowledgeServer, claim_label, rank_claims
 from lore.store import LoreStore, atomic_write_text
 
 HOOK_COMMAND = "lore claude-hook"
@@ -178,17 +184,16 @@ def install_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
     new = _dump({**data, "hooks": hooks}, text)
     if new == text:
         return "already current"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(new)
+    _write_text(path, new)
     return "written"
 
 
 def uninstall_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
     """Remove crewlore's hooks and nothing else: `removed`, `absent`, or `removed file`
-    when the file held only them (install created it)."""
-    if strict and path.is_symlink():
-        raise AssistantsError(f"{path} is a symbolic link; not touching it")
+    when the file held only them (install created it). `strict` applies install's
+    policy: nothing is touched through a symbolic link below the root."""
+    if strict:
+        _refuse_symlinks(path, root)
     data, text = load_settings(path)
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
@@ -204,8 +209,7 @@ def uninstall_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
         _prune_dirs(path.parent, root)
         return "removed file"
     # A symlinked settings file (dotfiles) stays a symlink; its target is emptied.
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(_dump(rest, text))
+    _write_text(path, _dump(rest, text))
     return "removed"
 
 
@@ -358,7 +362,8 @@ def _one_line(text: object) -> str:
 
 
 def _block(c: Claim) -> str:
-    lines = [f"- [{claim_label(c)}] ({_one_line(c.scope)}) {_one_line(c.statement)}  [{c.id}]"]
+    head = f"- [{claim_label(c)}] ({_one_line(c.scope)}) {_one_line(c.statement)}"
+    lines = [f"{head}  [{_one_line(c.id)}]"]
     if c.action:
         verb = "" if c.adoption == "current" else "instead: "
         lines.append(f"  -> {verb}{_one_line(c.action)}")
@@ -418,12 +423,11 @@ def _edit_context(event: Event) -> dict | None:
     if event.file_path is None:
         return None
     path = event.file_path if event.file_path.is_absolute() else event.cwd / event.file_path
-    # The repository the session runs in wins when the file is inside it, so a vendored
-    # checkout with its own .lore/ does not hide the team's claims about that directory.
+    # Only the repository the session runs in is consulted: a vendored checkout with its
+    # own .lore/ does not hide the team's claims about that directory, and a file read
+    # outside the session's repository never pulls in, or writes to, another store.
     repo = find_repo(event.cwd)
     if repo is None or not _under(path, repo):
-        repo = find_repo(path.parent)
-    if repo is None:
         return None
     rel = _plain(path).relative_to(_plain(repo)).as_posix()
     store = LoreStore(repo)
@@ -452,12 +456,17 @@ def _prompt_context(event: Event) -> dict | None:
     prompt = event.prompt.strip()
     if repo is None or not prompt:
         return None
-    ranked = KnowledgeServer(LoreStore(repo)).query(
-        prompt, limit=MAX_CLAIMS_PER_EVENT, min_overlap=MIN_PROMPT_OVERLAP
+    store = LoreStore(repo)
+    ranked = rank_claims(
+        store.load_claims(), prompt, limit=MAX_CLAIMS_PER_EVENT, min_overlap=MIN_PROMPT_OVERLAP
     )
     if not ranked:
         return None
-    text, _ = format_context("relevant to this request", ranked)
+    text, shown = format_context("relevant to this request", ranked)
+    try:  # a read-only store still gets its context; only the bookkeeping is lost
+        KnowledgeServer(store).mark_served([c.id for c in shown])
+    except OSError as exc:
+        print(f"crewlore hook: {type(exc).__name__}: {exc}", file=sys.stderr)
     return _output(event.name, text)
 
 
