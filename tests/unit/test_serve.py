@@ -328,5 +328,7 @@ def test_lookup_works_on_the_names_the_book_shows_and_folds_slash_twins():
     assert match_scopes(claims, "services/billing") == ["services/billing"]
     assert sorted(c.statement for c in claims_in_scope(claims, "services/billing")) == ["c", "d"]
     assert narrower_scopes(claims, "services/billing") == ["services/billing/webhooks"]
-    for noise in ("/", "./", ".", " / "):
+    for noise in ("/", " / "):
         assert match_scopes(claims, noise) == []
+    repo_wide = claims + [_claim("whole repo", ".")]
+    assert match_scopes(repo_wide, ".") == ["."] and match_scopes(repo_wide, "./") == ["."]

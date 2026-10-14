@@ -92,7 +92,8 @@ def scope_key(scope: str) -> str:
     cleaned = sanitize_line(scope).replace("\\", "/")
     if cleaned.startswith("./"):
         cleaned = cleaned[2:]
-    return cleaned.rstrip("/") or cleaned
+    # `./` and `.` both mean the whole repository, which the extractor writes as `.`.
+    return cleaned.rstrip("/") or cleaned or "."
 
 
 class ScopeIndex:
