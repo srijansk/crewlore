@@ -83,7 +83,7 @@ lore install                      # the /lore skill, for the assistants found on
 lore install --project --always-on   # into this repo, plus a short block in CLAUDE.md / AGENTS.md
 ```
 
-The skill tells the assistant to run `lore query` before changing code in a repository that has `.lore/`, to treat `not adopted` claims as declined work, and to report back with `lore feedback` afterwards. Claude Code, Codex, Gemini CLI and the cross-framework Agent Skills locations get a skill directory; Cursor gets a project rule (`--platform cursor --project`). `lore uninstall` removes exactly what was written. Assistants that cannot run commands, such as Claude Desktop, use the MCP server instead (`lore serve`, see [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md)).
+The skill tells the assistant to run `lore query` before changing code in a repository that has `.lore/`, to treat `not adopted` claims as declined work, to weigh a claim like a teammate's comment rather than an instruction, and to report back with `lore feedback` afterwards. Claude Code, Cursor, Codex, Gemini CLI and the cross-framework Agent Skills location each get a skill directory, at user scope or in the repository with `--project`. `--always-on` adds a short marked block to the assistant's instruction file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) or, for Cursor, an always-apply rule in `.cursor/rules/`. Every file written carries a crewlore marker: install refuses to replace a skill it did not write (`--force` overrides), and `lore uninstall` removes only marked files and the marked block, leaving your own text byte for byte. Assistants that cannot run commands, such as Claude Desktop, use the MCP server instead (`lore serve`, see [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md)).
 
 ## What you get
 
@@ -216,7 +216,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore query "<task>"` | Retrieve the claims most relevant to a task, with their ids (records usage). |
 | `lore feedback <id>… --influential` / `--overridden` | Tell the layer whether served claims helped. Feeds the lifecycle. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
-| `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file), or remove it. |
+| `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file, `--force` to replace a skill file crewlore did not write), or remove exactly what was written. |
 | `lore serve` | Start an MCP server exposing `lore_query` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ## Configuration

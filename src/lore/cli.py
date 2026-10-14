@@ -413,8 +413,8 @@ PlatformOpt = typer.Option(
     "auto",
     "--platform",
     help=(
-        "Which assistant to set up: auto (detect from ~/.claude, ~/.codex, ~/.gemini, "
-        "~/.cursor), claude, codex, gemini, cursor, agents, or a comma-separated list."
+        "Which assistant to set up: auto (detect from ~/.claude, ~/.cursor, ~/.codex, "
+        "~/.gemini, ~/.agents), claude, cursor, codex, gemini, agents, or a comma-separated list."
     ),
 )
 ProjectOpt = typer.Option(
@@ -437,21 +437,28 @@ def install(
         "--always-on",
         help=(
             "Also add a short marked block to the assistant's instruction file (CLAUDE.md, "
-            "AGENTS.md, GEMINI.md) telling it to query the layer before changing code."
+            "AGENTS.md, GEMINI.md), or an always-apply rule for Cursor with --project, "
+            "telling it to query the layer before changing code."
         ),
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Replace a skill or rule file that crewlore did not write."
     ),
 ):
     """Put the /lore skill into your coding assistant, so it queries the layer itself."""
-    from lore.assistants import UnsupportedScopeError, parse_platforms
+    from lore.assistants import AssistantsError, parse_platforms
     from lore.assistants import install as install_skill
 
     try:
         platforms = parse_platforms(platform)
-        for line in install_skill(platforms, project=project, repo=repo, always_on=always_on):
-            typer.echo(line)
-    except (ValueError, UnsupportedScopeError) as exc:
+        lines = install_skill(
+            platforms, project=project, repo=repo, always_on=always_on, force=force
+        )
+    except AssistantsError as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
+    for line in lines:
+        typer.echo(line)
     if project:
         typer.echo("Commit the files above (`git add`) so teammates get the skill too.")
     typer.echo("Next: open your assistant in a repo that has .lore/ and ask for /lore.")
@@ -460,15 +467,16 @@ def install(
 @app.command()
 def uninstall(platform: str = PlatformOpt, project: bool = ProjectOpt, repo: Path = RepoOpt):
     """Remove the /lore skill and instruction block that `lore install` wrote."""
-    from lore.assistants import parse_platforms
+    from lore.assistants import AssistantsError, parse_platforms
     from lore.assistants import uninstall as uninstall_skill
 
     try:
         platforms = parse_platforms(platform)
-    except ValueError as exc:
+        lines = uninstall_skill(platforms, project=project, repo=repo)
+    except AssistantsError as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
-    for line in uninstall_skill(platforms, project=project, repo=repo):
+    for line in lines:
         typer.echo(line)
 
 
