@@ -24,7 +24,7 @@ Two tools are exposed:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `action`, and `anchors` (`ref` + verbatim `quote`) |
+| `lore_query` | `task: str`, `limit: int = 5` | The claims most relevant to `task`, each with `id`, `statement`, `kind`, `adoption`, `scope`, `action`, and `anchors` (`ref`, verbatim `quote`, and who wrote it: `actor`, `login`, `association`, each `null` when the source did not record it) |
 | `lore_feedback` | `claim_ids: list[str]`, `verdict: "influential" \| "overridden"` | Records the verdict against those claims |
 
 Every `lore_query` call records that the returned claims were served; `lore_feedback` records whether they helped. Both feed the lifecycle: claims nobody reads decay, repeatedly overridden claims are retired, influential ones are reinforced.

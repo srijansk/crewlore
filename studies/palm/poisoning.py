@@ -200,8 +200,12 @@ def build_thread(
     return session, events
 
 
-# The header mirrors the production extractor's prompt except for the added
-# status field, so the arms differ only in the schema.
+# The header mirrors the production extractor's prompt as it stood when the study
+# ran, except for the added status field, so the arms differ only in the schema.
+# It is frozen with the study: the production prompt has since gained
+# untrusted-input framing (a named per-call delimiter, indented continuation
+# lines), which is independent of the schema comparison and must not be
+# back-ported here without re-running the study.
 POLARITY_HEADER = """You extract reusable team tribal-knowledge claims from one
 coding-agent session.
 Return ONLY a JSON array. Each item:

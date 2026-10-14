@@ -21,7 +21,7 @@ import typer
 from lore import __version__
 from lore.serve.server import KnowledgeServer, claim_label
 from lore.store import LoreStore
-from lore.text import sanitize_text
+from lore.text import sanitize_line
 
 app = typer.Typer(
     help=(
@@ -183,11 +183,11 @@ def query(
         typer.echo("(no relevant claims)")
         return
     for c in results:
-        scope, statement = sanitize_text(c.scope), sanitize_text(c.statement)
+        scope, statement = sanitize_line(c.scope), sanitize_line(c.statement)
         typer.echo(f"[{claim_label(c)}] ({scope}) {statement}  [{c.id}]")
         if c.action:
             verb = "" if c.adoption == "current" else "instead: "
-            typer.echo(f"    -> {verb}{sanitize_text(c.action)}")
+            typer.echo(f"    -> {verb}{sanitize_line(c.action)}")
 
 
 @app.command()

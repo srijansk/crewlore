@@ -56,3 +56,34 @@ def test_query_tool_tells_the_agent_results_are_evidence(tmp_path):
     tools = asyncio.run(build_server(_store(tmp_path)).list_tools())
     description = next(t.description for t in tools if t.name == "lore_query")
     assert "evidence" in description and "instructions" in description
+
+
+def test_query_payload_names_the_author_of_each_anchor(tmp_path):
+    import json
+
+    from lore.serve.mcp_server import build_server
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([
+        Claim(
+            statement="keep the billing idempotency key in the transaction", kind="decision",
+            scope="services/billing",
+            provenance=Provenance(session="pr_acme__billing__42", author="a", harness="github-pr"),
+            anchors=[
+                Anchor(source_kind="file", ref="webhook.py:88", quote="inside the transaction",
+                       actor="user", login="reviewer", association="member"),
+                Anchor(source_kind="transcript", ref="old#event-1", quote="legacy"),
+            ],
+            observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        )
+    ])
+    rows = asyncio.run(build_server(store).call_tool("lore_query", {"task": "billing key"}))
+    text = "".join(getattr(c, "text", "") for c in (rows[0] if isinstance(rows, tuple) else rows))
+    payload = json.loads(text)
+    anchors = payload[0]["anchors"] if isinstance(payload, list) else payload["anchors"]
+    assert anchors[0]["login"] == "reviewer" and anchors[0]["association"] == "member"
+    assert anchors[0]["actor"] == "user"
+    assert anchors[1] == {
+        "ref": "old#event-1", "quote": "legacy", "actor": None, "login": None, "association": None,
+    }

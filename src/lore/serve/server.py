@@ -11,8 +11,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from lore.schemas import Claim, Conflict
+from lore.schemas import Anchor, Claim, Conflict
 from lore.store import LoreStore
+from lore.text import sanitize_line
 
 # Common words carry no retrieval signal and cause false matches across unrelated
 # topics (the lab's concept-vs-identifier-vocabulary observation). Drop them so
@@ -55,8 +56,31 @@ def claim_label(c: Claim) -> str:
     return c.kind if c.adoption == "current" else f"{c.kind} · not adopted"
 
 
+_ACTOR_WORD = {"user": "human", "agent": "agent", "system": "system"}
+
+
+def anchor_attribution(a: Anchor) -> str:
+    """Who wrote the quoted text, as a reader-facing phrase such as
+    `@reviewer, human, member`; empty when the source recorded nothing."""
+    parts = []
+    if a.login:
+        parts.append(f"@{sanitize_line(a.login)}")
+    if a.actor:
+        parts.append(_ACTOR_WORD.get(a.actor, sanitize_line(a.actor)))
+    if a.association:
+        role = sanitize_line(a.association).lower().replace("_", " ")
+        parts.append("no repository role" if role == "none" else role)
+    return ", ".join(parts)
+
+
 def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
-    """Render compiled claims as a human+agent-readable markdown book."""
+    """Render compiled claims as a human+agent-readable markdown book.
+
+    Every model-written field and every quote is printed as one cleaned line, so a
+    claim occupies exactly the lines the layout gives it and text inside a claim
+    cannot pose as a second claim. Each anchor names who wrote the quoted text when
+    the source recorded it.
+    """
     lines = ["# Team knowledge (compiled by crewlore)", ""]
     by_scope: dict[str, list[Claim]] = {}
     for c in claims:
@@ -64,22 +88,26 @@ def render_book(claims: list[Claim], conflicts: list[Conflict]) -> str:
             by_scope.setdefault(c.scope, []).append(c)
 
     for scope in sorted(by_scope):
-        lines.append(f"## {scope}")
+        lines.append(f"## {sanitize_line(scope)}")
         lines.append("")
         for c in sorted(by_scope[scope], key=lambda x: x.id):
-            lines.append(f"- **[{claim_label(c)}]** {c.statement}")
+            lines.append(f"- **[{claim_label(c)}]** {sanitize_line(c.statement)}")
             if c.action:
                 verb = "Do" if c.adoption == "current" else "Instead"
-                lines.append(f"  - *{verb}:* {c.action}")
+                lines.append(f"  - *{verb}:* {sanitize_line(c.action)}")
             for a in c.anchors:
-                lines.append(f"  - _anchor_ `{a.ref}`: \"{a.quote}\"")
+                who = anchor_attribution(a)
+                by = f" ({who})" if who else ""
+                quote = sanitize_line(a.quote)
+                lines.append(f"  - _anchor_ `{sanitize_line(a.ref)}`{by}: \"{quote}\"")
         lines.append("")
 
     if conflicts:
         lines.append("## Conflicts (unresolved disagreements)")
         lines.append("")
         for cf in conflicts:
-            lines.append(f"- **{cf.scope}**: {cf.reason} ({', '.join(cf.claim_ids)})")
+            ids = ", ".join(cf.claim_ids)
+            lines.append(f"- **{sanitize_line(cf.scope)}**: {sanitize_line(cf.reason)} ({ids})")
         lines.append("")
 
     return "\n".join(lines)
