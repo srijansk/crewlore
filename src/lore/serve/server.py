@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from lore.schemas import Anchor, Claim, Conflict
-from lore.store import LoreStore
+from lore.store import LoreStore, atomic_write_text
 from lore.text import sanitize_line, sanitize_text
 
 # Common words carry no retrieval signal and cause false matches across unrelated
@@ -36,15 +36,22 @@ def _claim_text(c: Claim) -> str:
     return " ".join(filter(None, [c.statement, c.scope, c.topic or "", c.action or ""]))
 
 
-def rank_claims(claims: list[Claim], query: str, limit: int = 5) -> list[Claim]:
-    """Pure relevance ranking over active claims. No side effects."""
+def rank_claims(
+    claims: list[Claim], query: str, limit: int = 5, *, min_overlap: int = 1
+) -> list[Claim]:
+    """Pure relevance ranking over active claims. No side effects.
+
+    `min_overlap` is how many content words a claim must share with the query to count;
+    the default of one is right for an explicit query, a hook that fires on every prompt
+    asks for more.
+    """
     q = _tokens(query)
     scored: list[tuple[int, float, Claim]] = []
     for c in claims:
         if c.status != "active":
             continue
         overlap = len(q & _tokens(_claim_text(c)))
-        if overlap > 0:
+        if overlap >= max(1, min_overlap):
             scored.append((overlap, c.authority, c))
     scored.sort(key=lambda t: (t[0], t[1], t[2].id), reverse=True)
     return [c for _, _, c in scored[:limit]]
@@ -260,26 +267,19 @@ class KnowledgeServer:
     def __init__(self, store: LoreStore):
         self.store = store
 
-    def query(self, text: str, limit: int = 5) -> list[Claim]:
-        claims = self.store.load_claims()
-        ranked = rank_claims(claims, text, limit=limit)
-        served_ids = {c.id for c in ranked}
-        now = datetime.now(timezone.utc)
-        for c in claims:
-            if c.id in served_ids:
-                c.usage.times_served += 1
-                c.usage.last_served_at = now
-        self.store.write_claims(claims)
+    def query(self, text: str, limit: int = 5, *, min_overlap: int = 1) -> list[Claim]:
+        ranked = rank_claims(self.store.load_claims(), text, limit=limit, min_overlap=min_overlap)
+        by_id = self.mark_served([c.id for c in ranked])
         # Return the freshly-incremented claim objects, preserving rank order.
-        by_id = {c.id: c for c in claims}
         return [by_id[c.id] for c in ranked]
 
     def explain(self, name: str) -> Explanation:
         """Everything active under the scope `name` refers to, with the live conflicts
-        recorded for it and the scopes nested under it, from one read of the store.
+        recorded for it and the scopes nested under it.
 
         Reading a scope is retrieval too, so its claims are marked served like a
-        query's results, which also keeps them from decaying as unread. A name that
+        query's results (under the usage lock, so an overlapping hook or query keeps
+        its bump), which also keeps them from decaying as unread. A name that
         matches several scopes, or none, marks nothing and answers nothing.
         """
         claims = self.store.load_claims()
@@ -292,12 +292,7 @@ class KnowledgeServer:
         scope = candidates[0]
         chosen = index.claims(scope)
         served_ids = {c.id for c in chosen}
-        now = datetime.now(timezone.utc)
-        for c in claims:
-            if c.id in served_ids:
-                c.usage.times_served += 1
-                c.usage.last_served_at = now
-        self.store.write_claims(claims)
+        by_id = self.mark_served(sorted(served_ids))
         # Conflicts are rewritten only by a compile, so one can outlive a side that the
         # lifecycle has since archived; show only those whose sides are still active.
         key = scope_key(scope)
@@ -306,13 +301,30 @@ class KnowledgeServer:
             for cf in self.store.load_conflicts()
             if scope_key(cf.scope) == key and len(served_ids & set(cf.claim_ids)) >= 2
         ]
-        by_id = {c.id: c for c in claims}
         return Explanation(
             scope=scope,
             claims=[by_id[c.id] for c in chosen],
             conflicts=conflicts,
             narrower=index.narrower(scope),
         )
+
+    def mark_served(self, claim_ids: list[str]) -> dict[str, Claim]:
+        """Record that these claims were put in front of someone (a query, a hook, a
+        page of the book); returns the updated claims by id. The read-modify-write of
+        the usage sidecar happens under the store's lock, so parallel hooks and an
+        overlapping query each keep their bump."""
+        served_ids = set(claim_ids)
+        if not served_ids:
+            return {}
+        with self.store.locked("usage"):
+            claims = self.store.load_claims()
+            now = datetime.now(timezone.utc)
+            for c in claims:
+                if c.id in served_ids:
+                    c.usage.times_served += 1
+                    c.usage.last_served_at = now
+            self.store.write_usage(claims)
+        return {c.id: c for c in claims if c.id in served_ids}
 
     def mark_influential(self, claim_ids: list[str]) -> None:
         self._bump(claim_ids, "times_influential")
@@ -325,14 +337,14 @@ class KnowledgeServer:
         conflicts = self.store.load_conflicts()
         book = render_book(claims, conflicts)
         path = self.store.lore / "knowledge" / "README.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(book)
+        atomic_write_text(path, book)
         return book
 
     def _bump(self, claim_ids: list[str], counter: str) -> None:
         ids = set(claim_ids)
-        claims = self.store.load_claims()
-        for c in claims:
-            if c.id in ids:
-                setattr(c.usage, counter, getattr(c.usage, counter) + 1)
-        self.store.write_claims(claims)
+        with self.store.locked("usage"):
+            claims = self.store.load_claims()
+            for c in claims:
+                if c.id in ids:
+                    setattr(c.usage, counter, getattr(c.usage, counter) + 1)
+            self.store.write_usage(claims)

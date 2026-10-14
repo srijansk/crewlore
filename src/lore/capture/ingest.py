@@ -10,6 +10,8 @@ compilation automatic rather than a chore.
 from __future__ import annotations
 
 import re
+import time
+from datetime import timedelta
 from pathlib import Path
 
 from lore.scrub import scrub_events
@@ -41,16 +43,33 @@ def discover_transcripts(root: Path | str) -> list[Path]:
 
 
 def ingest_transcripts(
-    store: LoreStore, adapter, transcript_dir: Path | str, scrub: bool = True
+    store: LoreStore,
+    adapter,
+    transcript_dir: Path | str,
+    scrub: bool = True,
+    settle: timedelta | None = None,
 ) -> dict:
+    """Capture every transcript not yet in the store.
+
+    `settle`: leave a transcript alone until it has gone unmodified for this long. A
+    coding agent writes its transcript for as long as the session runs, and a session
+    is captured once, so capturing it mid-way (a post-commit hook fires while the agent
+    is still working) would keep only its first half for good. Skipped transcripts are
+    counted under `settling` and picked up by a later pass.
+    """
     discovered = discover_transcripts(transcript_dir)
     existing = set(store.list_sessions())
+    cutoff = time.time() - settle.total_seconds() if settle else None
     ingested = 0
     redactions = 0
+    settling = 0
     for path in discovered:
         session_id = path.stem
         if session_id in existing:
             continue  # incremental: never re-ingest a captured session
+        if cutoff is not None and path.stat().st_mtime > cutoff:
+            settling += 1
+            continue
         try:
             events = adapter.parse_transcript(path, session=session_id)
         except Exception:
@@ -62,4 +81,9 @@ def ingest_transcripts(
             redactions += n
         store.write_session(session_id, events)
         ingested += 1
-    return {"discovered": len(discovered), "ingested": ingested, "redactions": redactions}
+    return {
+        "discovered": len(discovered),
+        "ingested": ingested,
+        "redactions": redactions,
+        "settling": settling,
+    }
