@@ -5,14 +5,18 @@ model seam) is injected so this is testable end-to-end without a live LLM.
 One compile runs per store at a time (`compile_lock`): a rebase or cherry-pick fires
 the post-commit hook once per commit, and overlapping compiles would otherwise read
 each other's half-written files. A caller that knows which commit it is compiling
-for passes `expect_head`, and nothing is written if HEAD has moved by the time the
-model answers: the checkout the result belongs to is gone.
+for passes `expect_head`, and nothing git tracks is written if HEAD has moved by the
+time the model answers: the checkout the result belongs to is gone. Serving never
+takes the lock; it writes only the usage sidecar, and a compile re-reads that sidecar
+just before it persists, so a query served during the model call keeps its count.
 """
 
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,18 +41,26 @@ except ImportError:  # pragma: no cover - POSIX
 
 DEFAULT_MAX_UNUSED_AGE = timedelta(days=30)
 
+# What a non-blocking lock call raises when another process holds the lock: EAGAIN or
+# EWOULDBLOCK from flock, EACCES from msvcrt.locking. Any other errno (ENOLCK on a
+# network mount without lock support, for one) means this filesystem cannot lock at
+# all, which is not another compile.
+LOCK_HELD_ERRNOS = frozenset({errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES})
+
 
 class CompileInProgress(RuntimeError):
     """Another compile holds this store's lock; nothing was read or written."""
 
 
 class HeadMoved(RuntimeError):
-    """HEAD is no longer the commit the caller compiled for; nothing was written."""
+    """HEAD is no longer the commit the caller compiled for; nothing git tracks was
+    written. The captured sessions and the extraction cache, both gitignored, were
+    written before the check and are kept, so the next compile costs nothing."""
 
     def __init__(self, expected: str, actual: str | None):
         super().__init__(
             f"HEAD moved from {expected[:12]} to {actual[:12] if actual else 'no commit'} "
-            "while compiling; nothing written"
+            "while compiling; nothing tracked written"
         )
         self.expected = expected
         self.actual = actual
@@ -112,26 +124,51 @@ def lock_path(store: LoreStore) -> Path:
     return store.lore / "cache" / "compile.lock"
 
 
+_warned_unguarded = False  # one warning per process, not one per compile
+
+
 @contextmanager
 def compile_lock(store: LoreStore):
-    """Hold the store's exclusive compile lock, or raise `CompileInProgress` at once."""
+    """Hold the store's exclusive compile lock, or raise `CompileInProgress` at once.
+
+    On a filesystem that cannot lock (the lock call fails with an errno that does not
+    mean "held"), warn once on stderr and run unguarded, like a platform with no lock
+    module: skipping every compile forever with "another compile is running" would be
+    wrong twice over.
+    """
     path = lock_path(store)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    locked = False
     try:
-        _lock_exclusive(fd)
-    except OSError as exc:
-        os.close(fd)
-        raise CompileInProgress(
-            "another compile is running on this store; nothing written"
-        ) from exc
-    try:
+        try:
+            _lock_exclusive(fd)
+            locked = True
+        except OSError as exc:
+            if exc.errno in LOCK_HELD_ERRNOS:
+                raise CompileInProgress(
+                    "another compile is running on this store; nothing written"
+                ) from exc
+            _warn_unguarded(path, exc)
         yield
     finally:
         try:
-            _unlock(fd)
+            if locked:
+                _unlock(fd)
         finally:
             os.close(fd)
+
+
+def _warn_unguarded(path: Path, exc: OSError) -> None:
+    global _warned_unguarded
+    if _warned_unguarded:
+        return
+    _warned_unguarded = True
+    reason = exc.strerror or str(exc)
+    print(
+        f"warning: cannot lock {path} ({reason}); compiles on this store run unguarded",
+        file=sys.stderr,
+    )
 
 
 def _lock_exclusive(fd: int) -> None:
@@ -182,9 +219,23 @@ def _compile(store: LoreStore, extractor: Extractor, *, rebuild: bool) -> Compil
 
 
 def _persist(store: LoreStore, result: CompileResult) -> None:
+    _take_current_usage(store, result.claims)
     store.write_claims(result.claims)
     store.write_conflicts(result.conflicts)
     KnowledgeServer(store).write_book()
+
+
+def _take_current_usage(store: LoreStore, claims: list[Claim]) -> None:
+    """Give each claim the usage the sidecar holds now, not the snapshot the compile
+    started from. Serving does not take the compile lock, so a `lore query` or an MCP
+    call answered during the model call bumped the sidecar in the meantime; writing
+    the snapshot back would erase that bump, and `apply_lifecycle` would then archive
+    the claim as never served. A compile never changes usage itself, so the sidecar
+    is always the newer of the two."""
+    current = store.load_usage()
+    for claim in claims:
+        if claim.id in current:
+            claim.usage = current[claim.id]
 
 
 def run_compile(
@@ -198,7 +249,8 @@ def run_compile(
     persist claims, conflicts and the book.
 
     Raises `CompileInProgress` if another compile holds the store, and `HeadMoved`,
-    after the model work but before any write, if `expect_head` no longer names HEAD.
+    after the model work but before any tracked write, if `expect_head` no longer
+    names HEAD (the extraction cache, gitignored, is already written by then).
     """
     with compile_lock(store):
         result = _compile(store, extractor, rebuild=rebuild)

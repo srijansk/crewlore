@@ -54,21 +54,30 @@ def test_query_instruments_usage_and_persists(tmp_path):
     assert reloaded.usage.times_served == 1
 
 
-def test_query_does_not_churn_committed_claims_file(tmp_path):
-    # Usage stats live in a gitignored sidecar, so a query (which bumps usage)
-    # must leave the git-tracked claims.jsonl byte-for-byte identical — otherwise
-    # `git log .lore/` fills with noise and a live demo dirties the repo.
+def test_serving_never_rewrites_the_committed_claims_file(tmp_path):
+    # Usage stats live in a gitignored sidecar, so a query or feedback (which bump
+    # usage) must leave the git-tracked claims.jsonl untouched — not rewritten with
+    # the same bytes, untouched: a rewrite from serving's snapshot could revert a
+    # compile that finished in the meantime, and churns `git log .lore/`.
     store = LoreStore(tmp_path)
     store.init()
-    store.write_claims([_claim("dedupe billing webhook", "services/billing")])
+    claim = _claim("dedupe billing webhook", "services/billing")
+    store.write_claims([claim])
     before = store.claims_path.read_bytes()
+    stat_before = store.claims_path.stat()
 
-    KnowledgeServer(store).query("billing webhook")
+    server = KnowledgeServer(store)
+    server.query("billing webhook")
+    server.mark_influential([claim.id])
+    server.mark_overridden([claim.id])
 
-    after = store.claims_path.read_bytes()
-    assert before == after  # committed truth unchanged
-    # ...but the usage bump is persisted (in the sidecar) and visible on reload.
-    assert store.usage_path.exists()
+    stat_after = store.claims_path.stat()
+    assert store.claims_path.read_bytes() == before  # committed truth unchanged
+    assert stat_after.st_mtime_ns == stat_before.st_mtime_ns
+    assert stat_after.st_ino == stat_before.st_ino  # not even replaced with the same bytes
+    # ...but the usage bumps are persisted (in the sidecar) and visible on reload.
+    usage = store.load_usage()[claim.id]
+    assert (usage.times_served, usage.times_influential, usage.times_overridden) == (1, 1, 1)
     assert store.load_claims()[0].usage.times_served == 1
 
 

@@ -9,8 +9,10 @@ stay sane across multiple compilers. Raw NSF sessions are gitignored by default
 from __future__ import annotations
 
 import contextlib
+import glob
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,8 +36,14 @@ DEFAULT_CONFIG = {
 }
 
 # Never committed: raw sessions and raw source exports can carry secrets or PII,
-# the extraction cache is local, and usage stats are volatile.
-GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl")
+# the extraction cache is local, usage stats are volatile, and `.<name>.<pid>.tmp` is
+# the temp file of an atomic write, which a crash can leave behind.
+GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl", ".*.tmp")
+
+# A write's temp file exists for the milliseconds between writing it and replacing
+# the target, so a `.<name>.<pid>.tmp` sibling older than this is the leftover of a
+# writer that crashed in between, and the next write to that path removes it.
+STALE_TMP_AGE_SECONDS = 600
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -46,6 +54,7 @@ def atomic_write_text(path: Path, text: str) -> None:
     otherwise read each other's half-written claims and persist an empty store.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    _sweep_stale_tmp(path)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         tmp.write_text(text)
@@ -54,6 +63,17 @@ def atomic_write_text(path: Path, text: str) -> None:
         with contextlib.suppress(OSError):
             tmp.unlink()
         raise
+
+
+def _sweep_stale_tmp(path: Path) -> None:
+    """Remove the temp files that earlier writers of `path` crashed and left behind. A
+    temp file younger than `STALE_TMP_AGE_SECONDS` may belong to a write in progress
+    in another process and is left alone."""
+    cutoff = time.time() - STALE_TMP_AGE_SECONDS
+    for stale in path.parent.glob(f".{glob.escape(path.name)}.*.tmp"):
+        with contextlib.suppress(OSError):
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
 
 
 class LoreStore:
@@ -132,13 +152,29 @@ class LoreStore:
         )
         self._write_usage(ordered)
 
+    def write_usage(self, claims: list[Claim]) -> None:
+        """Persist the claims' usage counters to the gitignored sidecar and write nothing
+        else. Serving only ever changes usage, so this is the one write a query or a
+        feedback call makes: `claims.jsonl` stays byte-stable, and a compile that is
+        running at the same time cannot have its result reverted by a serve-time write."""
+        self.ensure_gitignore()
+        self._write_usage(claims)
+
     def load_claims(self) -> list[Claim]:
         claims = [Claim.model_validate_json(ln) for ln in self._read_jsonl(self.claims_path)]
-        usage = self._load_usage()
+        usage = self.load_usage()
         for c in claims:
             if c.id in usage:
                 c.usage = usage[c.id]
         return claims
+
+    def load_usage(self) -> dict[str, UsageStats]:
+        """The usage sidecar as it is on disk right now, keyed by claim id."""
+        out: dict[str, UsageStats] = {}
+        for ln in self._read_jsonl(self.usage_path):
+            row = json.loads(ln)
+            out[row["id"]] = UsageStats.model_validate(row["usage"])
+        return out
 
     def _stamp_entry_time(self, claims: list[Claim], now: datetime) -> list[Claim]:
         """Stamp `compiled_at` on claims entering the store for the first time.
@@ -178,13 +214,6 @@ class LoreStore:
             if c.usage != UsageStats()
         ]
         atomic_write_text(self.usage_path, "".join(json.dumps(r) + "\n" for r in rows))
-
-    def _load_usage(self) -> dict[str, UsageStats]:
-        out: dict[str, UsageStats] = {}
-        for ln in self._read_jsonl(self.usage_path):
-            row = json.loads(ln)
-            out[row["id"]] = UsageStats.model_validate(row["usage"])
-        return out
 
     # --- conflicts ---
     def write_conflicts(self, conflicts: list[Conflict]) -> None:

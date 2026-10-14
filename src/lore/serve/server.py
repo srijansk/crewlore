@@ -98,7 +98,9 @@ class KnowledgeServer:
             if c.id in served_ids:
                 c.usage.times_served += 1
                 c.usage.last_served_at = now
-        self.store.write_claims(claims)
+        # Usage only: a query must never rewrite claims.jsonl, which would churn the
+        # committed file and could revert a compile finishing at the same moment.
+        self.store.write_usage(claims)
         # Return the freshly-incremented claim objects, preserving rank order.
         by_id = {c.id: c for c in claims}
         return [by_id[c.id] for c in ranked]
@@ -123,4 +125,4 @@ class KnowledgeServer:
         for c in claims:
             if c.id in ids:
                 setattr(c.usage, field, getattr(c.usage, field) + 1)
-        self.store.write_claims(claims)
+        self.store.write_usage(claims)

@@ -2,11 +2,13 @@
 using a fake extractor, and verify claims, conflicts, and the book are written.
 """
 
+import errno
 import subprocess
 from datetime import datetime, timezone
 
 import pytest
 
+import lore.compile.run as run_module
 from lore.compile.run import (
     CompileInProgress,
     HeadMoved,
@@ -16,6 +18,7 @@ from lore.compile.run import (
     run_render,
 )
 from lore.schemas import Anchor, Claim, NSFEvent, Provenance
+from lore.serve.server import KnowledgeServer
 from lore.store import LoreStore
 
 
@@ -183,3 +186,65 @@ def test_render_creates_nothing_in_a_store_without_claims(tmp_path):
         tmp_path / ".lore" / "knowledge" / "README.md",
     ):
         assert not path.exists()
+
+
+# GUARDS: serving never takes the compile lock, so a `lore query` or MCP call answered
+# while the model works bumps the usage sidecar in the middle of a compile. The compile
+# persists from the snapshot it loaded at the start; writing that snapshot's usage back
+# would erase the bump, and the lifecycle would later archive the claim as never served.
+def test_a_query_served_during_the_compile_keeps_its_usage_bump(tmp_path):
+    store = LoreStore(tmp_path)
+    store.init()
+    served = _claim("dedupe on idempotency key", "ses_0")
+    store.write_claims([served])
+    _signal_session(store, "ses_1", "use idempotency key")
+
+    class QueryingExtractor:
+        """Stands in for a model call during which a query is answered."""
+
+        def extract(self, events, session_id, known_topics=None):
+            hits = KnowledgeServer(store).query("idempotency key")
+            assert [c.id for c in hits] == [served.id]
+            return [_claim("retry the webhook with backoff", session_id)]
+
+    run_compile(store, QueryingExtractor())
+
+    by_id = {c.id: c for c in store.load_claims()}
+    assert len(by_id) == 2
+    assert by_id[served.id].usage.times_served == 1
+    assert store.load_usage()[served.id].times_served == 1
+
+
+# GUARDS: a lock call can fail because the filesystem cannot lock at all (ENOLCK on some
+# network mounts). That is not another compile: mapping every OSError to
+# CompileInProgress skipped every compile on such a mount forever, behind a line that
+# blamed a compile that did not exist. Only a "held" errno means another compile.
+def test_a_filesystem_without_lock_support_warns_once_and_compiles(
+    tmp_path, monkeypatch, capsys
+):
+    store = LoreStore(tmp_path)
+    store.init()
+    _signal_session(store, "ses_1", "use idempotency key")
+    extractor = DictExtractor({"ses_1": [_claim("dedupe on idempotency key", "ses_1")]})
+    unlocked = []
+
+    def no_lock_support(fd):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(run_module, "_lock_exclusive", no_lock_support)
+    monkeypatch.setattr(run_module, "_unlock", lambda fd: unlocked.append(fd))
+    monkeypatch.setattr(run_module, "_warned_unguarded", False)
+
+    run_compile(store, extractor)
+    run_compile(store, extractor)
+    assert len(store.load_claims()) == 1
+    assert unlocked == []  # nothing was locked, so nothing is unlocked
+    err = capsys.readouterr().err
+    assert err.count("run unguarded") == 1 and "No locks available" in err
+
+    def held_elsewhere(fd):
+        raise OSError(errno.EAGAIN, "Resource temporarily unavailable")
+
+    monkeypatch.setattr(run_module, "_lock_exclusive", held_elsewhere)
+    with pytest.raises(CompileInProgress, match="another compile is running"):
+        run_compile(store, extractor)

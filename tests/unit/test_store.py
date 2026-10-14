@@ -224,3 +224,40 @@ def test_claims_are_replaced_in_one_step_and_a_failed_write_keeps_the_old_file(
     assert len(store.load_claims()) == 1 and store.load_claims()[0].statement == "b"
     leftovers = [p.name for p in store.claims_path.parent.iterdir() if p.name.endswith(".tmp")]
     assert leftovers == []
+
+
+# GUARDS: a writer that crashes between writing its temp file and the replace leaves
+# `.<name>.<pid>.tmp` behind. It must never show up as untracked, and the next write
+# of that path must sweep it; a young temp file may be another process's write in
+# progress and is left alone, as is any other path's temp file.
+def test_stale_temp_files_are_gitignored_and_swept_by_the_next_write(tmp_path):
+    import subprocess
+    import time
+
+    from lore.store import STALE_TMP_AGE_SECONDS
+
+    store = LoreStore(tmp_path)
+    store.init()
+    store.write_claims([_claim("a")])
+    assert ".*.tmp" in (tmp_path / ".lore" / ".gitignore").read_text().splitlines()
+
+    old = time.time() - STALE_TMP_AGE_SECONDS - 1
+    stale = store.claims_path.with_name(".claims.jsonl.99999.tmp")
+    stale.write_text("half-written")
+    os.utime(stale, (old, old))
+    young = store.claims_path.with_name(".claims.jsonl.99998.tmp")
+    young.write_text("a write in progress elsewhere")
+    other = store.conflicts_path.with_name(".conflicts.jsonl.99997.tmp")
+    other.write_text("another path's leftover")
+    os.utime(other, (old, old))
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    untracked = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert ".tmp" not in untracked, untracked
+
+    store.write_claims([_claim("b")])
+    assert not stale.exists()
+    assert young.exists() and other.exists()
