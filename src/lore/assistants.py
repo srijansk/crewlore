@@ -12,8 +12,11 @@ Two mechanisms, chosen per assistant:
 
 Install and uninstall are inverses: every file written carries an ownership marker,
 uninstall removes only files that carry it and only the marked block from instruction
-files, line endings and trailing newlines are preserved byte for byte, and nothing is
-written through a symbolic link. Nothing here runs a model or touches `.lore/`.
+files (plus the directories that leaves empty, up to the assistant's own directory),
+your text and its line endings are kept as they were, and a project install never
+writes through a symbolic link, so a hostile checkout cannot redirect writes outside
+itself. A user's own configuration directory may be symlinked dotfiles, so user
+installs follow links. Nothing here runs a model or touches `.lore/`.
 """
 
 from __future__ import annotations
@@ -37,8 +40,8 @@ _SKILL_DESCRIPTION = (
     "Consult the repository's compiled team knowledge (crewlore, the .lore/ directory) "
     "before changing code in a repository that has one, and whenever the user mentions "
     "lore, crewlore, team knowledge or claims, or asks whether something was decided, "
-    "tried, or declined before. Runs `lore query` for claims with verbatim anchors and an "
-    "adoption flag, and `lore feedback` when the work is done."
+    "tried, or declined before. Runs `lore query` for the relevant claims and their ids, "
+    "and `lore feedback` when the work is done."
 )
 
 SKILL_MD = f"""---
@@ -69,8 +72,9 @@ it; the claim's action says what to do instead.
    with the action (`-> instead:` for declined work). `(no relevant claims)`
    means nothing matched.
 3. `lore query` prints ids, not anchors. When a claim matters for the change,
-   open `.lore/knowledge/README.md`, find the claim under its scope and read its
-   anchor quotes. A `path:line` anchor opens in the repository; a
+   open `.lore/knowledge/README.md`, find the claim's statement under its scope
+   heading (the book lists statements, not ids) and read its anchor quotes. A
+   `path:line` anchor opens in the repository; a
    `<session>#event-N` anchor points into a session file that exists only on the
    machine that compiled it.
 4. Do not re-propose a `not adopted` approach unless the user asks for it
@@ -113,6 +117,10 @@ alwaysApply: true
 
 class AssistantsError(ValueError):
     """Anything that stops an install or uninstall, reported to the user as one line."""
+
+
+class UsageError(AssistantsError):
+    """The command line itself is wrong (an unknown platform name)."""
 
 
 @dataclass(frozen=True)
@@ -171,7 +179,7 @@ def parse_platforms(spec: str) -> list[str]:
             names.append(name)
     unknown = [n for n in names if n not in PLATFORMS]
     if unknown:
-        raise AssistantsError(
+        raise UsageError(
             f"unknown platform(s): {', '.join(unknown)}; choose from {', '.join(PLATFORMS)} or auto"
         )
     return names
@@ -195,7 +203,8 @@ def target(platform: str, *, project: bool, repo: Path) -> Target:
     if platform == "codex":
         if project:
             return Target("codex", repo, repo / ".agents" / skill, repo / "AGENTS.md")
-        return Target("codex", home, home / ".agents" / skill, _codex_home() / "AGENTS.md")
+        agents = home / ".agents"
+        return Target("codex", agents, agents / skill, _codex_home() / "AGENTS.md")
     if platform == "gemini":
         if project:
             return Target("gemini", repo, repo / ".gemini" / skill, repo / "GEMINI.md")
@@ -221,8 +230,10 @@ def install(
 ) -> list[str]:
     """Write the skill (and, when asked, the instruction block or rule).
 
-    Every target is resolved and checked before anything is written, so one
-    platform's refusal cannot leave another half-installed. Returns one line per file.
+    Every target is resolved and checked before anything is written (symbolic links
+    on a project install, ownership, UTF-8, that the path can be created and written),
+    so one platform's refusal cannot leave another half-installed. Returns one line per
+    file.
     """
     targets = [target(name, project=project, repo=repo) for name in platforms]
     for tgt in targets:
@@ -230,7 +241,7 @@ def install(
         rule = tgt.rule_path if always_on else None
         for path in (tgt.skill_path, instruction, rule):
             if path is not None:
-                _refuse_symlinks(path, tgt.root)
+                _check_writable(path, tgt.root, strict=project)
         if tgt.skill_path is not None and not force and not _owned_or_absent(tgt.skill_path):
             raise AssistantsError(
                 f"{tgt.skill_path} exists and was not written by crewlore; "
@@ -243,30 +254,51 @@ def install(
         if instruction is not None and instruction.exists():
             _read_text(instruction)  # fail before writing anything if it is not UTF-8
     lines: list[str] = []
+    try:
+        _write_targets(targets, always_on, lines)
+    except OSError as exc:
+        done = "; ".join(lines) or "nothing"
+        raise AssistantsError(f"{exc}. Already written: {done}") from exc
+    return lines
+
+
+def _write_targets(targets: list[Target], always_on: bool, lines: list[str]) -> None:
     written: set[Path] = set()
     for tgt in targets:
         if tgt.skill_path is not None:
             if tgt.skill_path in written:
                 lines.append(f"{tgt.platform}: shares the skill at {tgt.skill_path}")
             else:
-                _write_text(tgt.skill_path, _stamp(SKILL_MD))
+                verb = _put(tgt.skill_path, _stamp(SKILL_MD))
                 written.add(tgt.skill_path)
-                lines.append(f"{tgt.platform}: skill written to {tgt.skill_path}")
+                lines.append(f"{tgt.platform}: skill {verb} at {tgt.skill_path}")
         if not always_on:
             continue
         if tgt.rule_path is not None:
-            _write_text(tgt.rule_path, _stamp(CURSOR_RULE))
-            lines.append(f"{tgt.platform}: rule written to {tgt.rule_path}")
+            verb = _put(tgt.rule_path, _stamp(CURSOR_RULE))
+            lines.append(f"{tgt.platform}: rule {verb} at {tgt.rule_path}")
         elif tgt.instruction_path is not None:
             changed = upsert_block(tgt.instruction_path, INSTRUCTION_BLOCK)
             verb = "updated" if changed else "already current"
             lines.append(f"{tgt.platform}: instruction block {verb} in {tgt.instruction_path}")
+        elif tgt.platform == "agents":
+            lines.append(
+                "agents: no instruction file at this location; use --platform codex, which "
+                "shares this skill directory and has AGENTS.md"
+            )
         else:
             lines.append(
                 f"{tgt.platform}: no user-wide instruction file; run with --project for "
                 "an always-on rule in the repository"
             )
-    return lines
+
+
+def _put(path: Path, text: str) -> str:
+    """Write `text` unless the file already holds it; returns `written` or `already current`."""
+    if path.exists() and _read_text(path) == text:
+        return "already current"
+    _write_text(path, text)
+    return "written"
 
 
 def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(".")) -> list[str]:
@@ -276,13 +308,13 @@ def uninstall(platforms: list[str], *, project: bool = False, repo: Path = Path(
         for path in (tgt.skill_path, tgt.rule_path):
             if path is None or not (path.exists() or path.is_symlink()):
                 continue
-            if path.is_symlink() or not _owned(path):
+            if (project and path.is_symlink()) or not _owned(path):
                 lines.append(f"{tgt.platform}: left {path} in place (not written by crewlore)")
                 continue
             path.unlink()
             _prune_dirs(path.parent, tgt.root)
             lines.append(f"{tgt.platform}: removed {path}")
-        if tgt.instruction_path is None or tgt.instruction_path.is_symlink():
+        if tgt.instruction_path is None or (project and tgt.instruction_path.is_symlink()):
             continue
         outcome = remove_block(tgt.instruction_path)
         if outcome == "emptied":
@@ -336,12 +368,18 @@ def remove_block(path: Path) -> str:
         return "absent"
     nl = _line_ending(text)
     before = text[: match.start()]
-    if before.endswith(nl):
-        before = before[: -len(nl)]  # the separator install added
-    new = before + _BLOCK_RE.sub("", text[match.end() :])
-    if not new.strip():
+    rest = _BLOCK_RE.sub("", text[match.end() :])
+    # Drop the separator install added before the block, but only where it can be told
+    # from the previous line's own terminator: a blank line before the block, or nothing
+    # after it (the file ended where the block ended). Otherwise the newline belongs to
+    # the line above and removing it would glue that line onto what follows.
+    if before.endswith(nl + nl) or (before.endswith(nl) and not rest):
+        before = before[: -len(nl)]
+    new = before + rest
+    if new == "":
         return "emptied"
-    _write_text(path, new)
+    if new != text:
+        _write_text(path, new)
     return "removed"
 
 
@@ -382,19 +420,42 @@ def _line_ending(text: str) -> str:
 
 
 def _refuse_symlinks(path: Path, root: Path) -> None:
-    """Refuse to write through a symbolic link anywhere between the root and the file."""
+    """Refuse to write through a symbolic link anywhere below the root, root excluded."""
     current = path
-    while True:
+    while current != root and current.parent != current:
         if current.is_symlink():
             raise AssistantsError(f"{current} is a symbolic link; not writing through it")
-        if current == root or current.parent == current:
-            return
         current = current.parent
 
 
+def _check_writable(path: Path, root: Path, *, strict: bool) -> None:
+    """Refuse, before anything is written, a target that could not be written cleanly.
+
+    `strict` (project installs) also refuses symbolic links between the root and the
+    file. In every case the target must be absent or a regular file, and its nearest
+    existing ancestor a writable directory, so a `.cursor` that is a plain file or a
+    root-owned `~/.gemini` is reported as one line instead of a traceback half-way.
+    """
+    if strict:
+        _refuse_symlinks(path, root)
+    if path.exists():
+        if not path.is_file():
+            raise AssistantsError(f"{path} exists and is not a regular file; not touching it")
+        if not os.access(path, os.W_OK):
+            raise AssistantsError(f"{path} is not writable")
+        return
+    nearest = path.parent
+    while not nearest.exists() and nearest.parent != nearest:
+        nearest = nearest.parent
+    if not nearest.is_dir():
+        raise AssistantsError(f"{nearest} is not a directory; cannot create {path}")
+    if not os.access(nearest, os.W_OK):
+        raise AssistantsError(f"{nearest} is not writable; cannot create {path}")
+
+
 def _prune_dirs(directory: Path, root: Path) -> None:
-    """Remove the directories install created, as long as they are empty, up to but not
-    including the root (the repository, or the assistant's configuration directory)."""
+    """Remove directories left empty, up to but not including the root (the repository,
+    or the assistant's own directory such as `~/.claude`)."""
     current = directory
     while current != root and current.parent != current:
         try:

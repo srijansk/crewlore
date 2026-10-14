@@ -446,7 +446,7 @@ def install(
     ),
 ):
     """Put the /lore skill into your coding assistant, so it queries the layer itself."""
-    from lore.assistants import AssistantsError, parse_platforms
+    from lore.assistants import AssistantsError, UsageError, parse_platforms
     from lore.assistants import install as install_skill
 
     try:
@@ -454,28 +454,37 @@ def install(
         lines = install_skill(
             platforms, project=project, repo=repo, always_on=always_on, force=force
         )
-    except AssistantsError as exc:
+    except UsageError as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
+    except AssistantsError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
     for line in lines:
         typer.echo(line)
     if project:
         typer.echo("Commit the files above (`git add`) so teammates get the skill too.")
-    typer.echo("Next: open your assistant in a repo that has .lore/ and ask for /lore.")
+    typer.echo(
+        "Next: open your assistant in a repo that has .lore/ and invoke the skill "
+        "(/lore in Claude Code, $lore in Codex; Cursor and Gemini pick it up from its description)."
+    )
 
 
 @app.command()
 def uninstall(platform: str = PlatformOpt, project: bool = ProjectOpt, repo: Path = RepoOpt):
     """Remove the /lore skill and instruction block that `lore install` wrote."""
-    from lore.assistants import AssistantsError, parse_platforms
+    from lore.assistants import AssistantsError, UsageError, parse_platforms
     from lore.assistants import uninstall as uninstall_skill
 
     try:
         platforms = parse_platforms(platform)
         lines = uninstall_skill(platforms, project=project, repo=repo)
-    except AssistantsError as exc:
+    except UsageError as exc:
         typer.echo(f"error: {exc}")
         raise typer.Exit(2) from exc
+    except AssistantsError as exc:
+        typer.echo(f"error: {exc}")
+        raise typer.Exit(1) from exc
     for line in lines:
         typer.echo(line)
 
