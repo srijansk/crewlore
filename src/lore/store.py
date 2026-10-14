@@ -37,8 +37,12 @@ DEFAULT_CONFIG = {
 
 # Never committed: raw sessions and raw source exports can carry secrets or PII,
 # the extraction cache is local, usage stats are volatile, and `.<name>.<pid>.tmp` is
-# the temp file of an atomic write, which a crash can leave behind.
-GITIGNORE_LINES = ("sessions/", "cache/", "sources/", "claims/usage.jsonl", ".*.tmp")
+# the temp file of an atomic write, which a crash can leave behind. Sessions and the
+# cache have been ignored by every version; the writes a compile makes before its head
+# check ask `ensure_gitignore` for just those two lines.
+SESSIONS_IGNORE = "sessions/"
+CACHE_IGNORE = "cache/"
+GITIGNORE_LINES = (SESSIONS_IGNORE, CACHE_IGNORE, "sources/", "claims/usage.jsonl", ".*.tmp")
 
 # A write's temp file exists for the milliseconds between writing it and replacing
 # the target, so a `.<name>.<pid>.tmp` sibling older than this is the leftover of a
@@ -119,17 +123,23 @@ class LoreStore:
             atomic_write_text(self.config_path, yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
         self.ensure_gitignore()
 
-    def ensure_gitignore(self) -> None:
-        """Make sure `.lore/.gitignore` exists and covers every local-only path.
+    def ensure_gitignore(self, *needed: str) -> None:
+        """Make sure `.lore/.gitignore` exists and covers `needed` — every local-only
+        path when nothing is named.
 
         Called from every write path, not only `init`, so a store that was
         written to before `lore init` ran — or that was initialised by an older
         version with a shorter list — can never commit raw sessions or raw
-        source exports by accident.
+        source exports by accident. A missing or empty file gets the full list; an
+        existing one gains only the lines asked for that it lacks, so a write to a
+        directory every version has ignored leaves a tracked `.lore/.gitignore` alone.
+        A compile relies on that: before its head check it writes only sessions and
+        the extraction cache, and the full refresh comes with the claims, after it.
         """
         path = self.lore / ".gitignore"
         existing = path.read_text().splitlines() if path.exists() else []
-        missing = [line for line in GITIGNORE_LINES if line not in existing]
+        wanted = needed if needed and existing else GITIGNORE_LINES
+        missing = [line for line in wanted if line not in existing]
         if not existing or missing:
             atomic_write_text(path, "".join(f"{line}\n" for line in [*existing, *missing]))
 
@@ -228,7 +238,7 @@ class LoreStore:
     def write_session(self, session_id: str, events: list[NSFEvent]) -> None:
         path = self.session_path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.ensure_gitignore()  # raw sessions must never be committable
+        self.ensure_gitignore(SESSIONS_IGNORE)  # raw sessions must never be committable
         self._write_jsonl(path, events)
 
     def load_session(self, session_id: str) -> list[NSFEvent]:
@@ -257,7 +267,7 @@ class LoreStore:
     def save_extraction(self, session_id: str, claims: list[Claim]) -> None:
         path = self.extraction_cache_path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.ensure_gitignore()
+        self.ensure_gitignore(CACHE_IGNORE)
         self._write_jsonl(path, claims)
 
     # --- jsonl helpers ---

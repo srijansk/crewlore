@@ -228,6 +228,36 @@ def test_a_branch_switch_or_a_changed_claims_file_during_the_compile_is_refused(
     assert "backoff" not in store.claims_path.read_text()
 
 
+# GUARDS: "nothing tracked written" must hold for `.lore/.gitignore` too. A store from an
+# older version has a shorter, committed ignore list; the session and cache writes made
+# before the head check must not refresh it, or a compile that ends in HeadMoved has
+# still edited a tracked file. The refresh lands with the claims, after the check.
+def test_head_moved_leaves_an_older_tracked_gitignore_untouched(tmp_path):
+    _git(tmp_path, "init", "-q")
+    lore_dir = tmp_path / ".lore"
+    lore_dir.mkdir()
+    older = "sessions/\ncache/\nclaims/usage.jsonl\n"
+    (lore_dir / ".gitignore").write_text(older)
+    (lore_dir / "config.yaml").write_text("model:\n  provider: anthropic\n")
+    _git(tmp_path, "add", ".lore")
+    _git(tmp_path, "commit", "-q", "-m", "an older store")
+    store = LoreStore(tmp_path)
+    _signal_session(store, "ses_1", "use idempotency key")
+    extractor = DictExtractor({"ses_1": [_claim("dedupe on idempotency key", "ses_1")]})
+
+    with pytest.raises(HeadMoved):
+        run_compile(store, extractor, expect_head="0" * 40)
+    assert (lore_dir / ".gitignore").read_text() == older
+    porcelain = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert porcelain == "", porcelain  # nothing tracked modified, nothing untracked
+
+    run_compile(store, extractor, expect_head=current_head(tmp_path))
+    assert ".*.tmp" in (lore_dir / ".gitignore").read_text().splitlines()
+
+
 # GUARDS: a render reproduces the stored claims and nothing else — not a cached
 # extraction `lore compile` has not committed yet, not a claim a teammate removed in
 # review that this machine's gitignored cache still holds.

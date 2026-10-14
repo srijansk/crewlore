@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from lore.schemas import Anchor, Claim, Conflict, NSFEvent, Provenance
-from lore.store import LoreStore
+from lore.store import GITIGNORE_LINES, LoreStore
 
 
 def _claim(statement, kind="gotcha", scope="services/billing"):
@@ -182,6 +182,34 @@ def test_ensure_gitignore_upgrades_an_older_shorter_list(tmp_path):
     assert lines.count("sessions/") == 1  # idempotent: nothing duplicated
     store.ensure_gitignore()
     assert (tmp_path / ".lore" / ".gitignore").read_text().splitlines() == lines
+
+
+# GUARDS: the writes a compile makes before its head check go to directories every
+# version has ignored. On a store from an older version, refreshing the tracked
+# `.lore/.gitignore` for them would be a tracked write made before the check; the
+# refresh belongs to the claims write, after it. A file that does lack the directory
+# being written to still gains it.
+def test_session_and_cache_writes_leave_an_older_gitignore_alone_until_claims_land(tmp_path):
+    store = LoreStore(tmp_path)
+    (tmp_path / ".lore").mkdir()
+    gitignore = tmp_path / ".lore" / ".gitignore"
+    older = "sessions/\ncache/\nclaims/usage.jsonl\n"
+    gitignore.write_text(older)
+    event = NSFEvent(
+        session="abc", actor="user", kind="user_message",
+        timestamp=datetime(2026, 5, 19, tzinfo=timezone.utc), content="hi",
+    )
+    store.write_session("abc", [event])
+    store.save_extraction("abc", [])
+    assert gitignore.read_text() == older
+
+    store.write_claims([_claim("a")])
+    lines = gitignore.read_text().splitlines()
+    assert lines[:3] == older.splitlines() and set(lines) == set(GITIGNORE_LINES)
+
+    gitignore.write_text("cache/\n")
+    store.write_session("def", [event])
+    assert gitignore.read_text() == "cache/\nsessions/\n"
 
 
 def test_default_config_has_no_dead_keys(tmp_path):
