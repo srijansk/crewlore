@@ -36,7 +36,6 @@ class FatalExtractionError(RuntimeError):
     difference so the compiler can stop and say what is wrong.
     """
 
-
 _PROMPT_HEADER = """You extract reusable team tribal-knowledge claims from one coding-agent session.
 Return ONLY a JSON array. Each item:
   {"statement": str, "kind": "decision"|"procedure"|"gotcha"|"style",
@@ -65,6 +64,7 @@ _TOPIC_REUSE = """When a claim concerns the same question as an existing topic b
 exact topic key (so disagreements about the same question can be detected). Existing topics:
 {topics}
 """
+
 
 
 def _frame_transcript(transcript: str, nonce: str) -> str:
@@ -238,7 +238,9 @@ class LLMExtractor:
         #    when a long agent reply is split by a tool_call between segments)
         # The result: a quote that spans an agent reply punctuated by tool
         # calls still validates against the continuous prose.
-        haystack = _canonical_form("\n".join(e.content for e in events if e.kind != "tool_call"))
+        haystack = _canonical_form(
+            "\n".join(e.content for e in events if e.kind != "tool_call")
+        )
         provenance = Provenance(session=session_id, author=self._author, harness=self._harness)
         index = _LocatorIndex(events, session_id)
 

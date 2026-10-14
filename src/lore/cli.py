@@ -1,13 +1,13 @@
 """`lore` — the single user-facing surface.
 
-lore init        create .lore/ in the repo
-lore compile     ingest new transcripts -> distill -> prune (one pass)
-lore watch       do that automatically on an interval (--once for cron)
-lore import-prs  compile a GitHub repo's pull-request threads
-lore query       task-conditioned retrieval (records usage)
-lore feedback    mark served claims influential or overridden
-lore status      counts + how much of the layer is actually being read
-lore serve       MCP server for query-time retrieval
+    lore init        create .lore/ in the repo
+    lore compile     ingest new transcripts -> distill -> prune (one pass)
+    lore watch       do that automatically on an interval (--once for cron)
+    lore import-prs  compile a GitHub repo's pull-request threads
+    lore query       task-conditioned retrieval (records usage)
+    lore feedback    mark served claims influential or overridden
+    lore status      counts + how much of the layer is actually being read
+    lore serve       MCP server for query-time retrieval
 """
 
 from __future__ import annotations
@@ -56,10 +56,7 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def _main(
     version: bool = typer.Option(
-        False,
-        "--version",
-        callback=_version_callback,
-        is_eager=True,
+        False, "--version", callback=_version_callback, is_eager=True,
         help="Show the crewlore version and exit.",
     ),
 ) -> None:
@@ -186,9 +183,8 @@ def query(
         typer.echo("(no relevant claims)")
         return
     for c in results:
-        typer.echo(
-            f"[{claim_label(c)}] ({sanitize_text(c.scope)}) {sanitize_text(c.statement)}  [{c.id}]"
-        )
+        scope, statement = sanitize_text(c.scope), sanitize_text(c.statement)
+        typer.echo(f"[{claim_label(c)}] ({scope}) {statement}  [{c.id}]")
         if c.action:
             verb = "" if c.adoption == "current" else "instead: "
             typer.echo(f"    -> {verb}{sanitize_text(c.action)}")

@@ -15,18 +15,15 @@ pytest.importorskip("mcp")
 def _store(tmp_path):
     store = LoreStore(tmp_path)
     store.init()
-    store.write_claims(
-        [
-            Claim(
-                statement="dedupe billing webhook on idempotency key",
-                kind="gotcha",
-                scope="services/billing",
-                provenance=Provenance(session="s", author="a", harness="claude-code"),
-                anchors=[Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")],
-                observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
-            )
-        ]
-    )
+    store.write_claims([
+        Claim(
+            statement="dedupe billing webhook on idempotency key", kind="gotcha",
+            scope="services/billing",
+            provenance=Provenance(session="s", author="a", harness="claude-code"),
+            anchors=[Anchor(source_kind="transcript", ref="s#event-1", quote="fires twice")],
+            observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        )
+    ])
     return store
 
 

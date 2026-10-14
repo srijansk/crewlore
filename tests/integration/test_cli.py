@@ -21,8 +21,7 @@ def _seed_claim(tmp_path):
         [
             Claim(
                 statement="dedupe billing webhook on idempotency key",
-                kind="gotcha",
-                scope="services/billing",
+                kind="gotcha", scope="services/billing",
                 provenance=Provenance(session="s", author="a", harness="claude-code"),
                 anchors=[Anchor(source_kind="transcript", ref="s#1", quote="fires twice")],
                 observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
@@ -88,9 +87,7 @@ def test_query_marks_claims_the_team_did_not_adopt(tmp_path):
         [
             Claim(
                 statement="Redis for the webhook idempotency key was proposed and not adopted",
-                kind="decision",
-                scope="services/billing",
-                adoption="not_adopted",
+                kind="decision", scope="services/billing", adoption="not_adopted",
                 action="keep the key inside the database transaction",
                 provenance=Provenance(session="s", author="a", harness="claude-code"),
                 anchors=[Anchor(source_kind="transcript", ref="s#1", quote="not in Redis")],
@@ -185,8 +182,7 @@ def test_query_output_strips_terminal_escapes(tmp_path):
         [
             Claim(
                 statement="dedupe \x1b[31mbilling\x1b[0m webhook on idempotency key",
-                kind="gotcha",
-                scope="services/billing",
+                kind="gotcha", scope="services/billing",
                 provenance=Provenance(session="s", author="a", harness="claude-code"),
                 anchors=[Anchor(source_kind="transcript", ref="s#1", quote="fires twice")],
                 observed_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
