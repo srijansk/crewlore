@@ -279,9 +279,9 @@ The code, pinned data revision and reproduction recipe are in [`studies/palm/`](
 > [!NOTE]
 > **Alpha.** The on-disk format may change before 1.0; format changes are listed in the [CHANGELOG](https://github.com/srijansk/crewlore/blob/main/CHANGELOG.md). Tested on Python 3.10–3.14, with no network calls in the test suite.
 
-- **Works today:** capture from Claude Code transcripts and GitHub pull-request threads, secret scrubbing, the compile pipeline (verbatim-anchor gate, derived anchor positions, adoption field, conflict recording, authority scoring), the book, `lore query`, the MCP server, feedback, and unused-claim decay.
+- **Works today:** capture from Claude Code transcripts and GitHub pull-request threads, secret scrubbing, the compile pipeline (verbatim-anchor gate, derived anchor positions, adoption field, conflict recording, authority scoring), the book, `lore query` and `lore explain`, `lore review`, the `/lore` skill and Claude Code hooks (`lore install`), git hooks that compile after each commit (`lore hook install`), the MCP server, feedback and corrections, and unused-claim decay.
 - **Limits worth knowing:** retrieval is word overlap, not embeddings; the only transcript source is Claude Code (Cursor, Codex and Copilot sessions come in through the PR path); commits outside a pull request are not read; there is no approve-before-serve gate, so review the `.lore/` diff in a PR; the conflict detector flags a disagreement only when one claim is marked not adopted or forbids what another prescribes, so two sessions that merely pick different answers go unflagged; usage and decay are per machine, not shared across the team.
-- **Planned:** a human approve-before-serve gate, transcript adapters for other coding agents, embedding-based retrieval, a real-time capture hook, and a shared usage signal across teammates.
+- **Planned:** a human approve-before-serve gate, transcript adapters for other coding agents, embedding-based retrieval, capture at session end without waiting for a commit, and a shared usage signal across teammates.
 
 ## Contributing
 
