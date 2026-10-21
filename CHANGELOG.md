@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+### Security
+
+- **Hook text cannot pose as markup.** Claude Code wraps a hook's text in its own tags; a `<` that could open or close a tag in a claim, a note, a scope or a file path is now written `&lt;`, so stored text cannot end that wrapper or open one of its own.
+
 ### Fixed
 
-- **The Claude Code hooks now carry corrections.** A claim a reader had corrected with `lore feedback --corrected` or the MCP verdict reached the assistant through the file and prompt hooks with no `corrected` marker and no note, although the book, `lore query`, `lore explain` and the MCP tools showed both. Both hooks now label it `corrected`, put each note on a `!!` line under it, say what the marker means in their preamble when a note is shown, and place a corrected claim after the claims nobody has corrected before the cap cuts: across all of them in the prompt hook, sharing `lore query`'s ordering, and within its own scope in the file hook, so a scope that is shown carries its corrections. A corrections file that cannot be read costs the notes, never the claims. The preamble calls a note something to weigh, not an instruction.
-- **Hook text cannot pose as markup.** Claude Code wraps a hook's text in its own tags; a `<` that could open or close a tag in a claim or a note is now written `&lt;`, so stored text cannot end that wrapper or open one of its own.
+- **The Claude Code hooks now carry corrections.** A claim a reader had corrected with `lore feedback --corrected` or the MCP verdict reached the assistant through the file and prompt hooks with no `corrected` marker and no note, although the book, `lore query`, `lore explain` and the MCP tools showed both. Both hooks now label it `corrected`, put each note on a `!!` line under it, say what the marker means in their preamble when a note is shown, and place a corrected claim after the claims nobody has corrected before the cap cuts: across all of them in the prompt hook, sharing `lore query`'s ordering, and within its own scope in the file hook, so other scopes' claims never push it past the cap. A corrections file that cannot be read costs the notes, never the claims. The preamble calls a note something to weigh, not an instruction.
 
 ## 0.5.0 — 2026-10-15
 
