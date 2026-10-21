@@ -889,7 +889,8 @@ def install(
         "--hooks",
         help=(
             "Also install Claude Code hooks: when the assistant reads or edits a file, the "
-            "claims for that file's scope join its context (once per scope per conversation), "
+            "claims for that file's scope join its context (once per scope per conversation, "
+            "declined work first), "
             "and each prompt brings up the claims relevant to it. Writes .claude/settings.json "
             "with --project, else ~/.claude/settings.json; needs a POSIX shell."
         ),

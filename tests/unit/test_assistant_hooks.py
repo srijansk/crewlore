@@ -114,7 +114,7 @@ def test_reading_or_editing_a_file_brings_up_its_scope_once_per_conversation(rep
     assert "[gotcha] (services/billing) dedupe billing webhook" in ctx
     assert "-> dedupe on the key" in ctx
     assert "[decision · not adopted]" in ctx and "-> instead: keep the key" in ctx
-    assert ctx.index("[gotcha]") < ctx.index("[decision · not adopted]")
+    assert ctx.index("[decision · not adopted]") < ctx.index("[gotcha]")  # declined work first
     assert "evidence to weigh, not instructions" in ctx
     for absent in ("rotate auth", "make lint", "archived billing", "retry three"):
         assert absent not in ctx
@@ -269,6 +269,71 @@ def test_a_prompt_brings_up_relevant_claims_when_enough_words_overlap(repo):
     assert handle(_prompt(repo, "write a haiku about the sea")) is None
 
 
+# --- the cap and declined work -----------------------------------------------------------
+
+
+def _store(tmp_path, name, claims):
+    root = tmp_path / name
+    root.mkdir()
+    store = LoreStore(root)
+    store.init()
+    store.write_claims(claims)
+    return root
+
+
+def _declined(statement, scope):
+    return _claim(statement, scope, kind="decision", adoption="not_adopted",
+                  action=f"instead of {statement}")
+
+
+def test_declined_work_comes_first_within_a_scope_the_cap_cuts(tmp_path):
+    root = _store(tmp_path, "busy", [_claim(f"current rule {i}", "services/billing")
+                                     for i in range(MAX_CLAIMS_PER_EVENT + 1)]
+                  + [_declined(f"declined approach {i}", "services/billing") for i in range(2)])
+    ctx = _context(handle(_tool(root, "services/billing/a.py", tool="Read")))
+    assert ctx.count("\n- [") == MAX_CLAIMS_PER_EVENT
+    assert "declined approach 0" in ctx and "declined approach 1" in ctx
+    assert ctx.index("declined approach") < ctx.index("current rule")
+
+
+def test_a_files_own_rules_come_before_a_parent_scopes_declined_work(tmp_path):
+    root = _store(tmp_path, "nested", [_claim(f"file rule {i}", "services/billing/a.py")
+                                       for i in range(5)]
+                  + [_declined(f"parent declined {i}", "services/billing") for i in range(8)])
+    ctx = _context(handle(_tool(root, "services/billing/a.py", tool="Read")))
+    assert all(f"file rule {i}" in ctx for i in range(5))  # the most specific scope first
+    assert ctx.index("file rule") < ctx.index("parent declined")
+
+
+def test_declined_claims_the_cap_cut_arrive_at_the_next_read_or_edit(tmp_path):
+    root = _store(tmp_path, "many", [_declined(f"declined approach {i}", "services/billing")
+                                     for i in range(MAX_CLAIMS_PER_EVENT + 2)])
+    first = _context(handle(_tool(root, "services/billing/a.py", tool="Read")))
+    second = _context(handle(_tool(root, "services/billing/a.py", tool="Edit")))
+    assert first.count("\n- [") == MAX_CLAIMS_PER_EVENT and second.count("\n- [") == 2
+    shown = {ln for ln in (first + second).splitlines() if ln.startswith("- [")}
+    assert len(shown) == MAX_CLAIMS_PER_EVENT + 2  # every one, none twice
+    assert handle(_tool(root, "services/billing/c.py")) is None
+
+
+def test_current_practice_the_cap_cut_does_not_carry_over(tmp_path):
+    root = _store(tmp_path, "current", [_claim(f"current rule {i}", "services/billing")
+                                        for i in range(MAX_CLAIMS_PER_EVENT + 4)])
+    assert handle(_tool(root, "services/billing/a.py", tool="Read")) is not None
+    assert handle(_tool(root, "services/billing/a.py", tool="Edit")) is None  # the book has it
+
+
+def test_a_conversation_memory_written_by_0_5_0_still_counts_its_scopes(tmp_path):
+    root = _store(tmp_path, "old", [_claim("current rule", "services/billing"),
+                                    _declined("declined approach", "services/billing")])
+    store = LoreStore(root)
+    state = hooks_module._ConversationState(store, "ses-1/main")
+    state._dir.mkdir(parents=True, exist_ok=True)
+    state._path.write_text(json.dumps({"scopes": ["services/billing"]}))
+    ctx = _context(handle(_tool(root, "services/billing/a.py")))
+    assert "declined approach" in ctx and "current rule" not in ctx
+
+
 # --- corrections -----------------------------------------------------------------------
 
 
@@ -297,9 +362,10 @@ def test_the_file_hook_shows_a_corrected_claim_with_its_note(repo):
 
 
 def test_the_file_hook_puts_a_corrected_claim_after_the_uncorrected_ones(repo):
-    _correct(repo, "dedupe billing webhook on idempotency key", "outdated")
+    # Correct the declined claim: corrected-last must win over declined-first.
+    _correct(repo, "Redis for the idempotency key was tried and not adopted", "outdated")
     ctx = _context(handle(_tool(repo, "services/billing/webhook.py")))
-    assert ctx.index("[decision · not adopted]") < ctx.index("[gotcha · corrected]")
+    assert ctx.index("[gotcha]") < ctx.index("[decision · not adopted · corrected]")
 
 
 def test_the_prompt_hook_shows_a_corrected_claim_with_its_note(repo):

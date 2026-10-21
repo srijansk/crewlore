@@ -5,9 +5,11 @@ layer knows about.
 Three hooks, installed by `lore install --hooks` into Claude Code's settings file:
 
 * `PreToolUse` on `Read`, `Edit` and `Write`: the claims whose scope covers the file,
-  once per scope per conversation. Claude Code delivers the text next to the tool's
-  result, so in the usual read-then-edit flow the claims are in view before the edit;
-  after a direct edit they arrive with its result, before the edits that follow.
+  once per scope per conversation, most specific scope first and declined work first
+  within each scope; a declined claim the size cap leaves out comes at a later read or
+  edit in its scope. Claude Code delivers the text next to the tool's result, so in
+  the usual read-then-edit flow the claims are in view before the edit; after a direct
+  edit they arrive with its result, before the edits that follow.
 * `UserPromptSubmit`: the claims most relevant to the prompt, as `lore query` would
   return them, with a two-word relevance floor.
 * `SessionStart` on `compact`: compaction drops injected context, so the memory of
@@ -308,9 +310,10 @@ def scopes_covering(rel_path: str, claims: list[Claim]) -> dict[str, list[Claim]
 
 class _ConversationState:
     """Which scopes this conversation has already been shown, so a hook that fires on
-    every read and edit tells the assistant about a scope once. Claude Code runs
-    matching hooks in parallel, so the file is updated under the store's lock and
-    replaced atomically."""
+    every read and edit tells the assistant about a scope once, and which declined
+    claims it has shown, so declined work the size cap left out still comes. Claude
+    Code runs matching hooks in parallel, so the file is updated under the store's lock
+    and replaced atomically. A file written by 0.5.0 holds only scopes, and still counts."""
 
     def __init__(self, store: LoreStore, conversation: str):
         directory = store.lore / "cache" / _STATE_DIR
@@ -318,25 +321,30 @@ class _ConversationState:
         self._store = store
         self._dir = directory
         self._path = directory / f"{digest}.json"
-        self.scopes = self._load()
+        self.scopes, self.declined = self._load()
 
-    def _load(self) -> set[str]:
+    def _load(self) -> tuple[set[str], set[str]]:
         try:
-            return set(json.loads(self._path.read_text(encoding="utf-8"))["scopes"])
-        except (OSError, ValueError, KeyError, TypeError):
-            return set()
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+            return set(data["scopes"]), set(data.get("declined", []))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return set(), set()
 
-    def remember(self, scopes: list[str]) -> None:
+    def remember(self, scopes: list[str], declined: list[str]) -> None:
         with self._store.locked(_STATE_DIR):
-            self.scopes = self._load() | set(scopes)
+            old_scopes, old_declined = self._load()
+            self.scopes, self.declined = old_scopes | set(scopes), old_declined | set(declined)
             self._store.ensure_gitignore()
-            atomic_write_text(self._path, json.dumps({"scopes": sorted(self.scopes)}))
+            atomic_write_text(
+                self._path,
+                json.dumps({"scopes": sorted(self.scopes), "declined": sorted(self.declined)}),
+            )
         self._expire()
 
     def forget(self) -> None:
         """Compaction dropped what this conversation was shown; start over."""
         self._path.unlink(missing_ok=True)
-        self.scopes = set()
+        self.scopes, self.declined = set(), set()
 
     def _expire(self) -> None:
         cutoff = time.time() - STATE_TTL_SECONDS
@@ -495,15 +503,26 @@ def _edit_context(event: Event) -> dict | None:
     store = LoreStore(repo)
     covering = scopes_covering(rel, store.load_claims())
     state = _ConversationState(store, f"{event.session}/{event.agent}")
-    fresh = [scope for scope in covering if scope not in state.scopes]
+
+    def owed(scope: str, c: Claim) -> bool:
+        # A scope's claims come once; declined work the cap left out comes until shown.
+        return scope not in state.scopes or (
+            c.adoption != "current" and c.id not in state.declined
+        )
+
+    pending = {scope: [c for c in covering[scope] if owed(scope, c)] for scope in covering}
+    fresh = [scope for scope in covering if pending[scope]]
     if not fresh:
         return None
     notes = _notes(store)
-    # A corrected claim is probably wrong: it still comes, with its note, but after the
-    # claims nobody has corrected in its own scope, so other scopes' claims never push it
-    # past the cap; only its own scope's can.
+    # Most specific scope first. Within a scope, declined work comes first, since the
+    # hook fires as the assistant is about to change the file, as `lore review` orders
+    # it; then current practice; a corrected claim, probably wrong, comes last with its
+    # note, so other scopes' claims never push it past the cap; only its own scope's can.
     available = [
-        c for scope in fresh for c in sorted(covering[scope], key=lambda c: c.id in notes)
+        c
+        for scope in fresh
+        for c in sorted(pending[scope], key=lambda c: (c.id in notes, c.adoption == "current"))
     ]
     text, shown = format_context(
         f"for {', '.join(fresh)}, the scope of {rel}", available, notes
@@ -512,9 +531,10 @@ def _edit_context(event: Event) -> dict | None:
     # assistant; a scope the cap pushed out entirely comes up at the next edit.
     shown_ids = {c.id for c in shown}
     seen = [scope for scope in fresh if any(c.id in shown_ids for c in covering[scope])]
+    declined = sorted(c.id for c in shown if c.adoption != "current")
     output = _output(event.name, text)
     try:  # bookkeeping must never cost the assistant the context it was built for
-        state.remember(seen)
+        state.remember(seen, declined)
         KnowledgeServer(store).mark_served(sorted(shown_ids))
     except OSError as exc:
         print(f"crewlore hook: {type(exc).__name__}: {exc}", file=sys.stderr)
