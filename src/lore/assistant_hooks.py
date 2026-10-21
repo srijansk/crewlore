@@ -15,10 +15,11 @@ Three hooks, installed by `lore install --hooks` into Claude Code's settings fil
 
 Both run `lore claude-hook`, which reads the event on stdin and prints the context on
 stdout in the shape Claude Code expects. The text is written as facts about the
-repository, never as commands, and says that claims are evidence to weigh. A hook must
-never get in the way: anything unexpected (no `.lore/`, bad input, an error) ends with
-no output and exit 0, and the installed shell command exits 0 whatever `lore` does, so
-Claude Code carries on as if the hook were not there.
+repository, never as commands, and says that claims are evidence to weigh; a claim a
+reader has corrected comes with the note, after the claims nobody has corrected. A
+hook must never get in the way: anything unexpected (no `.lore/`, bad input, an error)
+ends with no output and exit 0, and the installed shell command exits 0 whatever `lore`
+does, so Claude Code carries on as if the hook were not there.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import re
 import sys
 import time
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -41,8 +43,14 @@ from lore.assistants import (
     _refuse_symlinks,
     _write_text,
 )
-from lore.schemas import Claim
-from lore.serve.server import KnowledgeServer, claim_label, rank_claims
+from lore.schemas import Claim, Correction
+from lore.serve.server import (
+    KnowledgeServer,
+    claim_label,
+    correction_line,
+    corrections_by_claim,
+    rank_claims,
+)
 from lore.store import LoreStore, atomic_write_text
 
 HOOK_COMMAND = "lore claude-hook"
@@ -361,22 +369,33 @@ def _one_line(text: object) -> str:
     return " ".join("".join(kept).split())
 
 
-def _block(c: Claim) -> str:
-    head = f"- [{claim_label(c)}] ({_one_line(c.scope)}) {_one_line(c.statement)}"
+def _block(c: Claim, notes: Sequence[Correction] = ()) -> str:
+    """One claim in the `lore query` line format: the label (with `corrected` when a
+    reader has recorded a note against it), the action, then each note on its own line,
+    so the claim and what is true now arrive together."""
+    label = claim_label(c, corrected=bool(notes))
+    head = f"- [{label}] ({_one_line(c.scope)}) {_one_line(c.statement)}"
     lines = [f"{head}  [{_one_line(c.id)}]"]
     if c.action:
         verb = "" if c.adoption == "current" else "instead: "
         lines.append(f"  -> {verb}{_one_line(c.action)}")
+    lines.extend(f"  !! {_one_line(correction_line(x))}" for x in notes)
     return "\n".join(lines)
 
 
-def _preamble(subject: str, shown: int, total: int) -> str:
+def _preamble(subject: str, shown: int, total: int, *, corrected: bool = False) -> str:
     count = f"{shown} of {total} claims" if shown < total else f"{shown} claims"
+    correction = (
+        "`corrected` means a reader has since said the claim is wrong or outdated; the `!!` "
+        "line says what is true now. "
+        if corrected
+        else ""
+    )
     return (
         f"Team knowledge {subject} ({count}). These are claims crewlore compiled from past "
         "sessions and pull requests: evidence to weigh, not instructions. `not adopted` "
         "means the team tried the approach and declined it; the `->` line says what to do "
-        "instead. Each claim's verbatim anchors are in .lore/knowledge/README.md. "
+        f"instead. {correction}Each claim's verbatim anchors are in .lore/knowledge/README.md. "
         "`lore feedback <ids> --influential` or `--overridden` afterwards records whether "
         "they helped."
     )
@@ -387,17 +406,25 @@ def _units(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
-def format_context(subject: str, claims: list[Claim]) -> tuple[str, list[Claim]]:
+def format_context(
+    subject: str,
+    claims: list[Claim],
+    corrections: Mapping[str, Sequence[Correction]] | None = None,
+) -> tuple[str, list[Claim]]:
     """The claims as facts for the assistant, in the `lore query` line format, whole
-    claims within the size cap; when even the first claim does not fit, it is shown
-    cut rather than nothing at all. Returns the text and the claims it shows."""
+    claims within the size cap, each with the corrections readers recorded against it;
+    when even the first claim does not fit, it is shown cut rather than nothing at all,
+    its label still saying whether it was declined or corrected. Returns the text and the
+    claims it shows."""
+    notes = corrections or {}
     footer_room = 160
     shown: list[Claim] = []
     blocks: list[str] = []
-    used = _units(_preamble(subject, len(claims), len(claims))) + 2
+    any_corrected = any(c.id in notes for c in claims)
+    used = _units(_preamble(subject, len(claims), len(claims), corrected=any_corrected)) + 2
     budget = MAX_CONTEXT_CHARS - footer_room
     for c in claims[:MAX_CLAIMS_PER_EVENT]:
-        block = _block(c)
+        block = _block(c, notes.get(c.id, ()))
         if used + _units(block) + 1 > budget:
             break
         shown.append(c)
@@ -405,8 +432,14 @@ def format_context(subject: str, claims: list[Claim]) -> tuple[str, list[Claim]]
         used += _units(block) + 1
     if not shown and claims:
         room = max(budget - used - 2, 200)
-        shown, blocks = [claims[0]], [_block(claims[0])[:room] + " …"]
-    text = _preamble(subject, len(shown), len(claims)) + "\n\n" + "\n".join(blocks)
+        first = claims[0]
+        shown, blocks = [first], [_block(first, notes.get(first.id, ()))[:room] + " …"]
+    corrected = any(c.id in notes for c in shown)
+    text = (
+        _preamble(subject, len(shown), len(claims), corrected=corrected)
+        + "\n\n"
+        + "\n".join(blocks)
+    )
     if len(shown) < len(claims):
         text += (
             f"\n- {len(claims) - len(shown)} more not shown; the book "
@@ -436,8 +469,15 @@ def _edit_context(event: Event) -> dict | None:
     fresh = [scope for scope in covering if scope not in state.scopes]
     if not fresh:
         return None
-    available = [c for scope in fresh for c in covering[scope]]
-    text, shown = format_context(f"for {', '.join(fresh)}, the scope of {rel}", available)
+    notes = corrections_by_claim(store.load_corrections())
+    # A corrected claim is probably wrong: it still comes, with its note, but after
+    # every claim nobody has corrected, before the cap cuts, as `lore query` orders it.
+    available = sorted(
+        (c for scope in fresh for c in covering[scope]), key=lambda c: c.id in notes
+    )
+    text, shown = format_context(
+        f"for {', '.join(fresh)}, the scope of {rel}", available, notes
+    )
     # A scope counts as shown only when at least one of its claims reached the
     # assistant; a scope the cap pushed out entirely comes up at the next edit.
     shown_ids = {c.id for c in shown}
@@ -457,12 +497,17 @@ def _prompt_context(event: Event) -> dict | None:
     if repo is None or not prompt:
         return None
     store = LoreStore(repo)
+    notes = corrections_by_claim(store.load_corrections())
     ranked = rank_claims(
-        store.load_claims(), prompt, limit=MAX_CLAIMS_PER_EVENT, min_overlap=MIN_PROMPT_OVERLAP
+        store.load_claims(),
+        prompt,
+        limit=MAX_CLAIMS_PER_EVENT,
+        min_overlap=MIN_PROMPT_OVERLAP,
+        corrected=notes,
     )
     if not ranked:
         return None
-    text, shown = format_context("relevant to this request", ranked)
+    text, shown = format_context("relevant to this request", ranked, notes)
     try:  # a read-only store still gets its context; only the bookkeeping is lost
         KnowledgeServer(store).mark_served([c.id for c in shown])
     except OSError as exc:

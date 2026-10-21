@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The Claude Code hooks now carry corrections.** A claim a reader had corrected with `lore feedback --corrected` or the MCP verdict reached the assistant through the file and prompt hooks with no `corrected` marker and no note, although the book, `lore query`, `lore explain` and the MCP tools showed both. Both hooks now label it `corrected`, put each note on a `!!` line under it, say what the marker means in their preamble when a corrected claim is shown, and place corrected claims after every claim nobody has corrected before the cap cuts, as `lore query` does. `rank_claims` takes the corrected ids, so the prompt hook and `lore query` share one ordering.
+
 ## 0.5.0 — 2026-10-15
 
 ### Security
