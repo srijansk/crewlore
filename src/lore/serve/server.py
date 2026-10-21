@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from collections.abc import Iterable, Mapping
+from collections.abc import Container, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -39,13 +39,20 @@ def _claim_text(c: Claim) -> str:
 
 
 def rank_claims(
-    claims: list[Claim], query: str, limit: int = 5, *, min_overlap: int = 1
+    claims: list[Claim],
+    query: str,
+    limit: int = 5,
+    *,
+    min_overlap: int = 1,
+    corrected: Container[str] = (),
 ) -> list[Claim]:
     """Pure relevance ranking over active claims. No side effects.
 
     `min_overlap` is how many content words a claim must share with the query to count;
     the default of one is right for an explicit query, a hook that fires on every prompt
-    asks for more.
+    asks for more. Claims whose ids are in `corrected` (a reader has said they are wrong
+    or outdated) come after every claim nobody has corrected, in relevance order, and
+    the demotion is applied before the list is cut to `limit`, not within it.
     """
     q = _tokens(query)
     scored: list[tuple[int, float, Claim]] = []
@@ -56,7 +63,9 @@ def rank_claims(
         if overlap >= max(1, min_overlap):
             scored.append((overlap, c.authority, c))
     scored.sort(key=lambda t: (t[0], t[1], t[2].id), reverse=True)
-    return [c for _, _, c in scored[:limit]]
+    ranked = [c for _, _, c in scored]
+    ranked.sort(key=lambda c: c.id in corrected)
+    return ranked[:limit]
 
 
 def anchor_to_dict(a: Anchor) -> dict:
@@ -344,12 +353,11 @@ class KnowledgeServer:
         has already loaded them, saves a second read of the log."""
         claims = self.store.load_claims()
         # A claim a reader has corrected is probably wrong: it is still served, with
-        # its note, but after every claim nobody has corrected, so the demotion is
-        # applied before the page is cut, not within it.
-        ranked = rank_claims(claims, text, limit=len(claims), min_overlap=min_overlap)
-        corrected = set(self.corrections_by_claim() if corrections is None else corrections)
-        ranked.sort(key=lambda c: c.id in corrected)
-        ranked = ranked[:limit]
+        # its note, but after every claim nobody has corrected (see `rank_claims`).
+        corrected = self.corrections_by_claim() if corrections is None else corrections
+        ranked = rank_claims(
+            claims, text, limit=limit, min_overlap=min_overlap, corrected=corrected
+        )
         by_id = self.mark_served([c.id for c in ranked])
         # Return the freshly-incremented claim objects, preserving rank order.
         return [by_id[c.id] for c in ranked]
