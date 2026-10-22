@@ -2,7 +2,7 @@
 
 Does a memory system that compiles engineering work a team **declined** end up storing the declined approach as current practice? This study runs crewlore's extractor and fidelity gate over agent-authored pull requests that were closed without merging, with merged pull requests from the same repositories as controls, and has an independent model judge every claim against the pull request's real outcome. It then tests two interventions: stating the outcome in the transcript, and giving the schema an adoption field plus an instruction to use it.
 
-The finding that changed the product: without a field that can say "tried and not adopted", the extractor never records the rejection in a claim's own text; with one, it does. That field ships in crewlore as `adoption`.
+The finding that changed the product: without a field that can say "tried and not adopted", the extractor never recorded the rejection in a claim's own text; asked to record it, with the field to hold it, it began to (77 of 196 claims). That field ships in crewlore as `adoption`.
 
 The directory is named after the venue the write-up was first prepared for (PALM, a NeurIPS 2026 workshop on long-term memory for AI systems); this repository is the study's primary record, and a preprint will be linked here once posted.
 
@@ -17,6 +17,8 @@ Unit of analysis is the pull request (claims inside one thread are not independe
 | Merged controls | 0.0% extractor, 0.4% summarizer | | 0 of 60, 1 of 60 |
 | Outcome stated in the thread | 30.1% (−14.6 points vs. not stated, p = 0.0002); 8 of 60 threads produced no claims | [22.0, 38.6] | 35 of 60 (58%) |
 | Adoption field plus instruction | 17.5% (a further −12.7 points, p = 0.0038) | [11.6, 23.8] | 25 of 60 (42%) |
+
+A later check (`studies/palm/LABEL_RECHECK.md`) found that 35 of the 60 declined pull requests had their change land in their repository anyway, 28 in full and 7 in part, 20 of them by the time the agent's pull request was closed or within two days, 12 of those through a maintainer's own pull request. The table's counts over all 60 include them. Among the 25 whose change did not land within about six months, 19 still put at least one such claim into the store, 43.0% of their claims on average; counting the claims the check judged true of the code as safe, the first row becomes 33 of 60 and 26.6%. Each difference in the table keeps its direction and significance under each accounting, and the summarizer still matches the extractor.
 
 The two columns answer different questions. The first is how much of what the compiler stored from a declined PR states the rejected approach as current; the second is how many declined PRs put at least one such claim into the store. The point differences and p-values are on the first. Even with the outcome stated and the field present, 25 of the 60 declined PRs still produced at least one such claim.
 

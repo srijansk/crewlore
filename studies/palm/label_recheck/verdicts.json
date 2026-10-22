@@ -1,0 +1,1448 @@
+[
+ {
+  "pr": "Cap-go/capgo#1012",
+  "url": "https://github.com/Cap-go/capgo/pull/1012",
+  "title": "fix: prevent channel deletion when unsetting device channel",
+  "agent": "Devin",
+  "closed_at": "2025-03-12T14:41:00Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Stop channels being deleted when a device's channel is set and unset (issue #1011) by recreating the channel_devices->channels FK with ON DELETE SET NULL, adding a BEFORE DELETE trigger that blocks deleting channels with linked devices, NOT NULL constraints, owner_org filters, tests and channel_self type edits.",
+  "what_landed": "The maintainer (riderx) fixed #1011 the same day with migration 20250312000000_fix_channel_devices_fk.sql (commit e52e794e45, merged via #1037), which re-adds channel_devices_channel_id_fkey without ON DELETE CASCADE; Devin's #1071 ('Fixes #1011', merged 2025-03-15) documented it and added channel-deletion tests. The trigger, SET NULL, owner_org and channel_self changes did not land.",
+  "closed_reason": "Rejected: the maintainer said 'you didn't fix what i asked' and 'shit PR closing' (asked not to touch channel_self.ts or package.json), then fixed it himself.",
+  "evidence": [
+   "https://github.com/Cap-go/capgo.app/commit/e52e794e45c4c1ce37a9cca10b1b816abd4cd153",
+   "https://github.com/Cap-go/capgo.app/pull/1071",
+   "https://github.com/Cap-go/capgo.app/pull/1012#issuecomment-2661002310"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 2,
+  "claims_still_wrong": 3,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/Cap-go/capgo.app/pull/1037",
+  "hours_from_close_to_landing": 7.2
+ },
+ {
+  "pr": "airbytehq/airbyte#52578",
+  "url": "https://github.com/airbytehq/airbyte/pull/52578",
+  "title": "docs: reorganize root page of Connector Development documentation",
+  "agent": "Devin",
+  "closed_at": "2025-02-06T15:21:27Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Reorganize docs/connector-development/README.md into a 'Connector Development Guide' with a Java CDK warning box, a decision table, a quick start, process steps and per-CDK sections.",
+  "what_landed": "Nothing within six months: the root page kept its old structure. About 9 months after closing, #69175 (2025-11-04) changed only the Java CDK table row, to say Airbyte is revamping the Java CDK and not accepting Java CDK contributions. The policy itself predates the PR: docs/contributing-to-airbyte/README.md already said new Java connectors were not being reviewed or accepted. So claims 0-2 restate a policy that already existed, not this PR's approach.",
+  "closed_reason": "Devin auto-closed it for inactivity after reviewers asked for style changes (dashes, no emojis, no delivery promises) and suggested new Java copy.",
+  "evidence": [
+   "https://github.com/airbytehq/airbyte/pull/69175",
+   "https://github.com/airbytehq/airbyte/commit/41a178c5dc4738c2d262c4a75483a2727b986ceb",
+   "https://github.com/airbytehq/airbyte/blob/8510d3b47d914ff7667845ffeb878c2c4cd2a3bb/docs/contributing-to-airbyte/README.md"
+  ],
+  "automated_leads": [
+   "sim:60248(0.33)"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "airbytehq/airbyte#52634",
+  "url": "https://github.com/airbytehq/airbyte/pull/52634",
+  "title": "docs: improve documentation build and upgrade guide",
+  "agent": "Devin",
+  "closed_at": "2025-02-07T15:24:44Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add to writing-docs.md a check that the docs build before you edit, separate dev and production build sections, 'Common Build Issues', a 'Handle Broken Links' section and a checklist for Docusaurus framework upgrades.",
+  "what_landed": "Nothing equivalent. Later writing-docs.md changes (Vale and MarkDownLint linting, multi-instance versioned docs, a move to docs/platform/) added none of these sections, and redirects moved to docusaurus/vercel.json.",
+  "closed_reason": "Devin closed it for inactivity after the docs maintainer requested changes.",
+  "evidence": [
+   "https://github.com/airbytehq/airbyte/blob/12b21e4012371420f0b091f736d2b9a3c1ded838/docs/platform/contributing-to-airbyte/writing-docs.md"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 15,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "bespokelabsai/curator#305",
+  "url": "https://github.com/bespokelabsai/curator/pull/305",
+  "title": "Fix #229: Add cloudpickle support for type-annotated parse_func",
+  "agent": "Devin",
+  "closed_at": "2025-01-07T21:35:48Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Replace the datasets dill Pickler in the function-hashing code with a CustomPickler and cloudpickle hybrid, so that a type-annotated parse_func (with Pydantic models) can be serialized, with tests and docs.",
+  "what_landed": "A different approach: #360 (merged 2025-01-14) fixed #229 by clearing func.__annotations__ before hashing with HuggingFace's datasets dill Pickler, and #477 later added a non-recursive fallback. cloudpickle and CustomPickler were never adopted.",
+  "closed_reason": "Reviewer: replacing the HuggingFace pickler would break other logic, and the issue was a warning in a narrow case, so it was deprioritized and closed.",
+  "evidence": [
+   "https://github.com/bespokelabsai/curator/pull/360",
+   "https://github.com/bespokelabsai/curator/issues/229",
+   "https://github.com/bespokelabsai/curator/pull/477"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 3,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "calcom/cal.com#20760",
+  "url": "https://github.com/calcom/cal.com/pull/20760",
+  "title": "feat: implement debounced seat billing for stripe team plans",
+  "agent": "Devin",
+  "closed_at": "2025-04-27T15:20:01Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Debounce Stripe team-plan seat billing: set proration_behavior 'none' on seat-quantity updates, track lastInvoicedSeatCount/lastSeatChangeAt in team metadata, and have a tasker job every 2 hours create prorated manual invoice items.",
+  "what_landed": "Nothing landed: payments.ts got no commits in the 180 days after closing, and at 180 days updateQuantitySubscriptionFromStripe still updates the Stripe quantity immediately with default proration, with no seat-billing tasker task.",
+  "closed_reason": "Auto-closed by Devin after 7 days of inactivity; requester and reviewer zomars had asked for per-team tasks, a stored taskId for real debouncing, scheduling from updateQuantitySubscriptionFromStripe, and removal of the _app.tsx/cron changes.",
+  "evidence": [
+   "https://github.com/calcom/cal.com/blob/6843ced3db20a3fa66fdfce5171211a917baf275/packages/features/ee/teams/lib/payments.ts"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 11,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "camunda/camunda#34153",
+  "url": "https://github.com/camunda/camunda/pull/34153",
+  "title": "Avoid Pods crashlooping when elasticsearch is unavailable",
+  "agent": "Copilot",
+  "closed_at": "2025-06-23T16:03:19Z",
+  "verdict": "LANDED",
+  "change_proposed": "Raise SchemaManagerConfiguration.DEFAULT_MAX_RETRIES from 12 to effectively unlimited (first 1,000,000, then Integer.MAX_VALUE after review) and document on SchemaManager.startup() that retries are unbounded, so pods do not crashloop while Elasticsearch is unavailable.",
+  "what_landed": "Maintainer houssain-barouni's #34158 (merged 2025-06-23, the same day) set DEFAULT_MAX_RETRIES = Integer.MAX_VALUE with a near-identical Javadoc. Its description also says apps stay alive but not ready and can revert with maxRetries: 12. The default is still Integer.MAX_VALUE today.",
+  "closed_reason": "Superseded: the maintainer commented 'Done here #34158' and closed it.",
+  "evidence": [
+   "https://github.com/camunda/camunda/pull/34158",
+   "https://github.com/camunda/camunda/commit/4aad6174dce3e2f79c03d2bc257d87a5d064d3c2",
+   "https://github.com/camunda/camunda/issues/33982"
+  ],
+  "automated_leads": [
+   "sim:34158(0.57)",
+   "xref:34158",
+   "cmt:34158"
+  ],
+  "claims_true_now": 7,
+  "claims_still_wrong": 0,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 8,
+  "landed_via": "https://github.com/camunda/camunda/pull/34158",
+  "hours_from_close_to_landing": -0.5
+ },
+ {
+  "pr": "celestiaorg/celestia-core#2042",
+  "url": "https://github.com/celestiaorg/celestia-core/pull/2042",
+  "title": "fix: upgrade golangci-lint to v2",
+  "agent": "Copilot",
+  "closed_at": "2025-06-19T17:01:23Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Fix the broken golangci-lint CI job (issue #2041) by editing main's lint.yml: an intermediate commit pinned golangci-lint v2 with action v8 (the approach in the title), but the final diff downgraded golangci-lint-action v8 to v6 and removed the get-diff gating so lint always runs.",
+  "what_landed": "Maintainer evan-forbes fixed the breakage in #2040 (merged 2025-06-23, branch v0.34.x-celestia) by upgrading golangci-lint from v1.61.0 to v2.1.6, keeping golangci-lint-action v8.0.0 and migrating .golangci.yml to v2. Removing the get-diff gate never landed (main still runs lint only `if: env.GIT_DIFF`), and neither did the action downgrade.",
+  "closed_reason": "Maintainer: 'just fixing in #2040'. Lint had not actually run on the PR (get-diff skipped it), and the CI attempt after the downgrade failed.",
+  "evidence": [
+   "https://github.com/celestiaorg/celestia-core/pull/2040",
+   "https://github.com/celestiaorg/celestia-core/issues/2041",
+   "https://github.com/celestiaorg/celestia-core/blob/main/.github/workflows/lint.yml"
+  ],
+  "automated_leads": [
+   "cmt:2040",
+   "phr:fixed in"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 4,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": "https://github.com/celestiaorg/celestia-core/pull/2040",
+  "hours_from_close_to_landing": 102.7
+ },
+ {
+  "pr": "cloudwalk/stratus#1961",
+  "url": "https://github.com/cloudwalk/stratus/pull/1961",
+  "title": "test: add comprehensive unit tests for Hash struct",
+  "agent": "Devin",
+  "closed_at": "2025-01-17T18:02:17Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add unit tests for the eth::primitives::Hash newtype (new, ZERO, Display, AsRef, FromStr, etc.) in a separate src/eth/primitives/hash/tests.rs module, plus an analyze_coverage.py script.",
+  "what_landed": "Nothing landed: in the 180 days after closing hash.rs got only alloy-migration commits (#1967, #1995, #2002) and had no #[cfg(test)] module at 30 or 180 days, and the generated serde/json tests in primitives/mod.rs do not cover Hash.",
+  "closed_reason": "Closed by reviewer mayconamaroCW about 36 minutes after opening; reviewers asked to drop the coverage script and put the tests inline in hash.rs, following block_header.rs.",
+  "evidence": [
+   "https://github.com/cloudwalk/stratus/blob/f90c60ef3467dd971c62f5ddcb0241acfc369151/src/eth/primitives/hash.rs"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 2,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "cybersemics/em#3001",
+  "url": "https://github.com/cybersemics/em/pull/3001",
+  "title": "Scroll cursor into view on sort",
+  "agent": "Copilot",
+  "closed_at": "2025-05-31T18:39:46Z",
+  "verdict": "LANDED",
+  "change_proposed": "Make the scrollCursorIntoView Redux middleware also scroll the cursor into view on toggleSort and setSortPreference actions, because sorting reorders thoughts without changing the cursor path. Add a puppeteer test.",
+  "what_landed": "The maintainer's commit 4ee2d0135e on main the same day ('Scroll cursor into view after sort. Fixes #2972.') makes the middleware scroll when the sort preference of the cursor's parent changes during an action. It diffs state rather than checking action types. In October 2025, #3247 replaced the middleware with a position-based hook.",
+  "closed_reason": "Closed by the maintainer without comment. They fixed #2972 themselves in a direct commit about 35 minutes later.",
+  "evidence": [
+   "https://github.com/cybersemics/em/commit/4ee2d0135e6519d9cba9e377dd6fd3cbc0f61e20",
+   "https://github.com/cybersemics/em/issues/2972"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": "https://github.com/cybersemics/em/commit/4ee2d0135e6519d9cba9e377dd6fd3cbc0f61e20",
+  "hours_from_close_to_landing": 0.6
+ },
+ {
+  "pr": "cybersemics/em#3003",
+  "url": "https://github.com/cybersemics/em/pull/3003",
+  "title": "Add corepack enable step to docs.yml workflow",
+  "agent": "Copilot",
+  "closed_at": "2025-05-31T16:41:47Z",
+  "verdict": "LANDED",
+  "change_proposed": "Initially add `corepack enable` and setup-node to docs.yml. At the reviewer's request the final diff instead added a new .github/workflows/copilot-setup-steps.yml that checks out, runs corepack enable, sets Node 20 and runs yarn for the Copilot agent.",
+  "what_landed": "Maintainer Raine Revere committed .github/workflows/copilot-setup-steps.yml with `corepack enable` about 3h after closing (0b9ca3d, 2025-05-31). The next day he expanded it to checkout, corepack enable, setup-node 20 and yarn (922f000), matching the PR's final diff. docs.yml was left unchanged.",
+  "closed_reason": "No closing comment. The reviewer rejected modifying existing workflows, and the maintainer then created the setup-steps workflow himself.",
+  "evidence": [
+   "https://github.com/cybersemics/em/commit/0b9ca3d4dc3851d369ca94735f75c5fbfd9e0456",
+   "https://github.com/cybersemics/em/commit/922f00033535bbe1d3d7bb8463c716d0a751b9c9"
+  ],
+  "automated_leads": [
+   "hist:0.86",
+   "today:0.64"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": "https://github.com/cybersemics/em/commit/0b9ca3d4dc3851d369ca94735f75c5fbfd9e0456",
+  "hours_from_close_to_landing": 3.2
+ },
+ {
+  "pr": "demergent-labs/azle#3071",
+  "url": "https://github.com/demergent-labs/azle/pull/3071",
+  "title": "Add tests for CallPerformFailed and CallRejected error types",
+  "agent": "Copilot",
+  "closed_at": "2025-05-21T16:58:38Z",
+  "verdict": "LANDED",
+  "change_proposed": "Add example-based tests (under examples/stable/test/property/ic_api/call) that trigger and check the CallPerformFailed and CallRejected inter-canister call errors, for issue #3065.",
+  "what_landed": "The maintainer (lastmjs) wrote the tests himself in #3075, merged 2025-05-21, which closed #3065: a single static_errors (later call_errors) canister triggers CallPerformFailed (call-queue overflow), CallRejected (management-canister nonexistent method; no-route principal) and InsufficientLiquidCycleBalance, asserted in jest.",
+  "closed_reason": "The maintainer repeatedly called the agent's tests inadequate and implemented them himself the same day (#3075).",
+  "evidence": [
+   "https://github.com/demergent-labs/azle/pull/3075",
+   "https://github.com/demergent-labs/azle/commit/c3dd47522e13b59b13abe45fb6f2ab9138eefe9d",
+   "https://github.com/demergent-labs/azle/issues/3065"
+  ],
+  "automated_leads": [
+   "phr:addressed in"
+  ],
+  "claims_true_now": 2,
+  "claims_still_wrong": 7,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 9,
+  "landed_via": "https://github.com/demergent-labs/azle/pull/3075",
+  "hours_from_close_to_landing": 6.0
+ },
+ {
+  "pr": "doodlum/skyrim-community-shaders#1281",
+  "url": "https://github.com/doodlum/skyrim-community-shaders/pull/1281",
+  "title": "perf: cache GetRuntimeData usage for improved performance",
+  "agent": "Copilot",
+  "closed_at": null,
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Cache GetRuntimeData()/GetVRRuntimeData() pointers for the renderer, shadow state and graphics state in globals::game during ReInit(), add globals::cached accessors and switch call sites to them, and replace State.cpp's local `static bool vr = REL::Module::IsVR()` with globals::game::isVR.",
+  "what_landed": "Nothing equivalent landed: no runtime-data cache or globals::cached accessors appear in Globals.h/Globals.cpp within six months. State.cpp's local VR static was removed on 2025-09-24 in #1522 by dropping the whole snow/VR conditional, not by consolidating onto globals::game::isVR.",
+  "closed_reason": "The reviewer questioned the need, the agent's own analysis found the calls cost a few cycles, and alandtse asked for hot-path evidence. The PR now lives at community-shaders/skyrim-community-shaders#1281; doodlum's copy is a fork, hence the 404.",
+  "evidence": [
+   "https://github.com/community-shaders/skyrim-community-shaders/pull/1281",
+   "https://github.com/community-shaders/skyrim-community-shaders/commit/45c81f2ce464b34197ba05a14cafa78f3c228bb5"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 9,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "dotnet/aspnetcore#62085",
+  "url": "https://github.com/dotnet/aspnetcore/pull/62085",
+  "title": "[Blazor] Remove InternalsVisibleTo from Components to Components.Server",
+  "agent": "Copilot",
+  "closed_at": "2025-05-30T08:06:32Z",
+  "verdict": "LANDED",
+  "change_proposed": "Remove InternalsVisibleTo from Microsoft.AspNetCore.Components to Components.Server by refactoring Blazor tracing: an internal CircuitActivitySource in Server, a ComponentsActivitySource that links to a renderer-captured Activity, and StartCircuit moved into ComponentHub.Start.",
+  "what_landed": "pavelsavara's #62286 '[blazor] Diagnostic tracing - feedback' (merged 2025-06-12) removed the IVT and split circuit tracing into an internal CircuitActivitySource in Components.Server. It propagated links through a new shared ComponentsActivityLinkStore instead of a renderer-captured Activity, and left circuit-activity start in CircuitHost.InitializeAsync.",
+  "closed_reason": "Closed by the maintainer (javiercn) without comment after repeated change requests; the feature owner did the refactor in #62286.",
+  "evidence": [
+   "https://github.com/dotnet/aspnetcore/pull/62286",
+   "https://github.com/dotnet/aspnetcore/commit/c40323af9d62dfbc3c75dd41c8772edb2be28a4d"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 1,
+  "claims_still_wrong": 3,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/dotnet/aspnetcore/pull/62286",
+  "hours_from_close_to_landing": 311.5
+ },
+ {
+  "pr": "dotnet/docs#47074",
+  "url": "https://github.com/dotnet/docs/pull/47074",
+  "title": "[WIP] Update F1 keywords for tokens with multiple uses",
+  "agent": "Copilot",
+  "closed_at": "2025-07-03T17:44:03Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add f1_keywords metadata (refstruct, ingenericmodifier, newconstraint, newmodifier, outgenericmodifier, the in/out/ref parameter modifiers, enumconstraint) to the pages for specific uses of multi-use C# keywords.",
+  "what_landed": "Nothing: issue #20799 is still open, and none of the pages checked gained the proposed f1_keywords within 180 days. The readonly claims come from the maintainer's own issue text, and readonly is documented on a single page with one F1 keyword.",
+  "closed_reason": "Maintainer BillWagner said it was going in the wrong direction: an f1_keyword can have only one target, and the keyword's own page should link to each use.",
+  "evidence": [
+   "https://github.com/dotnet/docs/issues/20799",
+   "https://github.com/dotnet/docs/blob/fde0a56ed2df06307faec6bfa9fba7ea7e687f02/docs/csharp/language-reference/keywords/readonly.md"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 3,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "dotnet/efcore#36176",
+  "url": "https://github.com/dotnet/efcore/pull/36176",
+  "title": "Fix SQLite file handle leak in SqliteConnectionInternal constructor",
+  "agent": "Copilot",
+  "closed_at": "2025-06-04T12:19:16Z",
+  "verdict": "LANDED",
+  "change_proposed": "Wrap the SqliteConnectionInternal constructor logic after sqlite3_open_v2 in a try/catch that disposes the db handle and rethrows, and add a test that a failed encrypted open releases the file handle.",
+  "what_landed": "The maintainer's PR #36184 (merged 2025-06-06, fixes #35010) made the same try/catch { _db.Dispose(); throw; } change around all logic after sqlite3_open_v2, and added the same Open_releases_handle_when_constructor_fails test (Pooling=False, no ClearPool, no open-failure test).",
+  "closed_reason": "Closed by the maintainer 'in favor of #36184', his own version of the same fix.",
+  "evidence": [
+   "https://github.com/dotnet/efcore/pull/36184",
+   "https://github.com/dotnet/efcore/commit/8a8e7581559f35e7d397be89ecc1c21a5782a2ba",
+   "https://github.com/dotnet/efcore/pull/36176#issuecomment-2939821845"
+  ],
+  "automated_leads": [
+   "sim:36184(0.33)",
+   "xref:36184",
+   "cmt:36184",
+   "phr:in favor of",
+   "hist:0.30",
+   "today:0.30",
+   "cand:36184=0.30"
+  ],
+  "claims_true_now": 5,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/dotnet/efcore/pull/36184",
+  "hours_from_close_to_landing": 42.3
+ },
+ {
+  "pr": "dotnet/maui#30169",
+  "url": "https://github.com/dotnet/maui/pull/30169",
+  "title": "Add iOS platform configuration to disable elastic scrolling in BlazorWebView",
+  "agent": "Copilot",
+  "closed_at": "2025-06-26T14:39:00Z",
+  "verdict": "LANDED",
+  "change_proposed": "Stop iOS/Mac Catalyst BlazorWebView from bouncing on overscroll, first through an opt-in IsScrollBounceEnabled platform configuration and finally, after review, by setting UIScrollView Bounces/AlwaysBounceVertical/AlwaysBounceHorizontal to false in BlazorWebViewHandler.CreatePlatformView, plus a device test and a doc page.",
+  "what_landed": "Maintainer mattleibow merged #30176 (\"Better than #30169\", into net10.0 on 2025-07-11, on main by 30 days), which adds the same unconditional three-property bounce disable in CreatePlatformView and the same device test, with no platform-configuration API and no doc page.",
+  "closed_reason": "Superseded by the reviewer's own PR #30176 (\"Better than #30169\"); he had asked to drop the platform configuration and just disable bounce in CreatePlatformView.",
+  "evidence": [
+   "https://github.com/dotnet/maui/pull/30176",
+   "https://github.com/dotnet/maui/commit/16cd665cd5",
+   "https://github.com/dotnet/maui/issues/6689"
+  ],
+  "automated_leads": [
+   "xref:30176"
+  ],
+  "claims_true_now": 4,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": "https://github.com/dotnet/maui/pull/30176",
+  "hours_from_close_to_landing": 359.6
+ },
+ {
+  "pr": "dotnet/maui#30218",
+  "url": "https://github.com/dotnet/maui/pull/30218",
+  "title": "[.NET10] Mark obsolete layout APIs as [Obsolete with error]",
+  "agent": "Copilot",
+  "closed_at": "2025-07-20T16:34:06Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "For .NET 10, set IsError = true on the obsolete legacy layout APIs (Layout.cs methods and events, AbsoluteLayout/FlexLayout/Grid/StackLayout and their OnMeasure overrides), keep Layout, Layout<T> and RelativeLayout as warnings, and add pragma suppressions where the Framework uses them internally.",
+  "what_landed": "Nothing equivalent. On net10.0, main and net11.0, every [Obsolete] in LegacyLayouts is still warning-level. The Copilot follow-up #30730 was also closed unmerged, and issue #30208 is still open. In the same period the team removed modern controls' dependency on Compatibility.Layout (#30672) instead.",
+  "closed_reason": "Closed by the maintainer (PureWeen) without comment after repeated compile errors. A Copilot follow-up that reverted to warnings (#30730) was also closed unmerged.",
+  "evidence": [
+   "https://github.com/dotnet/maui/issues/30208",
+   "https://github.com/dotnet/maui/pull/30730",
+   "https://github.com/dotnet/maui/blob/net10.0/src/Controls/src/Core/LegacyLayouts/Layout.cs",
+   "https://github.com/dotnet/maui/pull/30672"
+  ],
+  "automated_leads": [
+   "phr:fixed in"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "dotnet/maui#30358",
+  "url": "https://github.com/dotnet/maui/pull/30358",
+  "title": "Extract HttpClient utilities from PR 30293 and add to public API",
+  "agent": "Copilot",
+  "closed_at": "2025-07-08T02:39:50Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "First add a public Microsoft.Maui.Platform.HttpClientUtilities.CreateHttpClient() API taken from the unmerged PR #30293. After maintainer requests, the final diff only adds a 5-attempt, 5-second retry loop to RunBuildTool in eng/common/tools.sh.",
+  "what_landed": "Nothing: there is no HttpClientUtilities in src/Core/src/Platform, and RunBuildTool in the Arcade-managed eng/common/tools.sh has no retry loop at the 180-day commit. Source PR #30293 was also closed unmerged.",
+  "closed_reason": "No closing comment. Maintainer PureWeen used the PR to debug the agent's SSL-revocation failures during dotnet restore; the retry did not fix them, and he then closed it.",
+  "evidence": [
+   "https://github.com/dotnet/maui/pull/30358",
+   "https://github.com/dotnet/maui/blob/a6fbcb72e937ae0a0cc8773f95fa85524a41fb19/eng/common/tools.sh",
+   "https://github.com/dotnet/maui/pull/30293"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "dotnet/performance#4892",
+  "url": "https://github.com/dotnet/performance/pull/4892",
+  "title": "Fix dotnet/runtime version retrieval for SDK perf scenarios",
+  "agent": "Copilot",
+  "closed_at": "2025-07-25T04:32:54Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "In versionmanager.py's get_sdk_versions, map the dotnet/dotnet (VMR) commit read from DLL VersionInfo to the real dotnet/runtime commit using dotnet/dotnet's src/source-manifest.json, falling back to treating the hash as a runtime commit for older SDKs.",
+  "what_landed": "Nothing within six months, and issue #4847 is still open. About 13 months later, outside the window, #5290 (2026-08-27) adopted the same source-manifest lookup in scripts/dotnet.py and ci_setup.py for MAUI runs, and dropped runtime from versionmanager's DLL list.",
+  "closed_reason": "The reviewer called it a useful first pass, but said the exception handling was awkward and the comments only made sense next to the issue; he intended to implement it himself.",
+  "evidence": [
+   "https://github.com/dotnet/performance/pull/5290",
+   "https://github.com/dotnet/performance/commit/18c564d8d5eb473d2bdc7c8def7bf11f82360e49",
+   "https://github.com/dotnet/performance/issues/4847"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 12,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "esphome/esphome-devices#1170",
+  "url": "https://github.com/esphome/esphome-devices/pull/1170",
+  "title": "Fix deprecated platform syntax in ESPHome configurations",
+  "agent": "Copilot",
+  "closed_at": "2025-07-28T01:18:08Z",
+  "verdict": "LANDED",
+  "change_proposed": "Migrate all device configs from the removed `platform:`/`board:` keys inside `esphome:` to a dedicated `esp8266:` block (also moving esp8266_restore_from_flash and board_flash_mode), adding `board: esp01_1m` where no board was given.",
+  "what_landed": "#1171 (Copilot, approved and merged by maintainer jesserockz 28 minutes after this PR closed) did the same migration across the configs, including the default `board: esp01_1m` that his issue #1169 requires.",
+  "closed_reason": "Maintainer: 'Closing as copilot went off track'; redone immediately in #1171.",
+  "evidence": [
+   "https://github.com/esphome/esphome-devices/pull/1171",
+   "https://github.com/esphome/esphome-devices/issues/1169"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 4,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": "https://github.com/esphome/esphome-devices/pull/1171",
+  "hours_from_close_to_landing": 0.5
+ },
+ {
+  "pr": "espressif/esptool#1103",
+  "url": "https://github.com/espressif/esptool/pull/1103",
+  "title": "Fix --port-filter argument parsing issue with OptionEatAll class (ESPTOOL-1105)",
+  "agent": "Copilot",
+  "closed_at": "2025-07-24T14:20:10Z",
+  "verdict": "LANDED",
+  "change_proposed": "Fix `--port-filter` ('argument key not recognized') by making OptionEatAll.parser_process call Click's original process once per collected value instead of passing the wrapped list, add the missing `raise` in parse_port_filters, and add @pytest.mark.host_test port-filter tests (including subprocess CLI tests) in test_esptool.py.",
+  "what_landed": "Reviewer Peter Dragun committed the fix himself (b53a16c, 2025-07-24, 'Closes #1103'). It processes values one at a time in OptionEatAll.parser_process when the option is `multiple` (the list is kept otherwise), adds the missing `raise`, and adds a @pytest.mark.host_test TestPortFilter class in test_esptool.py that runs esptool via subprocess.",
+  "closed_reason": "Closed by the maintainer's own commit b53a16c, which re-implemented the fix with a `multiple` guard.",
+  "evidence": [
+   "https://github.com/espressif/esptool/commit/b53a16ca60fd86e1c6a1da91367dc924fab9b0d3",
+   "https://github.com/espressif/esptool/issues/1101"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 6,
+  "claims_still_wrong": 0,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 7,
+  "landed_via": "https://github.com/espressif/esptool/commit/b53a16ca60fd86e1c6a1da91367dc924fab9b0d3",
+  "hours_from_close_to_landing": -4.2
+ },
+ {
+  "pr": "formancehq/ledger#918",
+  "url": "https://github.com/formancehq/ledger/pull/918",
+  "title": "fix: return 400 instead of 500 for idempotency key reuse with different body (LX-50)",
+  "agent": "Devin",
+  "closed_at": "2025-05-15T14:19:39Z",
+  "verdict": "LANDED",
+  "change_proposed": "Map ErrInvalidIdempotencyInput to 400 Bad Request with a per-controller switch case in 13 v1/v2 write routes, including revert and logs import, and add an e2e idempotency-key test.",
+  "what_landed": "Maintainer flemzord's #921 (main, merged 2025-05-16), with #919 on release/v2.2 and #920 on release/v2.3, returns 400 for this case through a new shared common.HandleCommonWriteErrors. That handler also maps key conflicts to 409 and not-found to 404, and the create and metadata write routes use it; the PRs added e2e tests. Revert (v1 and v2) and logs import were left on HandleCommonErrors; v2 revert moved to the new handler later on release/v2.3. main was later rewritten (no common ancestor with #921's merge commit), but the handler persists on release/v2.2 and v2.3.",
+  "closed_reason": "Reviewer gfyrag requested changes ('not tested. and probably wrong'), asked for integration tests and asked to drop the errors.go and errors_test.go edits. Maintainer flemzord reimplemented the fix in #919, #920 and #921.",
+  "evidence": [
+   "https://github.com/formancehq/ledger/pull/921",
+   "https://github.com/formancehq/ledger/pull/919",
+   "https://github.com/formancehq/ledger/pull/920"
+  ],
+  "automated_leads": [
+   "sim:921(1.0),920(1.0),919(1.0)"
+  ],
+  "claims_true_now": 4,
+  "claims_still_wrong": 0,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/formancehq/ledger/pull/921",
+  "hours_from_close_to_landing": 20.6
+ },
+ {
+  "pr": "hyperlight-dev/hyperlight#641",
+  "url": "https://github.com/hyperlight-dev/hyperlight/pull/641",
+  "title": "Make benchmarks only run with release builds",
+  "agent": "Copilot",
+  "closed_at": "2025-07-29T23:00:13Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Make benchmarks release-only: hard-code --profile=release in the Justfile bench/bench-ci recipes (dropping the target parameter), update the workflows and docs, and enforce it at compile time through a build.rs OPT_LEVEL check that sets optimized_build/unoptimized_build cfgs gating benchmarks.rs with a fallback main.",
+  "what_landed": "Copilot's restart PR #741 (merged 2025-08-14) landed the Justfile/workflow/docs part (target parameter removed, --profile=release hard-coded, workflows updated), but at the maintainers' request it carries no compile-time enforcement, so opt-level cfg gating never landed and cargo bench can still be run directly with debug symbols.",
+  "closed_reason": "Stale: the branch could not be rebased over the snapshot-API change (#697) and Copilot cannot rebase, so maintainers closed it to restart; the restart is #741.",
+  "evidence": [
+   "https://github.com/hyperlight-dev/hyperlight/pull/741",
+   "https://github.com/hyperlight-dev/hyperlight/commit/7da939f890c023c8485217001d318086f065bb63",
+   "https://github.com/hyperlight-dev/hyperlight/pull/741#discussion_r2241227656"
+  ],
+  "automated_leads": [
+   "sim:741(0.33)",
+   "cmt:697",
+   "phr:fixed in"
+  ],
+  "claims_true_now": 6,
+  "claims_still_wrong": 7,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 15,
+  "landed_via": "https://github.com/hyperlight-dev/hyperlight/pull/741",
+  "hours_from_close_to_landing": 381.9
+ },
+ {
+  "pr": "invoke-ai/InvokeAI#8177",
+  "url": "https://github.com/invoke-ai/InvokeAI/pull/8177",
+  "title": "feat(ui):Manage model switching and error states",
+  "agent": "Cursor",
+  "closed_at": "2025-07-08T20:21:27Z",
+  "verdict": "LANDED",
+  "change_proposed": "In modelSelected.ts, when the main model's base changes, switch every global and regional reference-image (IP adapter) model to the first compatible model for the new base, or clear it. Review added an isApiModelConfig guard, and the diff also carried many unrelated commits from a bad rebase.",
+  "what_landed": "A redo landed on main the next day through #8240 (2025-07-09): 'Implement automatic reference image model switching on base model change' and psychedelicious's 'improve ref image model autoswitch logic'. They switch ref-image models to the first compatible model from the modelsByType selectors (exact match preferred for FLUX Kontext and ChatGPT-4o, FLUX Redux for FLUX). There is no isApiModel guard and no autoswitch for control layers.",
+  "closed_reason": "The author (maintainer hipsterusername) closed it: 'Think im going to burn this PR down and restart. Didn't like the rebase'.",
+  "evidence": [
+   "https://github.com/invoke-ai/InvokeAI/pull/8240",
+   "https://github.com/invoke-ai/InvokeAI/commit/1caab2b9c49cf962ca898dbd4b0f41abeba9840d",
+   "https://github.com/invoke-ai/InvokeAI/commit/6fe47ec9f8077f6e3f7f7d942b52881cebc7e0bb"
+  ],
+  "automated_leads": [
+   "hist:0.84"
+  ],
+  "claims_true_now": 12,
+  "claims_still_wrong": 3,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 16,
+  "landed_via": "https://github.com/invoke-ai/InvokeAI/pull/8240",
+  "hours_from_close_to_landing": 16.9
+ },
+ {
+  "pr": "maximhq/bifrost#60",
+  "url": "https://github.com/maximhq/bifrost/pull/60",
+  "title": "Adds handlers for SDKs",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-06-05T10:18:46Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Add SDK-compatible chat-completion HTTP routes for OpenAI, Anthropic, Mistral, LangChain, LangGraph and LiteLLM to bifrost-http, each a copy-pasted ChatCompletionRequest with ConvertToBifrostRequest(model) (LiteLLM/LangChain hardcoded to schemas.OpenAI), its own router and tests, registered in main.go.",
+  "what_landed": "Maintainer Pratham-Mishra04, who closed this PR, added OpenAI, Anthropic and LiteLLM integrations on 2025-06-10 (a39da9fafd, 590976c29e, 76fd344e20) and LangChain on 2025-08-11 (ef93531e58), built on a shared GenericRouter with provider-specific request types, argument-less converters and provider detection from the model name, with LiteLLM and LangChain reusing the OpenAI/Anthropic/GenAI routes; no Mistral or LangGraph SDK routes exist at 180 days.",
+  "closed_reason": "Closed by maintainer Pratham-Mishra04 the same day with no comment; only CodeRabbit had reviewed, and the final main.go would not compile (a const block pasted into the imports). He shipped his own integrations days later.",
+  "evidence": [
+   "https://github.com/maximhq/bifrost/commit/a39da9fafd",
+   "https://github.com/maximhq/bifrost/commit/590976c29e",
+   "https://github.com/maximhq/bifrost/commit/76fd344e20",
+   "https://github.com/maximhq/bifrost/commit/ef93531e58",
+   "https://github.com/maximhq/bifrost/blob/3f2a3fa75d5df3e45a79d3c8591a08e92fbd6e8a/transports/bifrost-http/integrations/langchain.go"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 2,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 2,
+  "landed_via": "https://github.com/maximhq/bifrost/commit/a39da9fafd",
+  "hours_from_close_to_landing": 120.8
+ },
+ {
+  "pr": "mendableai/firecrawl#1886",
+  "url": "https://github.com/mendableai/firecrawl/pull/1886",
+  "title": "feat(crawler): replace robotstxt library with texting_robots for ENG-3016",
+  "agent": "Devin",
+  "closed_at": "2025-07-30T14:48:52Z",
+  "verdict": "LANDED",
+  "change_proposed": "Replace robotstxt 0.3.0 with texting_robots 0.2.2 in the Rust crawler's _filter_links, checking FireCrawlAgent then FirecrawlAgent and allowing the link when parsing fails, and add Rust unit tests and Jest FFI tests. It was opened against nsc/v2.",
+  "what_landed": "Devin recreated it as #1895, which the same reviewer approved and which merged to main on 2025-07-31. It has the same Cargo, lib.rs and test changes, including the static filterLinks import. texting_robots survived the September 2025 NAPI consolidation (#2105).",
+  "closed_reason": "Wrong base branch: the reviewer said to close it and start over from main, which Devin did as #1895.",
+  "evidence": [
+   "https://github.com/mendableai/firecrawl/pull/1895",
+   "https://github.com/mendableai/firecrawl/commit/e7e2c02d5bf9bb6a555c28c8c6e0146defc25336"
+  ],
+  "automated_leads": [
+   "hist:0.57"
+  ],
+  "claims_true_now": 12,
+  "claims_still_wrong": 2,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 14,
+  "landed_via": "https://github.com/mendableai/firecrawl/pull/1895",
+  "hours_from_close_to_landing": 20.5
+ },
+ {
+  "pr": "metacraft-labs/codetracer#250",
+  "url": "https://github.com/metacraft-labs/codetracer/pull/250",
+  "title": "docs: add stylus demo guide",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-07-22T13:05:44Z",
+  "verdict": "LANDED",
+  "change_proposed": "Replace the TODO on the Stylus/WASM book page with step-by-step record and replay instructions: a nix dev shell, run-nitro-devnode, ct arb deploy, cast send and ct arb explorer.",
+  "what_landed": "#252 'User guide refactoring' (merged to main 2025-07-22 by reviewer tzanko-matev, two hours before #250 closed) moved this exact text into the user guide. It then grew into getting_started/stylus.md with a Nix setup and the reviewer-requested macOS setup (foundryup, cargo install cargo-stylus, nitro-devnode), which is still on the default branch, stable.",
+  "closed_reason": "Closed without comment; superseded by the user-guide refactor #252, which absorbed the text.",
+  "evidence": [
+   "https://github.com/metacraft-labs/codetracer/pull/252",
+   "https://github.com/metacraft-labs/codetracer/commit/5dcfb3c8dda330cea99927e56856b262886a9bd9",
+   "https://github.com/metacraft-labs/codetracer/commit/8a92e3c1deff9cc46e4461c5fba8092e4105c605"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 1,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 1,
+  "landed_via": "https://github.com/metacraft-labs/codetracer/pull/252",
+  "hours_from_close_to_landing": -1.9
+ },
+ {
+  "pr": "microsoft/TypeScript#61946",
+  "url": "https://github.com/microsoft/TypeScript/pull/61946",
+  "title": "Fix incorrect type declarations for constants inside namespaces merged with enums",
+  "agent": "Copilot",
+  "closed_at": "2025-07-10T07:12:05Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Change literalTypeToNode in checker.ts so that declaration emit for constants inside a namespace merged with an enum uses fully qualified enum member references (Foo.bar), with new compiler baselines.",
+  "what_landed": "Nothing. The alternative the maintainer preferred, #62034, was also closed unmerged (2025-12-10). No checker.ts commit on the JS line (strada branch) in the next 180 days addresses this, and issue #61944 is still open.",
+  "closed_reason": "Maintainer: 'Reasonably confident #62034 is the better fix here'. #62034 never merged either.",
+  "evidence": [
+   "https://github.com/microsoft/TypeScript/pull/62034",
+   "https://github.com/microsoft/TypeScript/issues/61944"
+  ],
+  "automated_leads": [
+   "phr:fixed in"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 1,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "microsoft/autogen#6565",
+  "url": "https://github.com/microsoft/autogen/pull/6565",
+  "title": "Add support for callable conditions in GraphFlow edges",
+  "agent": "Copilot",
+  "closed_at": "2025-05-22T03:33:34Z",
+  "verdict": "LANDED",
+  "change_proposed": "Let DiGraphEdge.condition and DiGraphBuilder.add_edge accept a Callable[[BaseChatMessage], bool] as well as a string, with a check_condition method used by GraphFlowManager and callables excluded from serialization. The reviewer asked for callable-only; the agent tried it, then restored string support after tests failed.",
+  "what_landed": "Maintainer ekzhu's #6623 (merged 2025-06-04) added callable conditions with the same design: Union[str, Callable, None], an excluded condition_function field, check_condition, and add_conditional_edges still on strings with a DeprecationWarning. It kept string conditions, so callable-only never landed.",
+  "closed_reason": "Closed without comment; two weeks later the maintainer did the work in his own PR #6623.",
+  "evidence": [
+   "https://github.com/microsoft/autogen/pull/6623",
+   "https://github.com/microsoft/autogen/commit/b31b4e508da4e6b3da39c487f8c65fd0b43cfc77"
+  ],
+  "automated_leads": [
+   "sim:6623(0.6)",
+   "hist:0.86",
+   "today:0.86",
+   "cand:6623=0.86"
+  ],
+  "claims_true_now": 3,
+  "claims_still_wrong": 0,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/microsoft/autogen/pull/6623",
+  "hours_from_close_to_landing": 331.2
+ },
+ {
+  "pr": "microsoft/fabric-cicd#363",
+  "url": "https://github.com/microsoft/fabric-cicd/pull/363",
+  "title": "Resolves #241 Add return to publish_all_items (to get deployed item information)",
+  "agent": "Copilot",
+  "closed_at": "2025-07-28T17:39:59Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Make publish_all_items return a dict {item_type: {item_name: info}} for the items it published. After review the info was cut to type, name, guid, sqlendpoint (from self.workspace_items) and a `status` key of new/exists, with pre-existing items tracked in a set.",
+  "what_landed": "#550 (merged 2025-09-17) made publish_all_items return Optional[dict]. When the enable_response_collection feature flag is on, it returns workspace.responses keyed by item type, then item name, holding the raw create/update API responses (otherwise None), and issue #241 was closed as completed on that basis. The curated guid/sqlendpoint fields and the new/exists status never landed.",
+  "closed_reason": "No closing comment; a maintainer later wrote 'Development stalled on #363' on issue #241.",
+  "evidence": [
+   "https://github.com/microsoft/fabric-cicd/pull/550",
+   "https://github.com/microsoft/fabric-cicd/issues/241"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 1,
+  "claims_still_wrong": 6,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 9,
+  "landed_via": "https://github.com/microsoft/fabric-cicd/pull/550",
+  "hours_from_close_to_landing": 1224.4
+ },
+ {
+  "pr": "microsoft/react-native-windows#14794",
+  "url": "https://github.com/microsoft/react-native-windows/pull/14794",
+  "title": "Implement snapToOffsets property for ScrollView fabric implementation",
+  "agent": "Copilot",
+  "closed_at": "2025-06-18T09:18:26Z",
+  "verdict": "LANDED",
+  "change_proposed": "Add snapToOffsets support to the Fabric ScrollView (IScrollVisual.SetSnapToOffsets, snap logic in CompScrollerVisual, prop wiring in ScrollViewComponentView, e2e test), finally implemented by tuning InteractionTracker inertia decay rates and animating to the nearest snap point with TryUpdatePositionWithAnimation.",
+  "what_landed": "Reviewer anupriya13 merged her own #14800 to main on 2025-06-30, implementing snapToStart/snapToEnd/snapToOffsets for Fabric ScrollView with InteractionTrackerInertiaRestingValue inertia modifiers (ConfigurePositionX/YInertiaModifiers), not decay-rate tuning or animation interception; it survived the 2025-09-30 revert (#15182), which only removed snapToInterval/snapToAlignment, and is still present at 180 days.",
+  "closed_reason": "Closed by reviewer anupriya13 without a stated reason after repeated requests to implement snap points with inertia modifiers (the agent said InertiaRestingValue APIs were unavailable) and CI failures; she shipped #14800 herself.",
+  "evidence": [
+   "https://github.com/microsoft/react-native-windows/pull/14800",
+   "https://github.com/microsoft/react-native-windows/commit/2198313567",
+   "https://github.com/microsoft/react-native-windows/pull/15182",
+   "https://github.com/microsoft/react-native-windows/pull/14793"
+  ],
+  "automated_leads": [
+   "sim:14793(0.71),14847(0.5),14829(0.5)"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 1,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 1,
+  "landed_via": "https://github.com/microsoft/react-native-windows/pull/14800",
+  "hours_from_close_to_landing": 295.5
+ },
+ {
+  "pr": "microsoft/react-native-windows#14795",
+  "url": "https://github.com/microsoft/react-native-windows/pull/14795",
+  "title": "Implement snapToInterval property for ScrollView for fabric",
+  "agent": "Copilot",
+  "closed_at": "2025-06-18T09:26:32Z",
+  "verdict": "LANDED",
+  "change_proposed": "Implement the snapToInterval prop for Fabric ScrollView, ending with a new IScrollVisual.ConfigureSnapToInterval that sets InteractionTracker inertia modifiers from updateProps (left stubbed out after API compile errors).",
+  "what_landed": "Maintainer anupriya13's #14847 (merged 2025-07-15) implemented Fabric snapToInterval through SetSnapPoints/inertia resting-value modifiers. A regression got it reverted in #15182 (2025-09-30), and #15341 (merged 2025-11-20, still on main) re-landed it as an IScrollVisual.SnapToInterval method called from updateProps and driving the same inertia modifiers.",
+  "closed_reason": "No closing comment; closed after the agent could not get the inertia-modifier APIs to compile and stubbed the implementation out. The feature was redone in #14829/#14847, reverted, then re-landed in #15341.",
+  "evidence": [
+   "https://github.com/microsoft/react-native-windows/pull/14847",
+   "https://github.com/microsoft/react-native-windows/pull/15182",
+   "https://github.com/microsoft/react-native-windows/pull/15341",
+   "https://github.com/microsoft/react-native-windows/commit/96c6b492ba2a030dbd4707a3e26c52fbef636585"
+  ],
+  "automated_leads": [
+   "sim:14847(1.0),14829(1.0),14841(0.6)"
+  ],
+  "claims_true_now": 5,
+  "claims_still_wrong": 5,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 10,
+  "landed_via": "https://github.com/microsoft/react-native-windows/pull/14847",
+  "hours_from_close_to_landing": 648.9
+ },
+ {
+  "pr": "microsoft/react-native-windows#14915",
+  "url": "https://github.com/microsoft/react-native-windows/pull/14915",
+  "title": "Update Node.js version from 18.18.0 to 20.0.0 in CI configuration files",
+  "agent": "Copilot",
+  "closed_at": "2025-07-15T03:35:15Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Raise the Node.js version from 18.18.0 to 20.0.0 in rnw-dependencies.ps1 and in the ADO image config (later also the CLI health check), so CI would satisfy @azure/core-util's Node >=20 requirement. All edits were reverted before closing, so the final diff is empty.",
+  "what_landed": "Not this fix. Maintainers fixed CI by removing the unneeded @azure/core-auth dependency (#14919, merged 2025-07-14) and kept supporting Node 18. A separate planned move to Node 22, following upstream React Native, landed later in #15069 (2025-08-22); that is related work, not the declined change.",
+  "closed_reason": "Wrong approach, per maintainer jonthysell: RNW must keep supporting Node 18 and the image JSON is only a snapshot of Azure config. The fix was to deal with the Azure dependency instead.",
+  "evidence": [
+   "https://github.com/microsoft/react-native-windows/pull/14919",
+   "https://github.com/microsoft/react-native-windows/issues/14912",
+   "https://github.com/microsoft/react-native-windows/pull/15069"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "microsoft/retina#1617",
+  "url": "https://github.com/microsoft/retina/pull/1617",
+  "title": "feat: Add Windows support to retina-shell",
+  "agent": "Copilot",
+  "closed_at": "2025-06-27T00:26:46Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add Windows node support to retina-shell: accept Windows nodes, add a GetNodeOS helper, a minimal HostProcess Dockerfile.windows (built-in PowerShell only), a retina-shell-image-win Makefile target and images.yaml job (LTSC 2019/2022), and a --windows-image-tag flag.",
+  "what_landed": "",
+  "closed_reason": "Auto-closed for inactivity by the stale bot. Issue #1529 is still open, and shell/validation.go on main still rejects non-Linux nodes ('retina-shell requires Linux'), with no Windows Dockerfile.",
+  "evidence": [
+   "https://github.com/microsoft/retina/issues/1529",
+   "https://github.com/microsoft/retina/blob/main/shell/validation.go"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 6,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "microsoft/testfx#5606",
+  "url": "https://github.com/microsoft/testfx/pull/5606",
+  "title": "Fix packaging to have MSTest.TestFramework.targets defined in all TFMs",
+  "agent": "Copilot",
+  "closed_at": "2025-06-01T07:28:50Z",
+  "verdict": "LANDED",
+  "change_proposed": "In both MSTest.TestFramework nuspecs, add MSTest.TestFramework.targets entries for netstandard2.0, net462, uap10.0 and netcoreapp3.1: under buildTransitive, sourced from the net6.0 winui+uwp targets file, and under build, via new per-TFM wrapper targets that import the buildTransitive file.",
+  "what_landed": "Reviewer Youssef1313's own #5589 (merged 2025-06-02, the day after closing) added buildTransitive and build entries for exactly those TFMs, with the same build/<tfm> wrapper files (same Import line). It sources their buildTransitive file from a new buildTransitive/others/MSTest.TestFramework.targets that holds only implicit usings. #5672 had already renamed the winui+uwp file to buildTransitive/net6.0AndLater. At 180 days every TFM still has one buildTransitive entry and one build entry.",
+  "closed_reason": "No closing comment. The reviewer closed this PR and issue #5605 on 2025-06-01 and merged his own equivalent PR #5589 the next day. #5589 was opened the day before this one.",
+  "evidence": [
+   "https://github.com/microsoft/testfx/pull/5589",
+   "https://github.com/microsoft/testfx/commit/803e1d6faff4c14dd092f5dafc756e99886f60fe",
+   "https://github.com/microsoft/testfx/pull/5672",
+   "https://github.com/microsoft/testfx/issues/5605"
+  ],
+  "automated_leads": [
+   "hist:0.50"
+  ],
+  "claims_true_now": 2,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 2,
+  "landed_via": "https://github.com/microsoft/testfx/pull/5589",
+  "hours_from_close_to_landing": 24.1
+ },
+ {
+  "pr": "microsoft/typescript-go#1109",
+  "url": "https://github.com/microsoft/typescript-go/pull/1109",
+  "title": "Fix slice bounds panic in addPropertyToElementList for reverse-mapped properties",
+  "agent": "Copilot",
+  "closed_at": "2025-06-09T22:39:39Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Guard the reverseMappedStack pop in addPropertyToElementList with a pushedToStack flag to stop a 'slice bounds out of range [:-1]' panic (#1108). After review, the final diff holds only temporary hacks that force the panic, plus a test.",
+  "what_landed": "Nothing: #1108 was closed as not planned. At the 180-day commit the push and pop are unchanged: both sit inside the non-placeholder branch keyed on propertyIsReverseMapped, with no pushedToStack flag. The PR's asymmetry diagnosis does not match that code either.",
+  "closed_reason": "Reviewer RyanCavanaugh required a test that genuinely reproduces the panic before any fix. The agent never produced one, and the issue was closed as not planned.",
+  "evidence": [
+   "https://github.com/microsoft/typescript-go/issues/1108",
+   "https://github.com/microsoft/typescript-go/blob/1d138eaa29bc189e6b4f04b87fe278b6afe7e62f/internal/checker/nodebuilderimpl.go"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "microsoft/vscode-jupyter#16762",
+  "url": "https://github.com/microsoft/vscode-jupyter/pull/16762",
+  "title": "Fix conditional kernel restart in InstallPackagesTool to avoid unnecessary restarts",
+  "agent": "Copilot",
+  "closed_at": "2025-07-07T08:38:40Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Make InstallPackagesTool restart the kernel after installing packages only when the notebook has executed cells, tracked in a WeakSet<NotebookDocument> fed by onDidChangeNotebookDocument (executionOrder > 0), with unit tests.",
+  "what_landed": "Nothing landed: installPackageTool.node.ts got no commits in the 180 days after closing and still always invokes RestartKernelTool after a successful install, with no executed-cell tracking (the 78% line-landing signal comes only from the bundled .github instruction files, which DonJayamanne merged separately in #16771).",
+  "closed_reason": "Closed by maintainer DonJayamanne without a stated reason, after requesting removal of initializeExecutedNotebooks/hasAnyExecutedCells and a simpler success message.",
+  "evidence": [
+   "https://github.com/microsoft/vscode-jupyter/blob/c649c2b868ca08959c876aaf16b93196b9295bcd/src/standalone/chat/installPackageTool.node.ts",
+   "https://github.com/microsoft/vscode-jupyter/pull/16771"
+  ],
+  "automated_leads": [
+   "hist:0.78",
+   "today:0.78"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 8,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "microsoft/windows-rs#3648",
+  "url": "https://github.com/microsoft/windows-rs/pull/3648",
+  "title": "Add explicit permissions to GitHub Actions workflows to fix CodeQL warnings",
+  "agent": "Copilot",
+  "closed_at": "2025-07-01T18:30:03Z",
+  "verdict": "LANDED",
+  "change_proposed": "Add a top-level `permissions: contents: read` block to 13 GitHub Actions workflows, and to the yml generator sources, to clear CodeQL missing-permissions warnings.",
+  "what_landed": "#3826 (merged 2025-12-01, about 5 months later, approved by kennykerr, the maintainer who closed #3648) added the same `permissions: contents: read` block to the same 13 workflows plus publish.yml; no generator change was needed because #3820 had made the yml tool keep each file's header.",
+  "closed_reason": "Maintainer closed it as unnecessary because the default token permissions were already read-only. He also asked for the Clippy fix to go in a separate PR.",
+  "evidence": [
+   "https://github.com/microsoft/windows-rs/pull/3826",
+   "https://github.com/microsoft/windows-rs/commit/eb27a6e843de5ae6e4e1ef2338e40e68b661006e",
+   "https://github.com/microsoft/windows-rs/pull/3820"
+  ],
+  "automated_leads": [
+   "xref:3649"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": "https://github.com/microsoft/windows-rs/pull/3826",
+  "hours_from_close_to_landing": 3670.2
+ },
+ {
+  "pr": "modelcontextprotocol/inspector#126",
+  "url": "https://github.com/modelcontextprotocol/inspector/pull/126",
+  "title": "fix: update express and path-to-regexp dependencies",
+  "agent": "Devin",
+  "closed_at": "2025-01-25T16:03:15Z",
+  "verdict": "LANDED",
+  "change_proposed": "Bump express from 4.21.1 to 4.21.2 and path-to-regexp from 0.1.10 to 0.1.12 in package-lock.json, fixing the path-to-regexp ReDoS that npm audit flagged, and raise server/package.json's express range to ^4.21.2.",
+  "what_landed": "Commit d007f92302 ('Update deps', merged to main on 2025-02-19 in #136) made the same lockfile bump to express 4.21.2 and path-to-regexp 0.1.12. The ^4.21.2 range was never adopted; instead the server moved to express ^5.1.0 on 2025-04-16.",
+  "closed_reason": "Devin auto-closed it for inactivity after the reviewer asked for package.json to be updated too.",
+  "evidence": [
+   "https://github.com/modelcontextprotocol/inspector/commit/d007f92302b46ba7974fa88a7d374e34af990425",
+   "https://github.com/modelcontextprotocol/inspector/pull/136",
+   "https://github.com/modelcontextprotocol/inspector/commit/8901beb73e0fe5b268db1752441238d9929c3369"
+  ],
+  "automated_leads": [
+   "xref:1708",
+   "hist:1.00"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": "https://github.com/modelcontextprotocol/inspector/pull/136",
+  "hours_from_close_to_landing": 598.1
+ },
+ {
+  "pr": "mongodb/specifications#1800",
+  "url": "https://github.com/mongodb/specifications/pull/1800",
+  "title": "Add additional URI options tests",
+  "agent": "Devin",
+  "closed_at": "2025-05-12T22:26:42Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add URI-options spec tests for timeoutMS, for serverMonitoringMode with SRV URIs and for proxy options with SRV URIs to connection-options, sdam-options and proxy-options test files.",
+  "what_landed": "Nothing: source/uri-options had no commits between 2024-10-31 and 2026-03-05, the timeoutMS URI tests the PR added already existed (hence 'duplicate'), and today's proxy-options/sdam-options files still have no mongodb+srv tests.",
+  "closed_reason": "Requester and reviewer JamesKovacs asked to merge the tests into existing files, drop tests that duplicated ones already there and drop JSON without YAML, then closed it himself without giving a further reason.",
+  "evidence": [
+   "https://github.com/mongodb/specifications/pull/1800",
+   "https://github.com/mongodb/specifications/commits/master/source/uri-options"
+  ],
+  "automated_leads": [
+   "phr:duplicate"
+  ],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "navidrome/navidrome#4100",
+  "url": "https://github.com/navidrome/navidrome/pull/4100",
+  "title": "Fix: Custom tags defined as floats being treated as strings in smart playlists",
+  "agent": "Copilot",
+  "closed_at": "2025-05-25T16:17:24Z",
+  "verdict": "LANDED",
+  "change_proposed": "Make smart-playlist comparisons on float and int custom tags numeric. A new tag-type registry in model/criteria (RegisterTagType, filled from the tag mappings by the model package) would drive a CAST(value AS REAL) or CAST(value AS INTEGER) in tagCond.ToSql().",
+  "what_landed": "Maintainer deluan's #4116 (merged 2025-05-25, fixing #4055) solved the same problem a different way. The model package calls AddNumericTags(numericTagNames()) to set a numeric flag on the existing criteria fieldMap, and both integer and float tags are cast AS REAL, in sorting as well as comparisons.",
+  "closed_reason": "The maintainer closed it the moment he opened his own fix, #4116, with no closing comment.",
+  "evidence": [
+   "https://github.com/navidrome/navidrome/pull/4116",
+   "https://github.com/navidrome/navidrome/commit/5e2db2c673782dab64181442a670ca1d42d87bea",
+   "https://github.com/navidrome/navidrome/issues/4055"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 2,
+  "claims_still_wrong": 1,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/navidrome/navidrome/pull/4116",
+  "hours_from_close_to_landing": 5.6
+ },
+ {
+  "pr": "navidrome/navidrome#4101",
+  "url": "https://github.com/navidrome/navidrome/pull/4101",
+  "title": "Implement Admin-Only Log Viewer in UI",
+  "agent": "Copilot",
+  "closed_at": "2025-05-22T17:48:44Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add an admin-only real-time log viewer: a logrus hook feeding a 1000-entry ring buffer, a new server/admin SSE endpoint /api/admin/logs/stream that receives middleware as parameters to avoid an import cycle, and a react-window virtualized LogViewer UI.",
+  "what_landed": "Nothing: no commits added a log buffer, admin log stream or LogViewer during the 180 days. Today's tree has no ringbuffer, buffer_hook, server/admin or LogViewer files, and ui/package.json has no react-window.",
+  "closed_reason": "Closed by maintainer deluan without comment after repeated CI, lint and test failures. Review had asked for Ginkgo tests and to reuse the existing server/events SSE package instead of a new endpoint.",
+  "evidence": [
+   "https://github.com/navidrome/navidrome/pull/4101"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "near/nearcore#13283",
+  "url": "https://github.com/near/nearcore/pull/13283",
+  "title": "Deprecate CongestionControl feature",
+  "agent": "Devin",
+  "closed_at": "2025-04-07T20:42:02Z",
+  "verdict": "LANDED",
+  "change_proposed": "Deprecate the CongestionControl protocol feature: rename it to _DeprecatedCongestionControl with #[deprecated], remove its .enabled() checks and CONGESTION_CONTROL_VERSION, make congestion_info non-optional (including ChunkExtra::new always building V3), delete pre-feature tests and remove now-unused parameters.",
+  "what_landed": "#13318 (same requester, Devin, merged 2025-04-08 on fresh master) did the rename, #[deprecated], check and constant removal, unused-parameter removal and many Option<CongestionInfo> to CongestionInfo changes (chunk headers, getters, kv_runtime get_congestion_info). Maintainer PR #13305 resolved the genesis blocker by building prod genesis chunk extra as ChunkExtraV2, so ChunkExtra::new kept an Option<CongestionInfo> parameter and a V2 fallback.",
+  "closed_reason": "Superseded by #13318 'which has the latest changes on master'; the reviewer had blocked this one on saving the genesis chunk extra.",
+  "evidence": [
+   "https://github.com/near/nearcore/pull/13318",
+   "https://github.com/near/nearcore/pull/13305",
+   "https://github.com/near/nearcore/commit/b230f06ecbf5f89062ced6dd54067ad1b3fcce1b"
+  ],
+  "automated_leads": [
+   "sim:13318(0.6)",
+   "cmt:13318",
+   "phr:supersed",
+   "hist:0.61",
+   "today:0.32",
+   "cand:13318=0.64"
+  ],
+  "claims_true_now": 9,
+  "claims_still_wrong": 1,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 12,
+  "landed_via": "https://github.com/near/nearcore/pull/13318",
+  "hours_from_close_to_landing": 21.9
+ },
+ {
+  "pr": "nextcloud/desktop#8428",
+  "url": "https://github.com/nextcloud/desktop/pull/8428",
+  "title": "fix(ignore-list): skip star pattern",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-07-16T16:47:35Z",
+  "verdict": "LANDED",
+  "change_proposed": "Skip a bare '*' entry (after trimming) in ExcludedFiles::addManualExclude and loadExcludeFilePatterns in src/csync/csync_exclude.cpp so a lone '*' ignore pattern no longer stops all sync, with the test flipped to expect '*' not to exclude.",
+  "what_landed": "Maintainer mgallien's replacement PR #8466 (merged 2025-07-18) carries the same commit plus his two review fixups (QStringView instead of QLatin1StringView for trimming the QString, and dropping an unneeded variable reuse); the star-skip is still on master today.",
+  "closed_reason": "Replaced by #8466 (same commit re-opened by the maintainer with his review suggestions applied).",
+  "evidence": [
+   "https://github.com/nextcloud/desktop/pull/8466",
+   "https://github.com/nextcloud/desktop/blob/master/src/csync/csync_exclude.cpp"
+  ],
+  "automated_leads": [
+   "xref:8466",
+   "cmt:8466",
+   "phr:replaced by",
+   "hist:0.83",
+   "today:0.83",
+   "cand:8466=0.83"
+  ],
+  "claims_true_now": 8,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 8,
+  "landed_via": "https://github.com/nextcloud/desktop/pull/8466",
+  "hours_from_close_to_landing": 38.6
+ },
+ {
+  "pr": "owid/etl#4651",
+  "url": "https://github.com/owid/etl/pull/4651",
+  "title": "Fix UN space objects dataset description: change creation year from 1962 to 1900",
+  "agent": "Copilot",
+  "closed_at": "2025-06-26T15:23:23Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Change the UN space-objects metadata text from 'since 1962' to 'since 1900' in the fasttrack and space snapshot/grapher metadata files.",
+  "what_landed": "",
+  "closed_reason": "Maintainer: 'Actually we won't do this'; issue #4650 was a 'COPILOT TEST' closed as not planned. master still says 'since 1962' (snapshots/space/2025-03-04/object_launches.csv.dvc), so the 'keep 1962' claims match the code.",
+  "evidence": [
+   "https://github.com/owid/etl/pull/4651#issuecomment-3008872372",
+   "https://github.com/owid/etl/issues/4650"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 2,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "parse-community/parse-dashboard#2873",
+  "url": "https://github.com/parse-community/parse-dashboard/pull/2873",
+  "title": "Add modern dashboard skeleton",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-07-07T23:08:03Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add a new Vite/React/MUI dashboard in new-dashboard/ with a Cloud Config page, serve its build from Express at /new in Parse-Dashboard/app.js, and add a sidebar link to it.",
+  "what_landed": "Nothing landed: no new-dashboard directory or /new route was added. The app.js commits in the next 180 days are unrelated (#2880, #2920, #2954, #3011, #3016).",
+  "closed_reason": "Closed the same day by maintainer mtrezza without comment; CodeRabbit had flagged lint failures and client-side master-key use.",
+  "evidence": [
+   "https://github.com/parse-community/parse-dashboard/pull/2873",
+   "https://github.com/parse-community/parse-dashboard/commits/alpha/Parse-Dashboard/app.js"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 1,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "parse-community/parse-dashboard#2884",
+  "url": "https://github.com/parse-community/parse-dashboard/pull/2884",
+  "title": "Add graph visualization for selected numbers",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-07-24T15:22:02Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add a resizable GraphPanel side panel to the Data Browser that charts the selected numeric or time-series cells with the existing Chart component, toggled from the stats toolbar.",
+  "what_landed": "Only related work: the maintainer's PR #3110 (merged 2026-01-13) added a different 'Data Graphs' feature. It is a resizable GraphPanel configured through a GraphDialog that charts the loaded rows with Chart.js, with data shaping in lib/GraphDataUtils.js. It does not graph selected cells and does not index ChartColorSchemes.",
+  "closed_reason": "Closed by the maintainer (mtrezza) without comment. The only review came from CodeRabbit.",
+  "evidence": [
+   "https://github.com/parse-community/parse-dashboard/pull/3110"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 1,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "primer/react#6069",
+  "url": "https://github.com/primer/react/pull/6069",
+  "title": "Migrate CounterLabel component tests from Jest to Vitest",
+  "agent": "Copilot",
+  "closed_at": "2025-05-20T17:54:49Z",
+  "verdict": "LANDED",
+  "change_proposed": "Migrate CounterLabel.test.tsx from Jest to Vitest (vitest imports, drop behavesAsComponent/checkExports/axe, import from './CounterLabel', plain render), adding CounterLabel to the vitest include list and to Jest's modulePathIgnorePatterns.",
+  "what_landed": "Maintainer joshblack's #6348 (merged 2025-07-24) migrated the CounterLabel tests to Vitest: vitest imports, behavesAsComponent/checkExports/axe dropped, the vitest browser include entry and Jest ignore entry added. It kept the '..' import and the HTMLRender alias and replaced the snapshots with assertions.",
+  "closed_reason": "No closing comment; closed a day after Copilot addressed review (re-enable browser mode, drop the IS_REACT_ACT_ENVIRONMENT global). The maintainer migrated it in #6348.",
+  "evidence": [
+   "https://github.com/primer/react/pull/6348",
+   "https://github.com/primer/react/commit/d349e348cc24a3be13dd1bde2d8ea58ccf44c344"
+  ],
+  "automated_leads": [
+   "sim:6348(0.57),6018(0.3)"
+  ],
+  "claims_true_now": 10,
+  "claims_still_wrong": 3,
+  "claims_unclear": 1,
+  "poisoned_claims_published_arms": 14,
+  "landed_via": "https://github.com/primer/react/pull/6348",
+  "hours_from_close_to_landing": 1563.8
+ },
+ {
+  "pr": "primer/react#6299",
+  "url": "https://github.com/primer/react/pull/6299",
+  "title": "Migrate batch of components from Jest to Vitest",
+  "agent": "Copilot",
+  "closed_at": "2025-07-08T21:45:17Z",
+  "verdict": "LANDED",
+  "change_proposed": "Migrate five packages/react test files (deprecated UnderlineNavLink, FilteredSearch, ActionList, SelectPanelLoading, SplitPageLayout) from Jest to Vitest by switching to vitest imports and @testing-library/react render, dropping behavesAsComponent/checkExports/axe tests, adding the files to vitest.config.mts (switched to jsdom) and excluding them from jest.config.js.",
+  "what_landed": "All five files were migrated to Vitest within three weeks by maintainer-approved PRs: SplitPageLayout in #6310 (pksjce, 2025-07-10), UnderlineNavLink in #6335 (joshblack, 2025-07-22), and ActionList/FilteredSearch/SelectPanelLoading in #6354 (Copilot re-run of maintainer issue #6353, merged 2025-07-24); they registered the files in vitest.config.browser.mts (Playwright browser mode), not the node vitest.config.mts, kept the SplitPageLayout snapshot, and the SelectPanelLoading test kept querying the rendered live-region with vi timers without importing/registering LiveRegionElement.",
+  "closed_reason": "Closed by maintainer joshblack after two change-request rounds (tests' meaning changed; live-region mocked); no reason stated. Same file list re-issued as #6353 with config target corrected to vitest.config.browser.mts.",
+  "evidence": [
+   "https://github.com/primer/react/pull/6354",
+   "https://github.com/primer/react/pull/6335",
+   "https://github.com/primer/react/pull/6310",
+   "https://github.com/primer/react/issues/6353",
+   "https://github.com/primer/react/commit/4e5f437f56"
+  ],
+  "automated_leads": [
+   "sim:6360(1.0),6356(1.0),6367(1.0)"
+  ],
+  "claims_true_now": 8,
+  "claims_still_wrong": 2,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 10,
+  "landed_via": "https://github.com/primer/react/pull/6354",
+  "hours_from_close_to_landing": 384.1
+ },
+ {
+  "pr": "reeze/php-leveldb#54",
+  "url": "https://github.com/reeze/php-leveldb/pull/54",
+  "title": "Fix 7 critical bugs in php-leveldb extension",
+  "agent": "Devin",
+  "closed_at": "2025-06-23T15:18:17Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Seven defensive edits to leveldb.c: comparator error-path cleanup, nulling iterator->current after free, an extra db check before iterator destroy, an i < num_ranges bound in getApproximateSizes, a db null check in snapshot release, a local cache variable, and an early return when read options are NULL.",
+  "what_landed": "Nothing landed: the only leveldb.c commit in the 180 days after closing is remicollet's PHP 8.5 exception-class fix (ba9344108a), and none of the seven edits appears.",
+  "closed_reason": "Auto-closed by Devin after 7 days of inactivity; maintainer dktapps had called the changes pointless or redundant and not high severity.",
+  "evidence": [
+   "https://github.com/reeze/php-leveldb/commit/ba9344108a",
+   "https://github.com/reeze/php-leveldb/commits/master"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "reflex-dev/reflex-web#1446",
+  "url": "https://github.com/reflex-dev/reflex-web/pull/1446",
+  "title": "Add pre-commit configuration and CI workflow",
+  "agent": "Devin",
+  "closed_at": "2025-07-02T15:09:22Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Add a .pre-commit-config.yaml (ending with check-yaml, check-added-large-files, codespell and a whitelist-empty hook), a GitHub Actions pre-commit workflow, pre-commit as a dev dependency, plus removal of ruff's output-format setting and spelling fixes.",
+  "what_landed": "Maintainer adhami3310's #1656 (merged 2025-10-15) added a .pre-commit-config.yaml, a .github/workflows/pre-commit.yml running `pre-commit run --all-files`, and pre-commit as a dev dependency. Its hooks are only ruff-format and ruff --fix. None of this PR's hooks, its ruff-config edit or its .codespellrc/icon-tag edits landed.",
+  "closed_reason": "Auto-closed by Devin for inactivity after the maintainer requested changes (objected to hardcoding words in .codespellrc).",
+  "evidence": [
+   "https://github.com/reflex-dev/reflex-web/pull/1656",
+   "https://github.com/reflex-dev/reflex-web/commit/73e78dc5ab3c3e336df793d9bd325f45acad9931"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": "https://github.com/reflex-dev/reflex-web/pull/1656",
+  "hours_from_close_to_landing": 2523.1
+ },
+ {
+  "pr": "sam-goodwin/alchemy#283",
+  "url": "https://github.com/sam-goodwin/alchemy/pull/283",
+  "title": "feat: implement Polar.sh provider with comprehensive resources",
+  "agent": "Devin",
+  "closed_at": "2025-06-12T23:03:35Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add a Polar.sh provider under alchemy/src/polar: an API client, Customer, Product, Subscription, Order, Meter, Benefit, Discount and Organization resources, docs, and live tests skipped in CI.",
+  "what_landed": "Nothing landed: no commits touched alchemy/src/polar after closing, and no polar provider exists in alchemy/src at the 180-day mark or on main today (the repo is now alchemy-run/alchemy-async).",
+  "closed_reason": "Maintainer nickbalestra proposed archiving it because Polar's API cannot delete some resources (organizations, meters) and has no webhooks API.",
+  "evidence": [
+   "https://github.com/sam-goodwin/alchemy/pull/283",
+   "https://github.com/alchemy-run/alchemy-async/tree/31c4a7288616307a59945992e16ed8f714c6f33c/alchemy/src"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "spring-projects/spring-kafka#3944",
+  "url": "https://github.com/spring-projects/spring-kafka/pull/3944",
+  "title": "support per-record observations in batch listeners",
+  "agent": "OpenAI_Codex",
+  "closed_at": "2025-07-21T17:09:40Z",
+  "verdict": "LANDED",
+  "change_proposed": "Add an opt-in ContainerProperties.recordObservationsInBatch flag so that batch listeners create (via Observation.observe()) one observation per record before invoking the batch listener, plus docs and tests.",
+  "what_landed": "Maintainer Soby Chacko merged the PR's commits by hand as 85b3aee ('GH-3944: support per-record observations in batch listeners' with docs updates and minor cleanup) on 2025-07-21; it is on main and the code is essentially identical to the PR.",
+  "closed_reason": "Not declined: the maintainer merged it manually ('Merged via 85b3aee'), which GitHub shows as closed.",
+  "evidence": [
+   "https://github.com/spring-projects/spring-kafka/commit/85b3aee62bf40cac75790835fe05af10b751afb5",
+   "https://github.com/spring-projects/spring-kafka/pull/3944#issuecomment-3097633879"
+  ],
+  "automated_leads": [
+   "hist:0.99",
+   "today:0.88"
+  ],
+  "claims_true_now": 5,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": "https://github.com/spring-projects/spring-kafka/commit/85b3aee62bf40cac75790835fe05af10b751afb5",
+  "hours_from_close_to_landing": -0.0
+ },
+ {
+  "pr": "toshimaru/nyan#189",
+  "url": "https://github.com/toshimaru/nyan/pull/189",
+  "title": "Upgrade goreleaser/goreleaser-action from v5 to v6",
+  "agent": "Copilot",
+  "closed_at": "2025-07-09T23:11:06Z",
+  "verdict": "LANDED",
+  "change_proposed": "Bump goreleaser/goreleaser-action from v5 to v6 in ci.yml and release.yml, and migrate .goreleaser.yml to GoReleaser v2 (version: 2, snapshot.version_template), keeping the brews: section.",
+  "what_landed": "The maintainer's PR #191 (merged 2025-07-09) bumped both workflows to goreleaser-action@v6 and added version: 2 and version_template. It also changed --skip-publish to --skip=publish, format to formats, and brews: to homebrew_casks:. The action was later bumped to v7.",
+  "closed_reason": "Maintainer: 'Addressed in #191', his own PR.",
+  "evidence": [
+   "https://github.com/toshimaru/nyan/pull/191",
+   "https://github.com/toshimaru/nyan/commit/2d54d7c69ee2381040be4b8a61960bc8fad12c16"
+  ],
+  "automated_leads": [
+   "cmt:191",
+   "phr:addressed in",
+   "hist:1.00",
+   "today:0.33",
+   "cand:191=1.00"
+  ],
+  "claims_true_now": 2,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 2,
+  "landed_via": "https://github.com/toshimaru/nyan/pull/191",
+  "hours_from_close_to_landing": -0.3
+ },
+ {
+  "pr": "vercel/turborepo#10623",
+  "url": "https://github.com/vercel/turborepo/pull/10623",
+  "title": "perf: improve hashing performance for manual path",
+  "agent": "Cursor",
+  "closed_at": "2025-07-07T17:36:01Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Rewrite turborepo-scm's git_like_hash_file (manual.rs) to take the blob size from file metadata and stream the file through a hand-rolled 8KB buffer instead of read_to_end.",
+  "what_landed": "Nothing landed: within 180 days manual.rs got only lint/format/edition commits and git_like_hash_file still used read_to_end; chunked 64KB hashing appeared only on 2026-04-06, about nine months later, in crlf.rs as part of a CRLF-normalization fix (#12572), outside the window and not this proposal.",
+  "closed_reason": "Reviewer chris-olszewski asked for BufReader and a benchmark, doubting any speedup; the author anthonyshew closed it 'until we have real benchmarking'.",
+  "evidence": [
+   "https://github.com/vercel/turborepo/blob/8a1e42a25ca84f866c8dca7eb3ba8a0ae930c3b6/crates/turborepo-scm/src/manual.rs",
+   "https://github.com/vercel/turborepo/pull/12572"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 0,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "vitejs/vite-plugin-react#631",
+  "url": "https://github.com/vitejs/vite-plugin-react/pull/631",
+  "title": "Update React Router RSC example to match official template structure",
+  "agent": "Copilot",
+  "closed_at": "2025-07-27T02:36:11Z",
+  "verdict": "LANDED",
+  "change_proposed": "Rewrite the React Router RSC example's react-router-vite/entry.{browser,rsc,ssr}.tsx to follow the official unstable_rsc-vite template (formState handling, a generateHTML export). The reviewer had already rejected the PR's original app/ to src/ restructure, Express server and dependency overhaul.",
+  "what_landed": "Maintainer hi-ogawa's #632 (merged 2025-07-27, 'Supersedes #631') made the same entry-file rewrite, with entry.browser.tsx identical, and also upgraded react-router from the experimental build to 7.7.0. The original restructure was never done.",
+  "closed_reason": "Superseded: the maintainer closed it in favor of his own PR #632.",
+  "evidence": [
+   "https://github.com/vitejs/vite-plugin-react/pull/632",
+   "https://github.com/vitejs/vite-plugin-react/commit/b077c4a774ebe4a059902f3e0cb043c7194cceeb",
+   "https://github.com/vitejs/vite-plugin-react/pull/631#issuecomment-3123786310"
+  ],
+  "automated_leads": [
+   "xref:632",
+   "cmt:632",
+   "phr:in favor of",
+   "hist:0.77",
+   "today:0.45",
+   "cand:632=0.77"
+  ],
+  "claims_true_now": 4,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 4,
+  "landed_via": "https://github.com/vitejs/vite-plugin-react/pull/632",
+  "hours_from_close_to_landing": 0.9
+ },
+ {
+  "pr": "vltpkg/vltpkg#877",
+  "url": "https://github.com/vltpkg/vltpkg/pull/877",
+  "title": "Fix GUI security insights not appearing without running query commands",
+  "agent": "Copilot",
+  "closed_at": "2025-06-27T02:09:48Z",
+  "verdict": "PARTLY",
+  "change_proposed": "Add Query.populateAllNodeInsights() and call it in the GUI explorer, and make vlt query and vlt ls always load the security archive and pre-populate insights, so insights show up without security selectors.",
+  "what_landed": "Maintainer ruyadorno's #990 (merged 2025-07-08, closing #788) made vlt query and vlt ls always load the security archive by removing the hasSecuritySelectors gate. populateAllNodeInsights() and the GUI pre-population never landed.",
+  "closed_reason": "The reviewer disagreed with the direction: he wanted security data hydrated through a VSR endpoint during Graph loading, and saw this at best as an intermediate step. Closed without comment.",
+  "evidence": [
+   "https://github.com/vltpkg/vltpkg/pull/990",
+   "https://github.com/vltpkg/vltpkg/commit/dffbb9a0cafc721a22fae62e28ae20a8148ef31e",
+   "https://github.com/vltpkg/vltpkg/issues/788"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 1,
+  "claims_still_wrong": 4,
+  "claims_unclear": 2,
+  "poisoned_claims_published_arms": 7,
+  "landed_via": "https://github.com/vltpkg/vltpkg/pull/990",
+  "hours_from_close_to_landing": 279.7
+ },
+ {
+  "pr": "whitphx/streamlit-webrtc#1930",
+  "url": "https://github.com/whitphx/streamlit-webrtc/pull/1930",
+  "title": "Replace npm with pnpm and poetry with uv",
+  "agent": "Devin",
+  "closed_at": "2025-03-17T14:47:12Z",
+  "verdict": "LANDED",
+  "change_proposed": "Switch the frontend from npm to pnpm and the Python side from Poetry to uv (pnpm-lock.yaml, uv.lock, uv-based pyproject, Makefile, CI workflow, Dockerfile and bump script updates).",
+  "what_landed": "The maintainer did both migrations himself: npm to pnpm in #1932 (merged 2025-03-13) and Poetry to uv in #1936 (merged 2025-03-17, five hours before this PR was closed), with a PEP 621 [project]/[dependency-groups] pyproject, astral-sh/setup-uv and uv sync in CI; he deleted the Dockerfile rather than porting it, and #1970 later replaced the one remaining uv pip install with uv add --dev.",
+  "closed_reason": "Closed by maintainer whitphx after review requests (no requirements.txt, use uv sync, use setup-uv, PEP 621 pyproject, no package.json edits); he had just merged his own pnpm (#1932) and uv (#1936) migrations.",
+  "evidence": [
+   "https://github.com/whitphx/streamlit-webrtc/pull/1932",
+   "https://github.com/whitphx/streamlit-webrtc/pull/1936",
+   "https://github.com/whitphx/streamlit-webrtc/pull/1970",
+   "https://github.com/whitphx/streamlit-webrtc/commit/4f7b7cc613"
+  ],
+  "automated_leads": [
+   "hist:0.40"
+  ],
+  "claims_true_now": 8,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 8,
+  "landed_via": "https://github.com/whitphx/streamlit-webrtc/pull/1936",
+  "hours_from_close_to_landing": -5.2
+ },
+ {
+  "pr": "wolfSSL/wolfssh#778",
+  "url": "https://github.com/wolfSSL/wolfssh/pull/778",
+  "title": "Add GitHub Actions workflow for g++ and clang compilation",
+  "agent": "Devin",
+  "closed_at": "2025-02-24T08:21:02Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add a multi-compiler GitHub Actions workflow that builds and caches wolfSSL, then builds and tests wolfSSH with gcc 9-12 and clang 10-14 on ubuntu-20.04/22.04, uploading config.log as an artifact on failure.",
+  "what_landed": "Nothing within six months: no compiler-matrix workflow among the .github/workflows commits up to 2025-08-23. A different multi-compiler.yml (ubuntu-latest, g++ 11-13 and clang++ 14/15/17, `cat config.log`, no wolfSSL cache) was only added on 2026-03-04 in 09144d0c7a, about a year after closing.",
+  "closed_reason": "The reviewer said it did not actually force compiling wolfSSH with g++ (e.g. CC=g++). The maintainer then closed it, saying Devin 'spiralled' and it would need a do-over.",
+  "evidence": [
+   "https://github.com/wolfSSL/wolfssh/pull/778",
+   "https://github.com/wolfSSL/wolfssh/commit/09144d0c7aa930d88553e91f7e66693bc2251069"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 7,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ },
+ {
+  "pr": "wolfSSL/wolfssl#8457",
+  "url": "https://github.com/wolfSSL/wolfssl/pull/8457",
+  "title": "Add deadbeef RNG implementation",
+  "agent": "Devin",
+  "closed_at": "2025-02-18T21:57:03Z",
+  "verdict": "NOT_LANDED",
+  "change_proposed": "Add a deterministic 'deadbeef' RNG (wolfcrypt/src/deadbeef.c and .h) wired into random.c behind a new --enable-deadbeef configure flag that is off by default.",
+  "what_landed": "Nothing. No random.c or random.h commit in the next 180 days adds it, and today's configure.ac and wolfcrypt/src have no deadbeef RNG.",
+  "closed_reason": "Closed without comment by the reviewer who had requested it (anhu), after his change requests.",
+  "evidence": [
+   "https://github.com/wolfSSL/wolfssl/blob/master/configure.ac"
+  ],
+  "automated_leads": [],
+  "claims_true_now": 0,
+  "claims_still_wrong": 0,
+  "claims_unclear": 0,
+  "poisoned_claims_published_arms": 5,
+  "landed_via": null,
+  "hours_from_close_to_landing": null
+ }
+]
