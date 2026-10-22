@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The file hook no longer loses declined work to its cap.** It fires as the assistant is about to change a file, the moment the adoption field exists for, but it listed current practice before declined work within each scope and remembered whole scopes, so in a scope with more claims than the cap (eight, or about 9,000 characters) declined work was cut first and, with the scope then counted as shown, never arrived, compaction or not. On the pydantic-ai example in `docs/examples/pydantic-ai-prs`, reading `models/openai.py` showed 8 of 14 claims and none of its 4 declined ones. Within each scope the hook now shows declined work first (as `lore review` does), then current practice, then corrected claims; scopes still come most specific first and once per conversation, and a declined claim the cap leaves out comes at a later read or edit in its scope. Current practice beyond the cap stays in the book, as before.
+
 ## 0.5.1 — 2026-10-21
 
 ### Security
