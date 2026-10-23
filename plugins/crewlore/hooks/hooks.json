@@ -1,0 +1,40 @@
+{
+  "description": "crewlore: the claims whose scope covers a file as it is read or edited, the claims relevant to each prompt, and a reset after compaction. Each hook runs `lore claude-hook` and exits 0 whatever happens, so a machine without crewlore is never blocked.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v lore >/dev/null 2>&1 && out=$(lore claude-hook); case \"$out\" in \"{\"*) printf \"%s\\n\" \"$out\";; esac; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v lore >/dev/null 2>&1 && out=$(lore claude-hook); case \"$out\" in \"{\"*) printf \"%s\\n\" \"$out\";; esac; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v lore >/dev/null 2>&1 && out=$(lore claude-hook); case \"$out\" in \"{\"*) printf \"%s\\n\" \"$out\";; esac; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

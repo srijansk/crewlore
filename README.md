@@ -90,6 +90,15 @@ lore install --project --hooks       # plus Claude Code hooks: a file's claims a
 - **Nothing of yours is overwritten.** Every file written carries a crewlore marker: install refuses to replace a skill it did not write (`--force` overrides), and `lore uninstall` removes only marked files, the marked block and crewlore's own hook entries.
 - **Assistants that cannot run commands**, such as Claude Desktop, use the MCP server instead: `lore serve`, see [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md).
 
+**Or install it as a Claude Code plugin.** In a Claude Code session:
+
+```text
+/plugin marketplace add srijansk/crewlore
+/plugin install crewlore@crewlore
+```
+
+The plugin is the same `/lore` skill (invoked as `/crewlore:lore`) and the same three hooks, generated from the installer's own text, so the plugin and `lore install --hooks` are two ways to the same files: pick one, since with both Claude Code runs each hook twice. The plugin bundles no Python; the skill and the hooks call the `lore` command, so `pipx install crewlore` is still needed on the machine. Each crewlore release bumps the plugin's version; `/plugin marketplace update crewlore` fetches it.
+
 ## What you get
 
 Raw, messy sessions go in. Out comes a **claim**: one reusable thing the team learned, with four parts.
