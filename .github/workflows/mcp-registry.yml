@@ -1,0 +1,96 @@
+name: MCP Registry
+
+# Publishes server.json to the official MCP Registry (registry.modelcontextprotocol.io)
+# as io.github.srijansk/crewlore.
+#
+# Authentication is GitHub OIDC: the registry exchanges the ID token this run mints
+# (permissions.id-token: write) for a publish token scoped to io.github.<repository
+# owner>/*, so no secret is stored anywhere.
+#
+# Trigger: the same `vX.Y.Z` tag push that drives release.yml. The GitHub release that
+# release.yml creates is made with GITHUB_TOKEN, and events raised by GITHUB_TOKEN start
+# no workflow runs, so an `on: release` trigger would never fire here. `workflow_dispatch`
+# publishes the version committed in server.json.
+#
+# Ownership: the registry fetches the PyPI metadata of the exact version named in
+# server.json and looks for `mcp-name: io.github.srijansk/crewlore` in its description
+# (README.md). release.yml publishes to PyPI in a job that runs in parallel with the
+# GitHub release, so this job waits until PyPI serves the version before publishing.
+#
+# Registry versions are immutable: a second publish of the same version fails. Bump
+# `version` and `packages[0].version` in server.json together with pyproject.toml;
+# tests/unit/test_mcp_registry.py keeps them equal.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish to the MCP Registry
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # OIDC login to the registry; no secret
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the version from server.json and check it against the tag
+        id: version
+        run: |
+          version="$(jq -r '.version' server.json)"
+          package_version="$(jq -r '.packages[0].version' server.json)"
+          if [ "$version" != "$package_version" ]; then
+            echo "server.json version $version does not match packages[0].version $package_version" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match server.json version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install mcp-publisher
+        run: |
+          # Pinned and checksummed: this step runs with an OIDC token that can publish
+          # anything under io.github.srijansk/*, so it must not execute whatever 'latest' is.
+          version="1.8.1"
+          sha256="a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${version}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${sha256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --help > /dev/null
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate server.json
+
+      - name: Wait for PyPI to serve this version with the ownership marker
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          url="https://pypi.org/pypi/crewlore/${VERSION}/json"
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$url" -o pypi.json; then
+              if jq -e '.info.description | test("mcp-name: io\\.github\\.srijansk/crewlore([^A-Za-z0-9._/-]|$)")' pypi.json > /dev/null; then
+                echo "PyPI serves crewlore ${VERSION} with the mcp-name marker"
+                exit 0
+              fi
+              echo "crewlore ${VERSION} is on PyPI but its description carries no 'mcp-name: io.github.srijansk/crewlore' line; the registry would reject it" >&2
+              exit 1
+            fi
+            echo "crewlore ${VERSION} is not on PyPI yet (attempt ${attempt} of 60); retrying in 20s"
+            sleep 20
+          done
+          echo "gave up waiting for crewlore ${VERSION} on PyPI" >&2
+          exit 1
+
+      - name: Log in to the registry with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish server.json

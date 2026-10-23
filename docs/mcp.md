@@ -65,6 +65,10 @@ Add the same JSON shape to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.j
 
 Spawn `lore serve --repo /absolute/path` as a subprocess speaking MCP over stdio and call `lore_query(task, limit)` with the task in natural language; call `lore_feedback` once the session has acted on the result.
 
+## The MCP Registry entry
+
+`crewlore` is published to the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.srijansk/crewlore` from each release (0.5.3 onwards), so a client or catalogue that reads the registry can find the server by name instead of being handed the JSON above. The entry ([`server.json`](https://github.com/srijansk/crewlore/blob/main/server.json) in this repository) points at the `crewlore` package on PyPI, pulls in the `serve` extra, and starts the same server as above through `uvx` (`uvx --with 'crewlore[serve]' crewlore serve --repo <path>`); `--repo` is declared as a required path, so a client installing from the registry asks you for the repository and passes it on. The listing is metadata and nothing more: the server still runs on your machine from the PyPI package, reads only the `.lore/` you point it at, and makes no network calls. Each release publishes its version to the registry.
+
 ## What to expect in the agent's behavior
 
 Once wired, an agent should call `lore_query` near the start of a session, right after reading the task. A well-behaved agent will:

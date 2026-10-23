@@ -236,7 +236,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore feedback <id>… --influential` / `--overridden` / `--corrected NOTE` | Tell the layer what became of served claims. Influential and overridden feed the lifecycle; a correction is written to a tracked file beside the claims (commit it with the book) and shown wherever the claim is served. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
 | `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file, `--hooks` for Claude Code hooks, `--force` to replace a skill file crewlore did not write), or remove exactly what was written. |
-| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
+| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. The package also installs `crewlore` as an alias of `lore`, which is the command the MCP Registry entry runs. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ### Git hooks
 
@@ -306,3 +306,5 @@ Issues, discussions, and PRs welcome. New here? Start a [discussion](https://git
 MIT — see [LICENSE](https://github.com/srijansk/crewlore/blob/main/LICENSE).
 
 crewlore is written and maintained by Srijan Saket. The official source is [github.com/srijansk/crewlore](https://github.com/srijansk/crewlore): every [PyPI release](https://pypi.org/project/crewlore/) since 0.2.0 is published from this repository's release workflow and carries a provenance attestation naming this repository.
+
+<!-- mcp-name: io.github.srijansk/crewlore -->
