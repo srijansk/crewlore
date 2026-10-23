@@ -49,6 +49,21 @@ If you're fixing a bug, please include a regression test that fails on `main` an
 - Run `uv run pytest` and `uv run ruff check .` before pushing.
 - Reference the issue or discussion the PR addresses.
 
+## Releasing
+
+A release is a commit on `main` followed by a tag. Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which builds the sdist and wheel, publishes them to PyPI through trusted publishing, and creates the GitHub release with that version's CHANGELOG section as the notes. The workflow refuses a tag whose version does not match `pyproject.toml`. In order:
+
+1. Bump the version in `pyproject.toml`, `src/lore/__init__.py` and `CITATION.cff` (`version`, and `date-released` to the release date).
+2. Rename the CHANGELOG `## Unreleased` heading to `## X.Y.Z — YYYY-MM-DD`.
+3. Run `uv lock` so `uv.lock` records the new version.
+4. Run `uv run python scripts/export_plugin.py` so `plugins/crewlore/.claude-plugin/plugin.json` follows the version; `tests/unit/test_claude_plugin.py` fails until it does.
+5. Run `uv run ruff check .` and `uv run --extra dev pytest -q`.
+6. Commit on `main` (`release X.Y.Z: <what changed, in one line>`) and push.
+7. Wait for CI on `main` to pass.
+8. Push the annotated tag: `git tag -a vX.Y.Z -m "crewlore X.Y.Z"` then `git push origin vX.Y.Z`. The tag triggers the release workflow.
+
+Claude Code keeps a plugin user on the installed copy until the manifest's `version` changes, so a change to the skill text or the hooks reaches plugin users at the next release, not when it merges.
+
 ## Reporting issues
 
 For bugs: please include the command you ran, the observed output, the expected output, and your Python version + OS. If the bug involves real transcripts, **don't paste their contents** — describe the shape (kinds of events, rough size) instead.

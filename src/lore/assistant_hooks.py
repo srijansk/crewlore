@@ -112,6 +112,14 @@ def _entry(matcher: str | None) -> dict:
     return {"matcher": matcher, "hooks": [hook]} if matcher else {"hooks": [hook]}
 
 
+def hook_groups() -> dict[str, list[dict]]:
+    """crewlore's hook entries by event, in the shape of the `hooks` object in Claude
+    Code's settings file: one matcher group per event holding the one command hook.
+    `install_hooks` adds these to a settings file; the Claude Code plugin's
+    `hooks/hooks.json` (`lore.claude_plugin`) lists the same ones, from here."""
+    return {event: [_entry(matcher)] for event, matcher in HOOK_EVENTS.items()}
+
+
 def load_settings(path: Path) -> tuple[dict, str]:
     """The settings object and the file's text as stored (empty when the file is absent).
 
@@ -189,8 +197,8 @@ def install_hooks(path: Path, root: Path, *, strict: bool = True) -> str:
         _refuse_symlinks(path, root)
     data, text = load_settings(path)
     hooks = _without_ours(data.get("hooks", {}))
-    for event, matcher in HOOK_EVENTS.items():
-        hooks.setdefault(event, []).append(_entry(matcher))
+    for event, groups in hook_groups().items():
+        hooks.setdefault(event, []).extend(groups)
     new = _dump({**data, "hooks": hooks}, text)
     if new == text:
         return "already current"
