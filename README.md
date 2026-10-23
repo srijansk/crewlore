@@ -297,3 +297,5 @@ Issues, discussions, and PRs welcome. New here? Start a [discussion](https://git
 MIT — see [LICENSE](https://github.com/srijansk/crewlore/blob/main/LICENSE).
 
 crewlore is written and maintained by Srijan Saket. The official source is [github.com/srijansk/crewlore](https://github.com/srijansk/crewlore): every [PyPI release](https://pypi.org/project/crewlore/) since 0.2.0 is published from this repository's release workflow and carries a provenance attestation naming this repository.
+
+<!-- mcp-name: io.github.srijansk/crewlore -->

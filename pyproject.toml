@@ -38,6 +38,9 @@ dependencies = [
 
 [project.scripts]
 lore = "lore.cli:app"
+# The same CLI under the package name, so `uvx crewlore` resolves without `--from` and the
+# MCP Registry entry (server.json) can start it as `uvx --with 'crewlore[serve]' crewlore serve`.
+crewlore = "lore.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/srijansk/crewlore"

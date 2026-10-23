@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.srijansk/crewlore",
+  "title": "crewlore",
+  "description": "Team knowledge compiled from your coding agents' sessions and pull requests, every entry cited.",
+  "version": "0.5.2",
+  "websiteUrl": "https://github.com/srijansk/crewlore/blob/main/docs/mcp.md",
+  "repository": {
+    "url": "https://github.com/srijansk/crewlore",
+    "source": "github",
+    "id": "1249714573"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "crewlore",
+      "version": "0.5.2",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "crewlore[serve]",
+          "description": "The MCP server is the package's optional serve extra; this installs it into the uvx environment beside the package."
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve"
+        },
+        {
+          "type": "named",
+          "name": "--repo",
+          "description": "Absolute path to the repository whose .lore/ knowledge layer the server reads. MCP clients start servers from their own working directory, so a relative path finds nothing.",
+          "format": "filepath",
+          "isRequired": true
+        }
+      ]
+    }
+  ]
+}

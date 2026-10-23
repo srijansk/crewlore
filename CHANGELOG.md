@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Listed in the MCP Registry.** `server.json` describes the `lore serve` server for the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.srijansk/crewlore`, and the new `mcp-registry` workflow publishes each release's version to it through GitHub OIDC, with no stored secret. The README carries the registry's PyPI ownership marker, and the package now installs `crewlore` as a second name for the `lore` command, so `uvx crewlore` works and the registry entry can start the server as `uvx --with 'crewlore[serve]' crewlore serve --repo <path>`. See `docs/mcp.md`.
+
 ## 0.5.2 — 2026-10-21
 
 ### Changed
