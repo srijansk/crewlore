@@ -1,0 +1,15 @@
+{
+  "name": "crewlore",
+  "description": "crewlore's own marketplace: the crewlore plugin for Claude Code.",
+  "owner": {
+    "name": "Srijan Saket",
+    "url": "https://github.com/srijansk"
+  },
+  "plugins": [
+    {
+      "name": "crewlore",
+      "source": "./plugins/crewlore",
+      "description": "The /lore skill and hooks for crewlore, which reads the sessions your coding agents already produce, and your repo's pull requests, and writes the decisions, procedures and gotchas into a plain-text knowledge book inside your repo, each entry quoting the line it came from and recording whether the team adopted it or tried it and declined. Runs the `lore` command: pipx install crewlore first."
+    }
+  ]
+}

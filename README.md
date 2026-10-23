@@ -90,6 +90,15 @@ lore install --project --hooks       # plus Claude Code hooks: a file's claims a
 - **Nothing of yours is overwritten.** Every file written carries a crewlore marker: install refuses to replace a skill it did not write (`--force` overrides), and `lore uninstall` removes only marked files, the marked block and crewlore's own hook entries.
 - **Assistants that cannot run commands**, such as Claude Desktop, use the MCP server instead: `lore serve`, see [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md).
 
+**Or install it as a Claude Code plugin.** In a Claude Code session:
+
+```text
+/plugin marketplace add srijansk/crewlore
+/plugin install crewlore@crewlore
+```
+
+The plugin is the same `/lore` skill (invoked as `/crewlore:lore`) and the same three hooks, generated from the installer's own text, so the plugin and `lore install --hooks` are two ways to the same files: pick one, since with both Claude Code runs each hook twice. The plugin bundles no Python; the skill and the hooks call the `lore` command, so `pipx install crewlore` is still needed on the machine. Each crewlore release bumps the plugin's version; `/plugin update crewlore@crewlore` fetches it; restart Claude Code or run `/reload-plugins` to load it.
+
 ## What you get
 
 Raw, messy sessions go in. Out comes a **claim**: one reusable thing the team learned, with four parts.
@@ -227,7 +236,7 @@ Knowledge discovered inside an agent session is private by default and lost by d
 | `lore feedback <id>… --influential` / `--overridden` / `--corrected NOTE` | Tell the layer what became of served claims. Influential and overridden feed the lifecycle; a correction is written to a tracked file beside the claims (commit it with the book) and shown wherever the claim is served. |
 | `lore status` | Show claim/conflict counts and how much of the layer is actually being read. |
 | `lore install` / `lore uninstall` | Put the `/lore` skill into your coding assistant (`--project` for this repo, `--always-on` to add a block to its instruction file, `--hooks` for Claude Code hooks, `--force` to replace a skill file crewlore did not write), or remove exactly what was written. |
-| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
+| `lore serve` | Start an MCP server exposing `lore_query`, `lore_explain` and `lore_feedback` to any MCP-speaking agent (Claude Desktop, Cursor, …). Requires the `serve` extra. The package also installs `crewlore` as an alias of `lore`, which is the command the MCP Registry entry runs. See [`docs/mcp.md`](https://github.com/srijansk/crewlore/blob/main/docs/mcp.md). |
 
 ### Git hooks
 
