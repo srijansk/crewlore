@@ -49,4 +49,4 @@ it; the claim's action says what to do instead.
 - Prefer `lore query` over reading `claims.jsonl` directly.
 - Never run `lore compile` or `lore import-prs` on your own initiative.
 
-<!-- written by crewlore 0.5.2 -->
+<!-- written by crewlore 0.5.3 -->

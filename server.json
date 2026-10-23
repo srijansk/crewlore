@@ -3,7 +3,7 @@
   "name": "io.github.srijansk/crewlore",
   "title": "crewlore",
   "description": "Team knowledge compiled from your coding agents' sessions and pull requests, every entry cited.",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "websiteUrl": "https://github.com/srijansk/crewlore/blob/main/docs/mcp.md",
   "repository": {
     "url": "https://github.com/srijansk/crewlore",
@@ -14,7 +14,7 @@
     {
       "registryType": "pypi",
       "identifier": "crewlore",
-      "version": "0.5.2",
+      "version": "0.5.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

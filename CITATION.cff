@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/srijansk/crewlore"
 url: "https://github.com/srijansk/crewlore"
 license: MIT
-version: 0.5.2
-date-released: 2026-10-21
+version: 0.5.3
+date-released: 2026-10-22
 abstract: >-
   An open, local-first compiler that turns AI-coding-agent sessions and
   agent-authored pull-request threads into a versioned, plaintext, citable

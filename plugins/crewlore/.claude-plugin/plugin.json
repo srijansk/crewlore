@@ -1,6 +1,6 @@
 {
   "name": "crewlore",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "The /lore skill and hooks for crewlore, which reads the sessions your coding agents already produce, and your repo's pull requests, and writes the decisions, procedures and gotchas into a plain-text knowledge book inside your repo, each entry quoting the line it came from and recording whether the team adopted it or tried it and declined. Runs the `lore` command: pipx install crewlore first.",
   "author": {
     "name": "Srijan Saket",
