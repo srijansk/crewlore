@@ -62,6 +62,8 @@ A release is a commit on `main` followed by a tag. Pushing a `vX.Y.Z` tag runs `
 7. Wait for CI on `main` to pass.
 8. Push the annotated tag: `git tag -a vX.Y.Z -m "crewlore X.Y.Z"` then `git push origin vX.Y.Z`. The tag triggers the release workflow.
 
+Claude Code keeps a plugin user on the installed copy until the manifest's `version` changes, so a change to the skill text or the hooks reaches plugin users at the next release, not when it merges.
+
 ## Reporting issues
 
 For bugs: please include the command you ran, the observed output, the expected output, and your Python version + OS. If the bug involves real transcripts, **don't paste their contents** — describe the shape (kinds of events, rough size) instead.

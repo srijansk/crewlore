@@ -97,7 +97,7 @@ lore install --project --hooks       # plus Claude Code hooks: a file's claims a
 /plugin install crewlore@crewlore
 ```
 
-The plugin is the same `/lore` skill (invoked as `/crewlore:lore`) and the same three hooks, generated from the installer's own text, so the plugin and `lore install --hooks` are two ways to the same files: pick one, since with both Claude Code runs each hook twice. The plugin bundles no Python; the skill and the hooks call the `lore` command, so `pipx install crewlore` is still needed on the machine. Each crewlore release bumps the plugin's version; `/plugin marketplace update crewlore` fetches it.
+The plugin is the same `/lore` skill (invoked as `/crewlore:lore`) and the same three hooks, generated from the installer's own text, so the plugin and `lore install --hooks` are two ways to the same files: pick one, since with both Claude Code runs each hook twice. The plugin bundles no Python; the skill and the hooks call the `lore` command, so `pipx install crewlore` is still needed on the machine. Each crewlore release bumps the plugin's version; `/plugin update crewlore@crewlore` fetches it; restart Claude Code or run `/reload-plugins` to load it.
 
 ## What you get
 

@@ -148,3 +148,12 @@ def test_marketplace_lists_the_plugin_at_its_own_root():
     assert (REPO_ROOT / entry["source"] / ".claude-plugin" / "plugin.json").is_file()
     assert "version" not in entry  # the manifest's version is the one that counts
     assert entry["description"] == manifest["description"]
+
+
+def test_pyproject_version_matches_the_package_version():
+    """release.yml checks the tag against pyproject.toml alone, and the plugin manifest
+    follows `lore.__version__`; a bump that misses one of them would ship a plugin that
+    never updates, so the two must agree."""
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version = "([^"]+)"$', text, re.M)
+    assert match and match.group(1) == __version__

@@ -61,8 +61,6 @@ packages = ["src/lore"]
 # out of it.
 exclude = [
   "/.github",
-  "/.claude-plugin",
-  "/plugins",
   "/docs/assets",
   "/docs/examples",
   "/docs/launch-video",
